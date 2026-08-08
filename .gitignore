@@ -1,0 +1,93 @@
+# Django — the live DB holds users (incl. mock/seed accounts), projects,
+# datasets, volumes, tasks. Never push it.
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+*.sqlite3-journal
+media/
+staticfiles/
+
+# Live annotation data (MITO_DATA_ROOT). Prefer a path OUTSIDE this repo.
+mito_data_root/
+/data/
+data/
+
+# Runtime volume binaries if someone copies them into the tree by mistake.
+# Vendor model weights (*.pt / *.onnx under vendor/) are tracked via Git LFS
+# — see .gitattributes — and are NOT covered by these patterns' intent when
+# force-added under vendor/; keep the patterns for accidental data copies.
+*.tif
+*.tiff
+*.npy
+*.nii
+*.nii.gz
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/
+dist/
+
+# dev-setup local state
+.dev-cache/
+
+# Test coverage / runtime logs / process files
+coverage/
+htmlcov/
+.coverage
+*.log
+*.pid
+/run/
+/venv/
+
+# Timestamped editor/tool backups (foo.py.backup.20260727-084845). Local
+# safety nets, not history — git already is the history. Ignored rather than
+# deleted: they are the author's own files to keep or bin.
+*.backup.[0-9]*
+
+# Raw stdout of benchmark and test runs. Regenerable, machine-specific (absolute
+# paths, local warnings) and noisy in diffs. The *analysis* built from them —
+# benchmarks/BASELINE.md and the phase docs — is the evidence that is tracked.
+docs/webknossos-transformation/benchmarks/TEST_*.txt
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+# The container deployment's env template. `.env.docker` itself (the real one,
+# with the secret key and database password) stays ignored by `.env.*` above.
+!.env.docker.example
+*.pem
+
+# Per-machine agent/tool overrides
+.claude/settings.local.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# progress/ is documentation and travels with the code — edit it on any server,
+# push, continue elsewhere. The data / binary / log patterns above are
+# *unanchored*, so without this exemption a `data/` subfolder, a `.log`, or a
+# `.tif` under progress/ would be dropped **silently**, which is the one
+# failure mode docs must not have.
+#
+# This only turns off *silent* dropping. `./dev-setup.sh --check-git` still
+# refuses to let volume binaries (.tif/.npy/.nii) be committed anywhere,
+# progress/ included — deliberately: a loud "you're committing a volume" beats
+# a file that vanishes without a word. Use .png/.jpg for doc screenshots.
+!progress/**/
+!progress/**

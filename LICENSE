@@ -1,0 +1,11 @@
+Mito Data Agent — No License Granted
+
+Unless a file or directory contains a separate license notice, no permission is
+granted to copy, modify, distribute, sublicense, or create derivative works from
+the Mito Data Agent source code or documentation.
+
+Third-party components retain their own licenses. See THIRD_PARTY_NOTICES.md and
+the license files shipped beside vendored components.
+
+This notice does not limit rights granted directly by an applicable third-party
+license and does not claim ownership of third-party material.

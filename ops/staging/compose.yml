@@ -1,0 +1,22 @@
+name: mito-data-agent-staging-20260731
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mito-staging-postgres-20260731
+    restart: unless-stopped
+    env_file:
+      - .env.postgres
+    ports:
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
+    name: mito-staging-postgres-20260731

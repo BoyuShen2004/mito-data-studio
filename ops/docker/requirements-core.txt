@@ -1,0 +1,44 @@
+# Core runtime dependencies for the container image — everything the app needs
+# to serve, read volumes and write labels, with no deep-learning stack.
+#
+# Versions are the ones pinned in ../../requirements-release.in, minus the
+# torch / ONNX Runtime entries. Keep them in step when that file moves.
+#
+# Why the split: every `import torch` and `import onnxruntime` in the codebase
+# is deliberately lazy (see annotation/tracking/registry.py, which falls back to
+# the 'local' tracking provider with a warning when torch is absent). So the
+# app starts, serves, annotates and exports without them — the AI-assist tools
+# are what degrade, not the deployment. That turns a ~8 GB image into a ~570 MB
+# one for the many deployments that never touch SAM.
+#
+# Add the AI stack with `--build-arg MITO_DEPS=ai-cpu` (or `ai-gpu`).
+
+# --- Web stack --------------------------------------------------------------
+Django==5.1.15
+djangorestframework==3.17.1
+django-cors-headers==4.9.0
+python-dotenv==1.2.2
+# PostgreSQL driver. Always installed: compose defaults to postgres, and the
+# sqlite fallback simply leaves it unused.
+psycopg[binary]==3.3.4
+# Serves the built SPA and STATIC_ROOT straight from the WSGI process, so the
+# image needs no nginx sidecar. Listed unconditionally in MIDDLEWARE — without
+# it the WSGI app fails to import at all.
+whitenoise==6.12.0
+gunicorn==26.0.0
+
+# --- Volume / slice IO ------------------------------------------------------
+numpy==2.4.6
+tifffile==2026.3.3
+h5py==3.16.0
+nibabel==5.3.2
+zarr==3.1.6
+Pillow==12.2.0
+
+# --- Array ops used by non-AI features -------------------------------------
+# scipy is imported at module scope by annotation/tools/flood_fill.py and
+# annotation/interpolation/core.py, so it is core, not optional. scikit-image
+# is imported lazily but backs core features (3-D mesh via marching_cubes,
+# watershed split), so it belongs here too.
+scipy==1.17.1
+scikit-image==0.26.0

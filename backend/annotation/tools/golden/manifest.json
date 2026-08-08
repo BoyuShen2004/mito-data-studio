@@ -1,0 +1,202 @@
+{
+  "generated_by": "make_tool_fixtures.py",
+  "generated_at": "2026-07-29T16:10:09.662738+00:00",
+  "tool": "flood_fill",
+  "tool_schema_version": 1,
+  "provenance": "Expected outputs constructed by hand from geometry. This generator does not import the flood-fill core. Tool ranked P1 in docs/webknossos-transformation/19-target-annotation-design.md.",
+  "axis_order": "(z, y, x)",
+  "dtype": "uint8 labels, bool expected masks",
+  "connectivity": "4 in-plane, 6 in 3-D",
+  "tolerance": "exact equality \u2014 flood fill is discrete and has no floating-point component",
+  "cases": [
+    {
+      "id": "open_plane",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_open_plane.npz",
+      "seed": [
+        0,
+        4,
+        4
+      ],
+      "block_shape": [
+        1,
+        8,
+        8
+      ],
+      "expected_voxels": 64,
+      "hashes": {
+        "block": "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
+        "expected": "7c8975e1e60a5c8337f28edf8c33c3b180360b7279644a9bc1af3c51e6220bf5"
+      },
+      "rationale": "An empty 8x8 plane is one connected background region, so a seed anywhere reaches every voxel."
+    },
+    {
+      "id": "walled_box",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_walled_box.npz",
+      "seed": [
+        0,
+        4,
+        4
+      ],
+      "block_shape": [
+        1,
+        8,
+        8
+      ],
+      "expected_voxels": 36,
+      "hashes": {
+        "block": "0ec40797353d32ec1183f1295c29f3dcd8028c6353cf000a93cab32c90884363",
+        "expected": "be6ecd02d2d6b3e1572969ab016b6985c3b91d06090a90f9f2a50320675fa872"
+      },
+      "rationale": "A complete border of label 9 confines a background fill to the 6x6 interior. Counted by hand."
+    },
+    {
+      "id": "split_by_wall",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_split_by_wall.npz",
+      "seed": [
+        0,
+        4,
+        1
+      ],
+      "block_shape": [
+        1,
+        8,
+        8
+      ],
+      "expected_voxels": 32,
+      "hashes": {
+        "block": "0d716a025737c5e5d6c1daab95dfdd6dbbeb8afbea1301265f1e6d842032f178",
+        "expected": "6d507270497ea292a47b1ef41efe60eee71ffb297f732987184fe75c8aabfd20"
+      },
+      "rationale": "A full-height wall at column 4 disconnects the plane; a seed on the left fills columns 0-3 only."
+    },
+    {
+      "id": "gap_in_wall",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_gap_in_wall.npz",
+      "seed": [
+        0,
+        4,
+        1
+      ],
+      "block_shape": [
+        1,
+        8,
+        8
+      ],
+      "expected_voxels": 57,
+      "hashes": {
+        "block": "7b864bf61a0b0525fb8bf839da2d314c7721f6c3820915db50969ffafd50446a",
+        "expected": "ba0c2784f49e0c1c0e5a3dd97616ef264e1582f63fd232d7ad5ef1aa0f2f677d"
+      },
+      "rationale": "One background voxel in the wall connects both sides under 4-connectivity, so the fill escapes. Everything except the remaining wall is reached."
+    },
+    {
+      "id": "diagonal_no_leak",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_diagonal_no_leak.npz",
+      "seed": [
+        0,
+        3,
+        0
+      ],
+      "block_shape": [
+        1,
+        7,
+        7
+      ],
+      "expected_voxels": 19,
+      "hashes": {
+        "block": "e8d1e218883c7aebaa03e636de24427b15fcb2b7a58dd812e34f33f4416cb9d2",
+        "expected": "1bf0c8733f336df4fe2f65842ad9e3d6715a792a4414b9e83ecb3a6c6bf16033"
+      },
+      "rationale": "The wall is solid at column 3, so under 4-connectivity the fill cannot cross. 8-connectivity would leak diagonally, which is exactly why 4 was chosen."
+    },
+    {
+      "id": "z_blocked",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_z_blocked.npz",
+      "seed": [
+        0,
+        2,
+        2
+      ],
+      "block_shape": [
+        3,
+        4,
+        4
+      ],
+      "expected_voxels": 16,
+      "hashes": {
+        "block": "2088357f6dc55daad0551935fc94daf9e1a75f2f27d5ceb4288a8d11d8c5e8c0",
+        "expected": "df087c3aa3efafef7dd1b5ee74576ca2c4627ca1e67eb6bf5b407c0499c5b07a"
+      },
+      "rationale": "A fully-labelled middle slice disconnects z, so a 3-D fill seeded on slice 0 stays on slice 0."
+    },
+    {
+      "id": "z_connected",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_z_connected.npz",
+      "seed": [
+        0,
+        2,
+        2
+      ],
+      "block_shape": [
+        3,
+        4,
+        4
+      ],
+      "expected_voxels": 48,
+      "hashes": {
+        "block": "17b0761f87b081d5cf10757ccc89f12be355c70e2e29df288b65b30710dcbcd1",
+        "expected": "5bf90435cd45d0475cbb0ace7e7e3a672ed2a3a4984ad3e8624d8878725a9c2e"
+      },
+      "rationale": "An empty 3x4x4 block is one connected region under 6-connectivity, so the fill spans all three slices."
+    },
+    {
+      "id": "seed_on_label",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_seed_on_label.npz",
+      "seed": [
+        0,
+        2,
+        2
+      ],
+      "block_shape": [
+        1,
+        6,
+        6
+      ],
+      "expected_voxels": 9,
+      "hashes": {
+        "block": "e25be93ff7fcf95b18b3f282272a3e9f77f8deadf212e04139b16865666f5d65",
+        "expected": "7b3a5bb223171f567ba5789284937b1311567d5cb0b81b139edd5b2439601449"
+      },
+      "rationale": "Seeding inside a 3x3 block of label 5 fills exactly that block: the fill follows the seed's own label."
+    },
+    {
+      "id": "isolated_voxel",
+      "tool": "flood_fill",
+      "fixture": "flood_fill_isolated_voxel.npz",
+      "seed": [
+        0,
+        2,
+        2
+      ],
+      "block_shape": [
+        1,
+        5,
+        5
+      ],
+      "expected_voxels": 1,
+      "hashes": {
+        "block": "4d3105ef45f0050ba9575be5af41d97ae98ccef461743b52e6218682eacaca80",
+        "expected": "7eb726a45d224cd207a444fff3d51729f5d1749ae2d6a3c72b03402de021730a"
+      },
+      "rationale": "A lone background voxel surrounded by label 9 fills only itself."
+    }
+  ]
+}

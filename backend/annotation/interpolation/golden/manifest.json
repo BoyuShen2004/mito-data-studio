@@ -1,0 +1,347 @@
+{
+  "generated_by": "make_golden_fixtures.py",
+  "generated_at": "2026-07-29T14:35:38.834737+00:00",
+  "algorithm": "sdf-linear-blend",
+  "algorithm_version": 1,
+  "provenance": "Expected outputs derived from closed-form geometry only. This generator does not import the interpolation core. Algorithm described in docs/webknossos-transformation/07-webknossos-interpolation-analysis.md; independently reimplemented per master prompt E8 (no WEBKNOSSOS source copied).",
+  "dtype": "uint8 labels, bool masks",
+  "axis_order": "(row, col) == (y, x); interpolation runs along the implicit third axis",
+  "tolerance": "kind=exact: the analytic circle of interpolated radius must be reproduced EXACTLY outside a 1-voxel band around that radius. Voxels within +/-1 of the analytic boundary are unconstrained, because the specified algorithm uses a DISCRETE Euclidean distance transform (distance to the nearest opposite-class voxel centre) while the closed form describes the CONTINUOUS signed distance. The two agree in the interior and differ only at the rasterised surface; measured max deviation across all exact cases is 0.44 voxels. kind=invariant / endpoints_only: no exact array, invariants only.",
+  "tolerance_band_voxels": 1.0,
+  "cases": [
+    {
+      "id": "cylinder_constant",
+      "kind": "exact",
+      "fixture": "cylinder_constant.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": true,
+      "expected_offsets": [
+        "1",
+        "2",
+        "3"
+      ],
+      "hashes": {
+        "first": "40e16eab845c4e6bd9ce7f44ea023413b8add09a0453a5c0d597f4fbb940ac32",
+        "last": "40e16eab845c4e6bd9ce7f44ea023413b8add09a0453a5c0d597f4fbb940ac32",
+        "expected_1": "516700eb59deba95e88e93b663c7739315ca2fc457238062d58553f2f83227db",
+        "expected_2": "516700eb59deba95e88e93b663c7739315ca2fc457238062d58553f2f83227db",
+        "expected_3": "516700eb59deba95e88e93b663c7739315ca2fc457238062d58553f2f83227db"
+      },
+      "rationale": "Concentric circles: blend of SDFs is |p-c| - ((1-k)r1 + k*r2), so the interpolated boundary is the circle of interpolated radius. Derived from geometry, not from the implementation."
+    },
+    {
+      "id": "cylinder_growing",
+      "kind": "exact",
+      "fixture": "cylinder_growing.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": true,
+      "expected_offsets": [
+        "1",
+        "2",
+        "3"
+      ],
+      "hashes": {
+        "first": "08d5c042406c5dd72de75be4fd3b4f21a38dd56756492e726b5ffca8426a945f",
+        "last": "53d27cce9b6147cc9ffe29f15720c1bca2c6f6f0e1069a75524f464da18c2b1c",
+        "expected_1": "1b2fc4a9aca636e258efaa938ad662318451456f9df7c1395baa611557f9c024",
+        "expected_2": "9a0a407d48deddc6c850f456c316aa7b9b4ba2f6e5f239c9bb3cd91c5dbdd6fa",
+        "expected_3": "12c3b1851acb8d00c89ed3e3238dbfb88ee7ca6a4d6f590d94eb2c2cc8f7f2dd"
+      },
+      "rationale": "Concentric circles: blend of SDFs is |p-c| - ((1-k)r1 + k*r2), so the interpolated boundary is the circle of interpolated radius. Derived from geometry, not from the implementation."
+    },
+    {
+      "id": "cylinder_shrinking",
+      "kind": "exact",
+      "fixture": "cylinder_shrinking.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": true,
+      "expected_offsets": [
+        "1",
+        "2",
+        "3"
+      ],
+      "hashes": {
+        "first": "53d27cce9b6147cc9ffe29f15720c1bca2c6f6f0e1069a75524f464da18c2b1c",
+        "last": "08d5c042406c5dd72de75be4fd3b4f21a38dd56756492e726b5ffca8426a945f",
+        "expected_1": "12c3b1851acb8d00c89ed3e3238dbfb88ee7ca6a4d6f590d94eb2c2cc8f7f2dd",
+        "expected_2": "9a0a407d48deddc6c850f456c316aa7b9b4ba2f6e5f239c9bb3cd91c5dbdd6fa",
+        "expected_3": "1b2fc4a9aca636e258efaa938ad662318451456f9df7c1395baa611557f9c024"
+      },
+      "rationale": "Concentric circles: blend of SDFs is |p-c| - ((1-k)r1 + k*r2), so the interpolated boundary is the circle of interpolated radius. Derived from geometry, not from the implementation."
+    },
+    {
+      "id": "cylinder_growing_deep",
+      "kind": "exact",
+      "fixture": "cylinder_growing_deep.npz",
+      "depth": 10,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": true,
+      "expected_offsets": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "hashes": {
+        "first": "c7b4b9392f155710c5819cb953b6383a320fef1c0aba548706ad4291a52fab5a",
+        "last": "515c681534cbc4d513afd372b83b0747b7105d912f5d7a19e8957d03a4112869",
+        "expected_1": "361a47110ffc0c46d76f01600b49fef636894895753aae0fc20abbbcab3e40ea",
+        "expected_2": "109303dd02bab4911702d0fe76948bde02b166c0ea672677758b0903ad203e84",
+        "expected_3": "1b2fc4a9aca636e258efaa938ad662318451456f9df7c1395baa611557f9c024",
+        "expected_4": "b996b58502b512d1ba3e1b21255418581b7124646477b15476de780046bb75f4",
+        "expected_5": "7addca0611f2654f4d2d70a50860ca8d3e6e30d48d3f72dfeb612acab110ff48",
+        "expected_6": "12c3b1851acb8d00c89ed3e3238dbfb88ee7ca6a4d6f590d94eb2c2cc8f7f2dd",
+        "expected_7": "eaaef240faa5c07efa02491d66702b217c305bc95fe00e572e5e62c0fe764346",
+        "expected_8": "82d6e6aff387aa36e546f39244206146d8a1f9c96c1164453bd1989483818417",
+        "expected_9": "a9bbbbe361341b0c69a44c2316936c9e7d1d9c5cc6dafb9008af99d82c44ee22"
+      },
+      "rationale": "Concentric circles: blend of SDFs is |p-c| - ((1-k)r1 + k*r2), so the interpolated boundary is the circle of interpolated radius. Derived from geometry, not from the implementation."
+    },
+    {
+      "id": "anisotropy_endpoints",
+      "kind": "endpoints_only",
+      "fixture": "anisotropy_endpoints.npz",
+      "depth": 4,
+      "spacing": [
+        2.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "4fd2be919e378934784cf353ee52b6257819064531dfe9d1f40f794dc264405c",
+        "last": "4fd2be919e378934784cf353ee52b6257819064531dfe9d1f40f794dc264405c"
+      },
+      "rationale": "Identical endpoints under anisotropic spacing must still yield the endpoint shape at every intermediate: the blend of a mask with itself is itself, whatever the metric."
+    },
+    {
+      "id": "topology_split",
+      "kind": "invariant",
+      "fixture": "topology_split.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "40e16eab845c4e6bd9ce7f44ea023413b8add09a0453a5c0d597f4fbb940ac32",
+        "last": "3a1d00432e32c3d59d3fb4fb097538a1454a91dddca4dc98fca1ad7063c2e196"
+      },
+      "rationale": "One component becoming two. Topology change is explicitly allowed (doc 07); no closed form, so pinned by invariants."
+    },
+    {
+      "id": "topology_merge",
+      "kind": "invariant",
+      "fixture": "topology_merge.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "3a1d00432e32c3d59d3fb4fb097538a1454a91dddca4dc98fca1ad7063c2e196",
+        "last": "40e16eab845c4e6bd9ce7f44ea023413b8add09a0453a5c0d597f4fbb940ac32"
+      },
+      "rationale": "Two components becoming one; the reverse of topology_split."
+    },
+    {
+      "id": "hole_appearing",
+      "kind": "invariant",
+      "fixture": "hole_appearing.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "ae9d3a74484d74d295e352921f2043e47469dfb491325ca440213e65898dd9a7",
+        "last": "15853ecd9172eb7b5d585159ce301df601206009d76fb1d261a874eb7bc29aa8"
+      },
+      "rationale": "A hole opening. Holes are implicit in the SDF; no closed form."
+    },
+    {
+      "id": "hole_closing",
+      "kind": "invariant",
+      "fixture": "hole_closing.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "15853ecd9172eb7b5d585159ce301df601206009d76fb1d261a874eb7bc29aa8",
+        "last": "ae9d3a74484d74d295e352921f2043e47469dfb491325ca440213e65898dd9a7"
+      },
+      "rationale": "A hole closing."
+    },
+    {
+      "id": "translation",
+      "kind": "invariant",
+      "fixture": "translation.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "49032fc0ae281b0a01ac5f1debf66639441591d87723471fdb61a221cef3f234",
+        "last": "b9771cc2e64f975b846caca85096d8193e016820899285da87d0d3d550ca8beb"
+      },
+      "rationale": "Pure translation. The blend is not a disc in general, so exact expectations would require the implementation; invariants only."
+    },
+    {
+      "id": "thin_structure",
+      "kind": "invariant",
+      "fixture": "thin_structure.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "96c6fd76e8c5cb0c3a1ba430d403f1c54f31257d3dbf1b81f7ecd7b2672b849d",
+        "last": "bcecb17550c84b745b73149971302948dca320640056ef228ec6ab10fbebb84e"
+      },
+      "rationale": "A 4px bar thinning to 2px; thin structures are the classic SDF failure mode and must not vanish."
+    },
+    {
+      "id": "diagonal_structure",
+      "kind": "invariant",
+      "fixture": "diagonal_structure.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "86a28886958ad94cb2b0db02058f294e46c03313dbd2dd367765eb29861565fa",
+        "last": "7190199ebf3cb8e6f44346c1f37168143626f25442fbb67df0755e37e5d50d17"
+      },
+      "rationale": "A 1px diagonal line shifting; tests axis-aligned bias."
+    },
+    {
+      "id": "single_pixel",
+      "kind": "invariant",
+      "fixture": "single_pixel.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "a1aaaea1f62413fadd6c25d26031ead219851aa851290835786e638d0b95897a",
+        "last": "2b3df24b453d5a6a42f24df05cdeff9976a27c4778f171ba135f139470447445"
+      },
+      "rationale": "A single voxel moving 4px; the smallest possible object."
+    },
+    {
+      "id": "boundary_touching",
+      "kind": "invariant",
+      "fixture": "boundary_touching.npz",
+      "depth": 4,
+      "spacing": [
+        1.0,
+        1.0
+      ],
+      "shape": [
+        64,
+        64
+      ],
+      "expects_exact_output": false,
+      "expected_offsets": [],
+      "hashes": {
+        "first": "b428e3eedf699ae93b869e2408eb22474a0947bcab289d828a0a2274ca65c59b",
+        "last": "d81050cf49f9ae1397d6bd689be4fa78805a08bdacf8e0b90ed65b9761704936"
+      },
+      "rationale": "An object touching the array border, where the SDF has no outside on two sides."
+    }
+  ]
+}

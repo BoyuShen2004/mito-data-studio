@@ -1,0 +1,32 @@
+---
+description: Preserve click-to-fill demo login chips and the red reset button unless the user explicitly asks to remove them
+globs: frontend/src/pages/LoginPage.tsx,frontend/package.json,frontend/src/api/dev.ts,backend/core/dev_api.py,backend/config/urls.py,ops/**/*
+alwaysApply: true
+---
+
+# Keep demo login chips + reset
+
+The login page has click-to-fill demo accounts and a red **Clear all data & reset**
+button. Both are intentional for local DEV and current demo/staging deploys.
+
+## Do not remove unless the user explicitly asks
+
+Never remove or disable any of the following without an explicit user request:
+
+- `DEV_ACCOUNTS` / `DEV_PASSWORD` / `fillDevAccount` / the demo-accounts UI block in `frontend/src/pages/LoginPage.tsx`
+- The red `Clear all data & reset` button (shown whenever `SHOW_DEMO_ACCOUNTS` is on)
+- `SHOW_DEMO_ACCOUNTS` / `VITE_SHOW_DEMO_ACCOUNTS` gating
+- `VITE_SHOW_DEMO_ACCOUNTS=true` in `frontend/package.json` `"build"` script
+- `VITE_SHOW_DEMO_ACCOUNTS=true` / `MITO_ALLOW_DEV_RESET=1` in ops/staging env examples
+- Backend `/api/dev/reset/` wiring via `DEBUG` or `MITO_ALLOW_DEV_RESET`
+
+## Deploy / build
+
+- Default SPA build (`npm run build`) must keep demo chips + reset button visible.
+- Demo/staging deploys with `DJANGO_DEBUG=false` must set `MITO_ALLOW_DEV_RESET=1` so the red button works.
+- `npm run build:no-demo` exists only for an explicit “strip demo login” request.
+- Empty username/password placeholders are fine; do not confuse those with demo chips.
+
+## When the user does ask to remove
+
+Only then: drop chips/reset UI and/or stop setting `VITE_SHOW_DEMO_ACCOUNTS` / `MITO_ALLOW_DEV_RESET`, and use `build:no-demo` (or equivalent) for production.

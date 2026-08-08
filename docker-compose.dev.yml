@@ -1,0 +1,48 @@
+# Local development services for mito-data-agent.
+#
+# Scope: **development only.** This file never describes production. It stands
+# up the PostgreSQL that development and the concurrency tests run against —
+# SQLite cannot express row-level locking, so the Phase 3 assignment work is
+# untestable without it (see benchmarks/BASELINE.md §5).
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down          # keeps data
+#   docker compose -f docker-compose.dev.yml down -v       # deletes data
+#
+# Credentials come from .env (gitignored). Nothing is hard-coded; the defaults
+# below only apply when the variable is unset, and are dev-only values.
+#
+# Port 5433, not 5432: this host already runs an unrelated WEBKNOSSOS stack with
+# its own PostgreSQL, and a stray connection to the wrong database is exactly
+# the mistake worth designing out. The project name is pinned for the same
+# reason — so `docker compose` can never adopt another stack's containers.
+
+name: mito-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mito-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MITO_DB_NAME:-mito_dev}
+      POSTGRES_USER: ${MITO_DB_USER:-mito}
+      POSTGRES_PASSWORD: ${MITO_DB_PASSWORD:-mito-dev-only}
+      # Deterministic collation, so ordering matches between machines.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      # Bound to loopback only — never exposed off this host.
+      - "127.0.0.1:${MITO_DB_PORT:-5433}:5432"
+    volumes:
+      - mito-dev-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${MITO_DB_USER:-mito} -d ${MITO_DB_NAME:-mito_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  mito-dev-pgdata:
+    name: mito-dev-pgdata

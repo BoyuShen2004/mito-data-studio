@@ -1,0 +1,137 @@
+# Mito Data Agent — one-command deployment.
+#
+#   cp .env.docker.example .env.docker
+#   # edit .env.docker: set DJANGO_SECRET_KEY, MITO_DB_PASSWORD, DJANGO_ALLOWED_HOSTS
+#   docker compose --env-file .env.docker up -d --build
+#
+# Then open http://localhost:8000.
+#
+# ---------------------------------------------------------------------------
+# `--env-file .env.docker` is REQUIRED on every compose command, not optional
+# polish. Compose resolves the ${...} references below from its own env file,
+# which defaults to `.env` — and `.env` in this repo is the *host development*
+# configuration (a different database, on a different port, with a throwaway
+# password). Without the flag compose would silently build the deployment out
+# of those values. The flag replaces that default outright, so only
+# .env.docker is ever read.
+#
+# To avoid repeating it, export it once per shell instead:
+#
+#   export COMPOSE_ENV_FILES=.env.docker
+#   docker compose up -d --build
+# ---------------------------------------------------------------------------
+#
+# This file is the production-shaped stack (app + PostgreSQL). It is separate
+# from docker-compose.dev.yml, which only stands up a database for local
+# development against a host checkout — the two never run together.
+#
+# GPU: `docker compose --env-file .env.docker --profile gpu up -d --build app-gpu`.
+
+name: mito-data-agent
+
+x-app-base: &app-base
+  restart: unless-stopped
+  env_file:
+    # Override only for validation (for example, point at the checked-in
+    # template during `docker compose config`). Real deployments use the
+    # ignored `.env.docker` file created from `.env.docker.example`.
+    - ${MITO_CONTAINER_ENV_FILE:-.env.docker}
+  environment:
+    # Set here rather than in the env file: these address other containers on
+    # this network, so a user editing .env.docker should not have to know them.
+    MITO_DB_ENGINE: postgres
+    MITO_DB_HOST: postgres
+    MITO_DB_PORT: "5432"
+    # Repeat required Compose values in the container environment so shell
+    # overrides and `--env-file` resolution cannot disagree with env_file.
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env.docker}
+    MITO_DB_PASSWORD: ${MITO_DB_PASSWORD:?set MITO_DB_PASSWORD in .env.docker}
+  volumes:
+    # The data root: image volumes, labels, submissions, per-volume artifacts.
+    # A bind mount, not a named volume — this is the directory an operator
+    # needs to fill with data, back up, and inspect from the host.
+    - ${MITO_HOST_DATA_DIR:-./data}:/data
+    # Uploads (Django MEDIA_ROOT) and the sqlite database if you switch engines.
+    # Named volumes: opaque runtime state, not something to hand-edit.
+    - mito-media:/app/backend/media
+    - mito-state:/state
+    # Model weights, read-only. Absent or empty on a `core` build — the AI
+    # tools then report unavailable, which is the documented behaviour.
+    - ${MITO_HOST_VENDOR_DIR:-./vendor}:/vendor:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MITO_DB_NAME:-mito}
+      POSTGRES_USER: ${MITO_DB_USER:-mito}
+      # No default: compose fails loudly if the operator never set a password,
+      # which is far better than silently standing up a guessable database.
+      POSTGRES_PASSWORD: ${MITO_DB_PASSWORD:?set MITO_DB_PASSWORD in .env.docker}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - mito-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MITO_DB_USER:-mito} -d ${MITO_DB_NAME:-mito}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    # Not published to the host by default. Uncomment to connect a client, and
+    # note the 5433 offset — port 5432 is often already taken by another stack.
+    # ports:
+    #   - "127.0.0.1:5433:5432"
+
+  app:
+    <<: *app-base
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MITO_DEPS: ${MITO_DEPS:-core}
+        FRONTEND_BUILD_SCRIPT: ${FRONTEND_BUILD_SCRIPT:-build}
+        # Match the uid/gid owning your host data directory, or bind-mounted
+        # writes fail with EACCES. `id -u` / `id -g` on the host.
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    image: mito-data-agent:${MITO_IMAGE_TAG:-local}
+    ports:
+      # Loopback-bound: put a TLS-terminating reverse proxy in front rather
+      # than exposing the app container to the network directly. Change to
+      # "${MITO_HOST_PORT:-8000}:8000" only on a trusted private network.
+      - "127.0.0.1:${MITO_HOST_PORT:-8000}:8000"
+
+  # Same service with CUDA wired up. Kept as a separate, profile-gated service
+  # because `deploy.resources.devices` makes compose fail outright on hosts
+  # without the NVIDIA Container Toolkit — which would break the CPU path for
+  # everyone if it lived on `app`.
+  app-gpu:
+    <<: *app-base
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MITO_DEPS: ai-gpu
+        FRONTEND_BUILD_SCRIPT: ${FRONTEND_BUILD_SCRIPT:-build}
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    image: mito-data-agent:${MITO_IMAGE_TAG:-local}-gpu
+    ports:
+      - "127.0.0.1:${MITO_HOST_PORT:-8000}:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  mito-pgdata:
+  mito-media:
+  mito-state:

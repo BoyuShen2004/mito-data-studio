@@ -1,0 +1,36 @@
+# Python 3.11 release environment. This is the venv-compatible counterpart to
+# environment.yml; compile it with the command at the top of
+# requirements-release.txt and install only into an isolated release venv.
+#
+# PyTorch is pinned to the CUDA 12.4 build used by the validated development
+# environment. CPU-only operators may deliberately compile a separate lock,
+# but must not silently substitute it for this release artifact.
+--extra-index-url https://download.pytorch.org/whl/cu124
+Django==5.1.15
+djangorestframework==3.17.1
+django-cors-headers==4.9.0
+python-dotenv==1.2.2
+psycopg[binary]==3.3.4
+whitenoise==6.12.0
+gunicorn==26.0.0
+
+numpy==2.4.6
+tifffile==2026.3.3
+# Read .h5/.hdf5 sources in place instead of transcoding them to TIFF
+# (annotation/visualization/hdf5_io.py).
+h5py==3.16.0
+# Lazy NIfTI/.nii.gz registration and shared slice IO.
+nibabel==5.3.2
+zarr==3.1.6
+Pillow==12.2.0
+# CUDA 12.x build; encompasses the CPU fallback provider too. Install only
+# one ONNX Runtime package in the release environment.
+onnxruntime-gpu==1.26.0
+scikit-image==0.26.0
+scipy==1.17.1
+
+hydra-core==1.3.4
+iopath==0.1.10
+tqdm==4.69.1
+torch==2.5.1+cu124
+torchvision==0.20.1+cu124

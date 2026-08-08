@@ -1,0 +1,67 @@
+# One-shot conda env for Mito Data Agent (backend + frontend Node + AI/Track).
+#
+#   git clone <repo> && cd mito-data-agent
+#   git lfs install && git lfs pull
+#   conda env create -f environment.yml
+#   conda activate mito-data-agent
+#   ./dev-setup.sh && ./dev-launch.sh
+# Mature env: conda activate mito-data-agent && ./dev-setup.sh
+#   (setup does not pip/conda-install unless you pass --install-deps)
+#
+# Change pytorch-cuda=X.Y if your driver needs a different CUDA toolkit
+# (https://pytorch.org/get-started/locally/). CPU-only: drop the pytorch-cuda line.
+#
+# Pin MKL <2024 (see README + progress/development.md#conda-env--pytorch--mkl):
+# - mkl 2025 breaks `import torch` (iJIT_NotifyEvent)
+# - mkl 2024.2 from conda-forge conflicts with pytorch-cuda (llvm-openmp)
+# Channel order matters: pytorch/nvidia before defaults before conda-forge.
+name: mito-data-agent
+channels:
+  - pytorch
+  - nvidia
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - nodejs>=18
+  - pip
+  - mkl<2024
+  - pytorch>=2.5.1
+  - torchvision>=0.20.1
+  - pytorch-cuda=12.4
+  - pip:
+      # Django / API
+      - Django>=5.0,<5.2
+      - djangorestframework>=3.15
+      - django-cors-headers>=4.3
+      - python-dotenv
+      # PostgreSQL driver. Required whenever MITO_DB_ENGINE=postgres; the
+      # sqlite fallback does not need it. psycopg 3 (not psycopg2) — Django 5
+      # prefers it and it is what the concurrency work was measured against.
+      - psycopg[binary]>=3.2
+      # Static-file serving middleware. Listed unconditionally in MIDDLEWARE,
+      # so without it the WSGI application fails to import and the server does
+      # not start at all — on any engine.
+      - whitenoise>=6.0
+      # Volumes / slices
+      - numpy
+      - tifffile
+      # HDF5 volumes are read in place (no TIFF transcode) — see
+      # annotation/visualization/hdf5_io.py.
+      - h5py>=3.10
+      # NIfTI headers + lazy ArrayProxy reads for .nii/.nii.gz.
+      - nibabel>=5.3,<6
+      # Phase 11 (ADR-009): Zarr v3 interactive derivatives. Optional and
+      # imported lazily — FEATURE_VOLUME_PYRAMIDS is off by default, so an
+      # environment without it starts and tests exactly as before.
+      # 3.0.6 is yanked upstream (zarr.load() deletes data), hence the floor.
+      - zarr>=3.1,<4
+      - Pillow>=10
+      # EfficientSAM Point / Box Mask (CUDA 12.x with CPU fallback)
+      - onnxruntime-gpu>=1.21,<1.27
+      - scikit-image>=0.22
+      - scipy>=1.11
+      # SAM2 Track helpers (torch comes from conda above)
+      - hydra-core>=1.3.2
+      - iopath>=0.1.10
+      - tqdm>=4.66.1

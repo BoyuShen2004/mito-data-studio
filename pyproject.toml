@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+# Deps live in environment.yml (single install path) — this file adds no
+# install story of its own. The supported test command is Django's runner
+# (`cd backend && python manage.py test`, see README). pytest + pytest-django
+# are NOT in environment.yml; install them yourself if you prefer pytest, and
+# this section is what makes it work from the repo root.
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["backend"]
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
