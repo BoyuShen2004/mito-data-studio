@@ -2,7 +2,12 @@ from django.conf import settings
 from django.db import models
 import secrets
 
-from core.choices import AnnotationType, ProjectStatus, WorkflowType
+from core.choices import (
+    AnnotationType,
+    MembershipSource,
+    ProjectStatus,
+    WorkflowType,
+)
 
 
 class Project(models.Model):
@@ -132,6 +137,14 @@ class ProjectMembership(models.Model):
         null=True,
         blank=True,
         related_name="project_memberships_added",
+    )
+    # Rows mirrored from a working team are revoked when that team membership
+    # ends; rows a manager granted by hand survive it. Existing rows predate
+    # mirroring, so the default correctly backfills them as explicit grants.
+    source = models.CharField(
+        max_length=16,
+        choices=MembershipSource.choices,
+        default=MembershipSource.EXPLICIT,
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

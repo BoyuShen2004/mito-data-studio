@@ -96,7 +96,11 @@ class AnnotationTaskSerializer(serializers.ModelSerializer):
                 "review_status": row.review_status,
                 "reviews": ReviewRecordSerializer(row.reviews.all(), many=True).data,
             }
-            for row in obj.submissions.select_related("annotator", "supersedes").prefetch_related("reviews__reviewer").all()
+            # `.all()` on purpose: any filter/select_related here would build a
+            # fresh queryset and ignore the caller's prefetch cache, turning
+            # every list view into one submissions query per task (plus one per
+            # review row). List views prefetch this chain; see ProjectTasksView.
+            for row in obj.submissions.all()
         ]
 
     class Meta:

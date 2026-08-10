@@ -22,13 +22,15 @@ from accounts.teams import (
     is_team_manager,
     is_team_member,
     managed_teams,
+    ensure_project_assignee_eligible,
     remove_team_member,
     revoke_project_team,
+    set_project_working_team,
     user_teams,
 )
 from annotation.services import is_project_member
-from core.choices import AuditVerb, TeamRole, UserRole
-from projects.models import Project
+from core.choices import AuditVerb, MembershipSource, TeamRole, UserRole
+from projects.models import Project, ProjectMembership
 
 
 def make_user(username, role=UserRole.ANNOTATOR, institution=None):
@@ -435,3 +437,73 @@ class FixtureLoadingTests(TestCase):
     def test_superusers_still_default_to_manager(self):
         admin = User.objects.create_superuser("root", "a@b.c", "pw-for-tests-1")
         self.assertEqual(admin.profile.role, UserRole.MANAGER)
+
+
+class WorkingTeamAccessMirrorTests(TestCase):
+    """Team eligibility is mirrored into project access, so it must be revocable.
+
+    ``add_team_member`` materialises a ``ProjectMembership`` row for each of the
+    team's working projects, which is what ``is_project_member`` reads. Removing
+    the person from the team therefore has to remove those mirrored rows —
+    otherwise revocation withdraws their tasks but leaves them able to open the
+    project, its tasks and its hard cases forever. Access a manager granted by
+    hand must survive the same removal.
+    """
+
+    def setUp(self):
+        self.org = Institution.objects.create(name="Org M")
+        self.team = Team.objects.create(organization=self.org, name="Working")
+        self.manager = make_user("mgr-mirror", role=UserRole.MANAGER)
+        self.annotator = make_user("ann-mirror")
+        self.project = Project.objects.create(
+            title="Mirrored access", created_by=self.manager
+        )
+        set_project_working_team(self.project, self.team, actor=self.manager)
+
+    def _membership(self):
+        return ProjectMembership.objects.filter(
+            project=self.project, user=self.annotator
+        ).first()
+
+    def test_joining_the_team_grants_mirrored_project_access(self):
+        add_team_member(self.team, self.annotator, actor=self.manager)
+        row = self._membership()
+        self.assertIsNotNone(row, "joining a working team granted no project access")
+        self.assertEqual(row.source, MembershipSource.TEAM)
+        self.assertTrue(is_project_member(self.annotator, self.project))
+
+    def test_leaving_the_team_revokes_mirrored_project_access(self):
+        add_team_member(self.team, self.annotator, actor=self.manager)
+        self.assertTrue(is_project_member(self.annotator, self.project))
+
+        remove_team_member(self.team, self.annotator, actor=self.manager)
+        self.assertIsNone(
+            self._membership(),
+            "mirrored project access outlived the team membership that created it",
+        )
+        self.assertFalse(is_project_member(self.annotator, self.project))
+
+    def test_hand_granted_access_survives_leaving_the_team(self):
+        ensure_project_assignee_eligible(
+            self.project, self.annotator, actor=self.manager
+        )
+        row = self._membership()
+        self.assertEqual(
+            row.source,
+            MembershipSource.EXPLICIT,
+            "a deliberate grant was recorded as team-sourced and is revocable",
+        )
+
+        remove_team_member(self.team, self.annotator, actor=self.manager)
+        self.assertIsNotNone(
+            self._membership(), "a hand-granted membership was revoked by team removal"
+        )
+        self.assertTrue(is_project_member(self.annotator, self.project))
+
+    def test_mirroring_a_team_onto_a_project_does_not_downgrade_a_hand_grant(self):
+        ensure_project_assignee_eligible(
+            self.project, self.annotator, actor=self.manager
+        )
+        # Re-applying the working team must not rewrite existing provenance.
+        set_project_working_team(self.project, self.team, actor=self.manager)
+        self.assertEqual(self._membership().source, MembershipSource.EXPLICIT)

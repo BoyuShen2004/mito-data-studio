@@ -22,7 +22,7 @@ import struct
 import threading
 import zlib
 from collections import OrderedDict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -66,37 +66,76 @@ _label_max_cache: dict[str, int] = {}
 _cache_lock = threading.RLock()
 _write_locks_guard = threading.Lock()
 _write_locks: dict[str, threading.RLock] = {}
+# Which lock paths this thread already holds, and how deep. `flock` is owned by
+# the *open file description*, not the process, so a nested acquire that opened
+# the lock file a second time would block against its own outer lock forever —
+# a permanently wedged Gunicorn thread, not a caught error. The process-local
+# RLock does not save us: it happily re-enters and then deadlocks on `flock`.
+_held_locks = threading.local()
+
+try:  # pragma: no cover - Linux in supported deploys
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover
+    _fcntl = None
 
 
 @contextmanager
-def serialized_file_write(path: Path | str):
+def serialized_file_write(path: Path | str, *, shared: bool = False):
     """Serialize mutations of one working-volume artifact.
 
     Django row locks do not cover TIFF/JSON bytes and are ineffective between
     two endpoints that do not share a database transaction.  This combines a
-    process-local re-entrant lock with a sibling advisory lock file, so two
-    request threads or Gunicorn workers cannot concurrently rewrite a mask and
-    its lifecycle sidecar.  Callers use the working mask path as the common
-    key even when the bytes being changed are in the metadata sidecar.
+    process-local lock with a sibling advisory lock file, so two request
+    threads or Gunicorn workers cannot concurrently rewrite a mask and its
+    lifecycle sidecar.  Callers use the working mask path as the common key
+    even when the bytes being changed are in the metadata sidecar.
+
+    ``shared=True`` takes a read lock instead: any number of readers may hold
+    it at once, but never alongside a writer. Slice reads use it so that one
+    annotator scrubbing a volume cannot serialize every other reader of it.
+    Readers also skip the process-local mutex, which is a writers-only lane.
+
+    Re-entrant per thread: a nested acquire of a path this thread already holds
+    is a no-op rather than a self-deadlock. A nested acquire cannot *upgrade* a
+    shared hold to exclusive — flock upgrades are not atomic and two upgraders
+    deadlock — so callers that may write must take the exclusive lock first.
     """
     target = str(Path(path))
-    with _write_locks_guard:
-        local = _write_locks.setdefault(target, threading.RLock())
-    with local:
-        lock_path = Path(f"{target}.write.lock")
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("a+b") as handle:
-            try:
-                import fcntl
+    held = getattr(_held_locks, "paths", None)
+    if held is None:
+        held = _held_locks.paths = {}
 
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            except ImportError:  # pragma: no cover - Linux in supported deploys
-                fcntl = None
+    if held.get(target):
+        held[target] += 1
+        try:
+            yield
+        finally:
+            held[target] -= 1
+        return
+
+    lock_path = Path(f"{target}.write.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    # Writers serialize inside the process before competing across processes;
+    # readers rely on `flock`'s shared mode alone so they stay concurrent.
+    process_gate = nullcontext()
+    if not shared:
+        with _write_locks_guard:
+            process_gate = _write_locks.setdefault(target, threading.RLock())
+
+    with process_gate:
+        with lock_path.open("a+b") as handle:
+            if _fcntl is not None:
+                _fcntl.flock(
+                    handle.fileno(),
+                    _fcntl.LOCK_SH if shared else _fcntl.LOCK_EX,
+                )
+            held[target] = 1
             try:
                 yield
             finally:
-                if fcntl is not None:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                held[target] = 0
+                if _fcntl is not None:
+                    _fcntl.flock(handle.fileno(), _fcntl.LOCK_UN)
 
 
 class SliceIOError(Exception):

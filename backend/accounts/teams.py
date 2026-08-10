@@ -101,13 +101,27 @@ def add_team_member(team, user, *, role=TeamRole.MEMBER, actor=None) -> TeamMemb
 
 
 def _sync_working_project_access(team, user, *, actor=None) -> None:
-    """Mirror working-team eligibility into explicit project browse access."""
+    """Mirror working-team eligibility into explicit project browse access.
+
+    Marked as team-sourced so :func:`remove_team_member` can revoke exactly
+    these rows later. An existing hand-granted row keeps its own provenance —
+    ``ignore_conflicts`` leaves it alone rather than downgrading it.
+    """
+    from core.choices import MembershipSource
     from projects.models import ProjectMembership
 
-    for project in team.working_projects.all():
-        ProjectMembership.objects.get_or_create(
-            project=project, user=user, defaults={"added_by": actor}
-        )
+    ProjectMembership.objects.bulk_create(
+        [
+            ProjectMembership(
+                project=project,
+                user=user,
+                added_by=actor,
+                source=MembershipSource.TEAM,
+            )
+            for project in team.working_projects.all()
+        ],
+        ignore_conflicts=True,
+    )
 
 
 @transaction.atomic
@@ -118,6 +132,7 @@ def ensure_project_assignee_eligible(project, user, *, actor=None):
     the person is then both a team member (assignable) and an explicit project
     member (browse/Hard Cases). No third roster is introduced.
     """
+    from core.choices import MembershipSource
     from .models import Institution
     from projects.models import ProjectMembership
 
@@ -133,8 +148,13 @@ def ensure_project_assignee_eligible(project, user, *, actor=None):
         team = default_team_for(organization)
         set_project_working_team(project, team, actor=actor)
     membership = add_team_member(team, user, actor=actor)
-    access, _ = ProjectMembership.objects.get_or_create(
-        project=project, user=user, defaults={"added_by": actor}
+    # `add_team_member` already mirrored a team-sourced row for this project.
+    # This call *is* the deliberate grant, so upgrade provenance: the access
+    # must outlive the person's membership of the working team.
+    access, _ = ProjectMembership.objects.update_or_create(
+        project=project,
+        user=user,
+        defaults={"added_by": actor, "source": MembershipSource.EXPLICIT},
     )
     return membership, access
 
@@ -144,6 +164,9 @@ def remove_team_member(team, user, *, actor=None) -> bool:
     """Remove ``user`` from ``team``. Returns whether anything was removed."""
     from annotation.services import withdraw_project_assignments
 
+    from core.choices import MembershipSource
+    from projects.models import ProjectMembership
+
     for project in team.working_projects.all():
         withdraw_project_assignments(
             project,
@@ -151,6 +174,15 @@ def remove_team_member(team, user, *, actor=None) -> bool:
             only_annotator_ids=[user.id],
             reason="Removed from the project's working team",
         )
+    # Revoke the browse access the team mirror granted. Without this, losing
+    # team membership withdrew the person's tasks but left them able to open
+    # the project, its tasks and its hard cases indefinitely. Hand-granted
+    # rows are deliberately untouched.
+    ProjectMembership.objects.filter(
+        project__in=team.working_projects.all(),
+        user=user,
+        source=MembershipSource.TEAM,
+    ).delete()
     deleted, _ = TeamMembership.objects.filter(team=team, user=user).delete()
     if deleted:
         record_audit(
@@ -236,11 +268,17 @@ def set_project_working_team(project, team, *, actor=None) -> dict:
     project.working_team = team
     project.save(update_fields=["working_team"])
     if team is not None:
+        from core.choices import MembershipSource
         from projects.models import ProjectMembership
 
         ProjectMembership.objects.bulk_create(
             [
-                ProjectMembership(project=project, user_id=user_id, added_by=actor)
+                ProjectMembership(
+                    project=project,
+                    user_id=user_id,
+                    added_by=actor,
+                    source=MembershipSource.TEAM,
+                )
                 for user_id in team.memberships.values_list("user_id", flat=True)
             ],
             ignore_conflicts=True,

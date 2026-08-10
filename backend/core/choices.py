@@ -20,6 +20,19 @@ class TeamRole(models.TextChoices):
     MANAGER = "manager", "Team manager"
 
 
+class MembershipSource(models.TextChoices):
+    """Why a :class:`projects.models.ProjectMembership` row exists.
+
+    Working-team eligibility is mirrored into explicit membership rows so the
+    Access and assignment surfaces read one roster. Provenance is what makes
+    that reversible: removing someone from a team must revoke the rows the
+    mirror created without touching access a manager granted by hand.
+    """
+
+    EXPLICIT = "explicit", "Granted directly"
+    TEAM = "team", "Mirrored from the working team"
+
+
 class AuditVerb(models.TextChoices):
     """What happened, for the append-only audit log."""
 

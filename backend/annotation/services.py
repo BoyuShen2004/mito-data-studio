@@ -2321,33 +2321,64 @@ def _assert_labels_unverified(volume, label_ids) -> None:
         )
 
 
-@_serialized_volume_write
 def get_label_slice_ids(volume, axis: str, index: int) -> dict:
-    """Raw instance ids for one label slice, RLE-encoded for the editor."""
+    """Raw instance ids for one label slice, RLE-encoded for the editor.
+
+    Two-phase locking on purpose. Seeding/adopting the working copy rewrites
+    bytes and has to be exclusive, but that is first-touch only; the editor's
+    steady state is pure reads. Holding the exclusive lane for every read
+    serialized all label-slice traffic for a volume across every Gunicorn
+    worker, so scrub prefetch queued behind itself and two annotators on one
+    volume blocked each other.
+    """
     import numpy as np
 
     from .label_paths import working_label_rel_path
-    from .visualization.slice_io import AXES, _open_volume, encode_label_rle, resolve_path
+    from .visualization.slice_io import (
+        AXES,
+        SliceIOError,
+        _open_volume,
+        encode_label_rle,
+        resolve_path,
+        serialized_file_write,
+    )
 
     if not volume.image_location:
         raise ValueError("Volume has no image.")
     image = _open_volume(resolve_path(volume.image_location))
-    mm, _ = _writable_label(volume, image.shape)
-    axis_i = AXES[axis]
-    n = mm.shape[axis_i]
-    idx = max(0, min(int(index), n - 1))
-    if axis == "z":
-        sl = np.asarray(mm[idx])
-    elif axis == "y":
-        sl = np.asarray(mm[:, idx, :])
-    else:
-        sl = np.asarray(mm[:, :, idx])
     owned_path = resolve_path(working_label_rel_path(volume))
-    return {
-        "shape": list(sl.shape),
-        "runs": encode_label_rle(sl),
-        "revision": _working_label_revision(owned_path),
-    }
+
+    def _encode(mm) -> dict:
+        axis_i = AXES[axis]
+        n = mm.shape[axis_i]
+        idx = max(0, min(int(index), n - 1))
+        # Deliberately a view, not `_read_axis_slice`'s copy: this plane can be
+        # 16 MB on a 2048² volume and `encode_label_rle` only reads it.
+        if axis == "z":
+            sl = np.asarray(mm[idx])
+        elif axis == "y":
+            sl = np.asarray(mm[:, idx, :])
+        else:
+            sl = np.asarray(mm[:, :, idx])
+        return {
+            "shape": list(sl.shape),
+            "runs": encode_label_rle(sl),
+            "revision": _working_label_revision(owned_path),
+        }
+
+    if owned_path.exists():
+        try:
+            with serialized_file_write(owned_path, shared=True):
+                return _encode(_open_volume(owned_path))
+        except (SliceIOError, OSError, ValueError):
+            # Corrupt, wrong-shaped or non-memmapable working copy. Fall
+            # through to the exclusive lane, where `_writable_label` rebuilds
+            # it (salvaging voxels when it can) exactly as it always has.
+            pass
+
+    with serialized_file_write(owned_path):
+        mm, _ = _writable_label(volume, image.shape)
+        return _encode(mm)
 
 
 class LabelWriteConflict(ValueError):

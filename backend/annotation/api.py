@@ -82,6 +82,19 @@ from .services import (
 User = get_user_model()
 
 
+# AnnotationTaskSerializer.review_history walks submissions -> reviews ->
+# reviewer for every task it renders. Without this chain a list view costs one
+# submissions query per task plus one per review row; with it, three queries
+# total regardless of page size. Any view using that serializer wants both
+# tuples applied.
+TASK_SELECT_RELATED = ("volume", "volume__dataset", "project", "assigned_to")
+TASK_PREFETCH_RELATED = (
+    "submissions__annotator",
+    "submissions__supersedes",
+    "submissions__reviews__reviewer",
+)
+
+
 class ProjectTasksView(generics.ListAPIView):
     """List every task under a project. Managers only."""
 
@@ -89,9 +102,11 @@ class ProjectTasksView(generics.ListAPIView):
     permission_classes = [IsManager]
 
     def get_queryset(self):
-        qs = AnnotationTask.objects.filter(
-            project_id=self.kwargs["project_id"]
-        ).select_related("volume", "volume__dataset", "project", "assigned_to")
+        qs = (
+            AnnotationTask.objects.filter(project_id=self.kwargs["project_id"])
+            .select_related(*TASK_SELECT_RELATED)
+            .prefetch_related(*TASK_PREFETCH_RELATED)
+        )
         status_param = self.request.query_params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
@@ -106,8 +121,8 @@ class TaskDetailView(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         qs = AnnotationTask.objects.select_related(
-            "volume", "volume__dataset", "project", "assigned_to"
-        )
+            *TASK_SELECT_RELATED
+        ).prefetch_related(*TASK_PREFETCH_RELATED)
         if is_manager(self.request.user):
             return qs
         return qs.filter(assigned_to=self.request.user)
@@ -365,7 +380,8 @@ class MyTasksView(generics.ListAPIView):
             AnnotationTask.objects.filter(
                 assigned_to=self.request.user, status__in=active
             )
-            .select_related("volume", "volume__dataset", "project")
+            .select_related(*TASK_SELECT_RELATED)
+            .prefetch_related(*TASK_PREFETCH_RELATED)
         )
 
 
