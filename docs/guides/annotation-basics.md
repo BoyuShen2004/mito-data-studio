@@ -23,6 +23,8 @@ pending edits on the current axis, the editor asks for confirmation.
 **Active** is the positive instance ID used by paint and several tools. Select
 an existing label on the canvas, enter an ID, or choose **New**. Labels can be
 hidden, soloed, verified, and pinned for 3D without changing their voxels.
+Verified is also an edit lock: choose **Unverify** before changing that label's
+shape. Hiding verified labels cannot make them paint-through targets.
 
 **Select** on the canvas behaves exactly like clicking a row in the Labels
 panel: it makes the label Active, and — while the panel is scoped to **All** —

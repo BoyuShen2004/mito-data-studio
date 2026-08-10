@@ -49,8 +49,9 @@ def refresh_region_mask_coverage(volume, *, save: bool = True) -> float | None:
 # server would re-read the mask every time. So it is computed exactly once per
 # (file, mtime) — in a single sequential slab pass that fills all three axes at
 # once, the same bounded-memory loop `calculate_region_mask_coverage` uses — and
-# memoized for the process. The mtime in the key is what makes a replaced mask
-# recompute instead of serving the previous file's answer.
+# memoized for the process. Nanosecond mtime, size, and inode in the key make a
+# replaced mask recompute instead of serving the previous file's answer, even
+# when two rebuilds happen inside a coarse timestamp interval.
 
 MAX_CACHED_REGION_INDEXES = 8
 
@@ -116,7 +117,11 @@ def region_nonempty_indices(volume, axis: str) -> list[int]:
     if coverage is not None and float(coverage) == 0.0:
         return []
     path = resolve_path(location)
-    key = (str(path), path.stat().st_mtime if path.exists() else 0)
+    if path.exists():
+        stat = path.stat()
+        key = (str(path), stat.st_mtime_ns, stat.st_size, stat.st_ino)
+    else:
+        key = (str(path), 0, 0, 0)
     cached = _lookup(key)
     if cached is not None:
         return list(cached[axis])

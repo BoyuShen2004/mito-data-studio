@@ -109,6 +109,11 @@ export default function HardCaseDetailPage() {
             {hardCase.created_by_username || "—"} ·{" "}
             {new Date(hardCase.created_at).toLocaleDateString()}
           </span>
+          {hardCase.note && (
+            <span className="hard-case-detail-note" title={hardCase.note}>
+              Note: {hardCase.note}
+            </span>
+          )}
           <span className="spacer" />
           {notice && <span className="error">{notice}</span>}
           <div className="editor-actions">

@@ -29,6 +29,36 @@ from .models import (
 )
 
 
+def _serialized_volume_write(function):
+    """Keep mask and lifecycle mutations for one volume in one write lane."""
+    from functools import wraps
+
+    @wraps(function)
+    def guarded(volume, *args, **kwargs):
+        from .label_paths import working_label_rel_path
+        from .visualization.slice_io import resolve_path, serialized_file_write
+
+        with serialized_file_write(resolve_path(working_label_rel_path(volume))):
+            return function(volume, *args, **kwargs)
+
+    return guarded
+
+
+def _serialized_task_volume_write(function):
+    """Task-shaped counterpart to :func:`_serialized_volume_write`."""
+    from functools import wraps
+
+    @wraps(function)
+    def guarded(task, *args, **kwargs):
+        from .label_paths import working_label_rel_path
+        from .visualization.slice_io import resolve_path, serialized_file_write
+
+        with serialized_file_write(resolve_path(working_label_rel_path(task.volume))):
+            return function(task, *args, **kwargs)
+
+    return guarded
+
+
 # --- Assignment ------------------------------------------------------------
 
 def assign_tasks_rule_based(project=None) -> dict:
@@ -1281,6 +1311,12 @@ def _save_label_volume(volume, label_mask) -> str:
     path = resolve_path(rel)
     from .visualization import slice_io
 
+    # Whole-volume tools must obey the same lifecycle lock as a brush Save.
+    # Check the existing mmap in bounded z slabs before replacing any bytes.
+    if path.exists():
+        existing = slice_io._open_volume(path)
+        _assert_verified_volume_unchanged(volume, existing, label_mask)
+
     # Drop any open writable memmap *before* replacing the file on disk —
     # otherwise Windows/NFS can keep a stale handle, and a crash mid-imwrite
     # has left us with a non-memmapable TIFF (see open_label_volume_writable).
@@ -1640,6 +1676,7 @@ def track_task_batch(
         raise ValueError("parent_id must be a positive label id")
     if len(set(parent_ids)) != len(parent_ids):
         raise ValueError("Each parent_id may appear only once per batch")
+    _assert_labels_unverified(volume, parent_ids)
 
     load_started = time.perf_counter()
     image = np.asarray(_open_volume(resolve_path(volume.image_location)))
@@ -1799,6 +1836,7 @@ def plan_track_task_batch(
         raise ValueError("parent_id must be a positive label id")
     if len(set(parent_ids)) != len(parent_ids):
         raise ValueError("Each parent_id may appear only once per batch")
+    _assert_labels_unverified(volume, parent_ids)
 
     ranges = []
     for group in groups:
@@ -1887,6 +1925,7 @@ def plan_track_task_batch(
     }
 
 
+@_serialized_task_volume_write
 def review_tracking_preview(task: AnnotationTask, action: str) -> dict:
     """Confirm a pending Track result or reject it and restore its snapshot."""
     import numpy as np
@@ -1945,6 +1984,7 @@ def review_tracking_preview(task: AnnotationTask, action: str) -> dict:
     }
 
 
+@_serialized_task_volume_write
 def track_task_fork(
     task: AnnotationTask,
     seeds_by_z,
@@ -2049,17 +2089,19 @@ def _adopt_legacy_working_copy(volume) -> None:
     from .visualization.slice_io import resolve_path
 
     new_path = resolve_path(working_label_rel_path(volume))
-    if new_path.exists():
-        return
     legacy_path = resolve_path(legacy_working_label_rel_path(volume))
-    if not legacy_path.exists():
-        return
     try:
-        new_path.parent.mkdir(parents=True, exist_ok=True)
-        legacy_path.replace(new_path)
+        # Mask and metadata migrations are intentionally independent.  An
+        # earlier release could create the new mask before moving its legacy
+        # sidecar; returning as soon as the mask existed made every verified
+        # label look Proposed after the next reopen even though the durable
+        # metadata was still present under the old name.
+        if not new_path.exists() and legacy_path.exists():
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            legacy_path.replace(new_path)
         legacy_meta = resolve_path(legacy_working_label_metadata_rel_path(volume))
-        if legacy_meta.exists():
-            new_meta = resolve_path(working_label_metadata_rel_path(volume))
+        new_meta = resolve_path(working_label_metadata_rel_path(volume))
+        if legacy_meta.exists() and not new_meta.exists():
             new_meta.parent.mkdir(parents=True, exist_ok=True)
             legacy_meta.replace(new_meta)
     except OSError:
@@ -2173,9 +2215,20 @@ def _load_label_metadata_store(volume):
     from .label_paths import working_label_metadata_rel_path
     from .visualization.slice_io import resolve_path
 
+    # The working mask can already use the current name while its sidecar is
+    # still at the legacy path.  Adopt both independently before loading so a
+    # reopen never silently drops lifecycle state.
+    _adopt_legacy_working_copy(volume)
     path = resolve_path(working_label_metadata_rel_path(volume))
     store = LabelMetadataStore()
-    store.load(str(path))
+    loaded = store.load(str(path))
+    backup = path.with_name(f"{path.name}.bak")
+    if not loaded and (path.exists() or backup.exists()):
+        raise ValueError(
+            "Label lifecycle metadata is unreadable in both its primary and "
+            "backup files. No lifecycle changes were written; restore the "
+            "sidecar before continuing."
+        )
     return store, str(path)
 
 
@@ -2195,10 +2248,85 @@ def _save_label_metadata_store(store, path_str: str) -> None:
     store.save(path_str)
 
 
+class VerifiedLabelConflict(ValueError):
+    """A raster mutation attempted to change a label still marked Verified."""
+
+
+def _verified_label_ids(volume) -> set[int]:
+    store, _path = _load_label_metadata_store(volume)
+    return store.verified_ids()
+
+
+def _assert_verified_labels_unchanged(
+    volume, before, after, *, protected: set[int] | None = None
+) -> None:
+    """Refuse any geometry change involving a Verified instance.
+
+    Verification is an edit lock, not merely a display badge. Both removing
+    existing verified voxels and growing a verified id into new voxels require
+    an explicit Unverify first.
+    """
+    import numpy as np
+
+    protected = _verified_label_ids(volume) if protected is None else protected
+    if not protected:
+        return
+    old = np.asarray(before)
+    new = np.asarray(after)
+    if old.shape != new.shape:
+        raise ValueError(f"Label shape changed from {old.shape} to {new.shape}.")
+    changed = old != new
+    if not changed.any():
+        return
+    touched = {
+        int(value)
+        for value in np.concatenate((old[changed], new[changed]))
+        if int(value) > 0
+    }
+    blocked = sorted(touched & protected)
+    if blocked:
+        labels = ", ".join(str(value) for value in blocked[:8])
+        suffix = "…" if len(blocked) > 8 else ""
+        raise VerifiedLabelConflict(
+            f"Verified label(s) {labels}{suffix} are locked. Unverify them "
+            "before changing their voxels."
+        )
+
+
+def _assert_verified_volume_unchanged(volume, before, after) -> None:
+    """Bounded-memory whole-volume form of the Verified edit lock."""
+    if tuple(before.shape) != tuple(after.shape):
+        raise ValueError(
+            f"Label shape changed from {tuple(before.shape)} to {tuple(after.shape)}."
+        )
+    protected = _verified_label_ids(volume)
+    if not protected:
+        return
+    for start in range(0, int(before.shape[0]), 8):
+        _assert_verified_labels_unchanged(
+            volume,
+            before[start : start + 8],
+            after[start : start + 8],
+            protected=protected,
+        )
+
+
+def _assert_labels_unverified(volume, label_ids) -> None:
+    blocked = sorted(_verified_label_ids(volume) & {int(value) for value in label_ids})
+    if blocked:
+        labels = ", ".join(str(value) for value in blocked)
+        raise VerifiedLabelConflict(
+            f"Verified label(s) {labels} are locked. Unverify them before "
+            "running this tool."
+        )
+
+
+@_serialized_volume_write
 def get_label_slice_ids(volume, axis: str, index: int) -> dict:
     """Raw instance ids for one label slice, RLE-encoded for the editor."""
     import numpy as np
 
+    from .label_paths import working_label_rel_path
     from .visualization.slice_io import AXES, _open_volume, encode_label_rle, resolve_path
 
     if not volume.image_location:
@@ -2214,7 +2342,21 @@ def get_label_slice_ids(volume, axis: str, index: int) -> dict:
         sl = np.asarray(mm[:, idx, :])
     else:
         sl = np.asarray(mm[:, :, idx])
-    return {"shape": list(sl.shape), "runs": encode_label_rle(sl)}
+    owned_path = resolve_path(working_label_rel_path(volume))
+    return {
+        "shape": list(sl.shape),
+        "runs": encode_label_rle(sl),
+        "revision": _working_label_revision(owned_path),
+    }
+
+
+class LabelWriteConflict(ValueError):
+    """The working copy changed after this client loaded its baseline."""
+
+
+def _working_label_revision(path) -> str:
+    stat = path.stat()
+    return f"{stat.st_mtime_ns}:{stat.st_size}:{stat.st_ino}"
 
 
 def _visible_label_path(volume):
@@ -2264,9 +2406,10 @@ def get_label_slice_ids_readonly(volume, axis: str, index: int) -> dict:
     return {"shape": list(slice_array.shape), "runs": encode_label_rle(slice_array)}
 
 
+@_serialized_volume_write
 def set_label_slice_ids(
     volume, axis: str, index: int, shape, runs, *, origin: str = "manual",
-    roi_only: bool = False,
+    roi_only: bool = False, expected_revision: str = "",
 ) -> int:
     """Write one label slice's raw instance ids (from the editor) and persist.
 
@@ -2291,10 +2434,9 @@ def set_label_slice_ids(
     (a human just drew it), a brand-new AI id starts PROPOSED with a
     single-slice snapshot recorded (so it can be reverted) — matching
     Cellable's ``get_or_create``/``_registerAutoSegmentationLabels``. An id
-    that already has tracked state is always marked EDITED on further
-    changes, regardless of ``origin`` or its prior state (including
-    VERIFIED — Cellable's ``mark_edited`` re-edits a verified label back to
-    EDITED too).
+    that already has tracked state is marked EDITED on further changes,
+    regardless of ``origin``. VERIFIED is the exception: its geometry is
+    locked and this write is rejected until the user explicitly Unverifies.
     """
     import numpy as np
 
@@ -2322,6 +2464,11 @@ def set_label_slice_ids(
     sl = decode_label_rle(runs, tuple(shape)).astype(mm.dtype)
 
     owned_path = resolve_path(owned_rel)
+    if expected_revision and expected_revision != _working_label_revision(owned_path):
+        raise LabelWriteConflict(
+            "This working volume changed in another tab or session. Reload the "
+            "layer before saving so newer annotation work is not overwritten."
+        )
     try:
         mtime_before = owned_path.stat().st_mtime
     except OSError:
@@ -2332,6 +2479,7 @@ def set_label_slice_ids(
         from .region_mask import protect_slice_outside_roi
 
         sl = protect_slice_outside_roi(volume, axis, idx, old_sl, sl)
+    _assert_verified_labels_unchanged(volume, old_sl, sl)
     _write_axis_slice(mm, axis, idx, sl)
     mm.flush()
 
@@ -2547,6 +2695,7 @@ def warm_ai_embedding(task, axis, index, *, point=None) -> bool:
 
 # --- Cellable-ported 3D watershed (Seeds tool) ------------------------------
 
+@_serialized_task_volume_write
 def run_watershed_task(
     task, target_label: int, seeds_zyx, *, padding: int = 5,
     roi_only: bool = False,
@@ -2605,6 +2754,7 @@ def run_watershed_task(
     return result
 
 
+@_serialized_task_volume_write
 def run_split_components_task(
     task, target_label: int, *, size_threshold: int = 100,
     roi_only: bool = False,
@@ -2806,11 +2956,13 @@ def _scan_label_bbox(reader: _LazyPlanLabels, target_label: int, padding: int = 
     z0, y0, x0 = reader.shape
     z1 = y1 = x1 = -1
     max_label = 0
+    used_labels: set[int] = set()
     target = int(target_label)
     for z in range(reader.shape[0]):
         plane = reader.read_axis("z", z)
         if plane.size:
             max_label = max(max_label, int(plane.max()))
+            used_labels.update(int(value) for value in np.unique(plane) if value > 0)
         ys, xs = np.nonzero(plane == target)
         if ys.size == 0:
             continue
@@ -2821,13 +2973,13 @@ def _scan_label_bbox(reader: _LazyPlanLabels, target_label: int, padding: int = 
         x0 = min(x0, int(xs.min()))
         x1 = max(x1, int(xs.max()))
     if z1 < 0:
-        return None, max_label
+        return None, max_label, used_labels
     p = max(0, int(padding))
     return (
         max(0, z0 - p), min(reader.shape[0], z1 + p + 1),
         max(0, y0 - p), min(reader.shape[1], y1 + p + 1),
         max(0, x0 - p), min(reader.shape[2], x1 + p + 1),
-    ), max_label
+    ), max_label, used_labels
 
 
 def _load_label_crop(reader: _LazyPlanLabels, bbox):
@@ -2839,14 +2991,47 @@ def _load_label_crop(reader: _LazyPlanLabels, bbox):
     voxels = int(np.prod(crop_shape, dtype=np.int64))
     limit = int(os.environ.get("MITO_TOOL_PLAN_MAX_VOXELS", "32000000"))
     if voxels > limit:
+        dims = "×".join(str(value) for value in crop_shape)
         raise ValueError(
-            f"Target crop has {voxels:,} voxels; bounded tool limit is "
-            f"{limit:,}. Narrow the target/ROI before retrying."
+            f"Target label spans {dims} (Z×Y×X), about {voxels:,} voxels; "
+            f"the bounded tool limit is {limit:,}. Place seeds on a smaller "
+            "object or narrow the crop/ROI before retrying."
         )
     crop = np.empty(crop_shape, dtype=np.int32)
     for z in range(z1, z2):
         crop[z - z1] = reader.read_axis("z", z)[y1:y2, x1:x2]
     return crop
+
+
+def _seed_local_bbox(reader: _LazyPlanLabels, target_label: int, seeds_zyx, padding: int):
+    """Bound an oversized watershed plan around its seeds, not a reused id.
+
+    A label id may legitimately occur in distant disconnected objects.  Its
+    global AABB can therefore be enormous while the seeded object is small.
+    Watershed only needs the seeded neighbourhood: keep a padded box around
+    the seeds and validate that every seed actually lands on the requested
+    target, preventing a stale/wrong target id from producing a misleading
+    crop or relabelling unrelated voxels.
+    """
+    if not seeds_zyx:
+        raise ValueError("Place at least one seed on the target label.")
+    clean = []
+    for raw_z, raw_y, raw_x in seeds_zyx:
+        z, y, x = int(raw_z), int(raw_y), int(raw_x)
+        if not (0 <= z < reader.shape[0] and 0 <= y < reader.shape[1] and 0 <= x < reader.shape[2]):
+            raise ValueError(f"Seed ({z}, {y}, {x}) is outside the label volume.")
+        if int(reader.read_axis("z", z)[y, x]) != int(target_label):
+            raise ValueError(
+                f"Seed ({z}, {y}, {x}) is not on target label {target_label}."
+            )
+        clean.append((z, y, x))
+    p = max(1, int(padding))
+    zs, ys, xs = zip(*clean)
+    return (
+        max(0, min(zs) - p), min(reader.shape[0], max(zs) + p + 1),
+        max(0, min(ys) - p), min(reader.shape[1], max(ys) + p + 1),
+        max(0, min(xs) - p), min(reader.shape[2], max(xs) + p + 1),
+    )
 
 
 def _planned_crop_slices(reader: _LazyPlanLabels, axis: str, bbox, crop):
@@ -2876,12 +3061,28 @@ def plan_watershed_task(
     from .cellable_port.watershed import WatershedError, run_watershed_3d
 
     reader = _LazyPlanLabels(task, axis, pending_slices)
+    _assert_labels_unverified(task.volume, [target_label])
     try:
         try:
-            bbox, max_label = _scan_label_bbox(reader, target_label, padding=padding)
+            bbox, max_label, used_labels = _scan_label_bbox(
+                reader, target_label, padding=padding
+            )
             if bbox is None:
                 raise ValueError(f"Label {target_label} not found in the volume.")
-            labels = _load_label_crop(reader, bbox)
+            try:
+                labels = _load_label_crop(reader, bbox)
+            except ValueError as exc:
+                # A visually small object can share its id with a distant
+                # component, making only the global AABB unsafe.  Restrict
+                # watershed to the explicitly seeded neighbourhood; the split
+                # tool (which has no seeds) correctly keeps refusing the same
+                # oversized global crop.
+                if "bounded tool limit" not in str(exc):
+                    raise
+                bbox = _seed_local_bbox(
+                    reader, target_label, seeds_zyx, padding=padding
+                )
+                labels = _load_label_crop(reader, bbox)
             z1, _z2, y1, _y2, x1, _x2 = bbox
             local_seeds = [(z - z1, y - y1, x - x1) for z, y, x in seeds_zyx]
             result = run_watershed_3d(
@@ -2890,6 +3091,7 @@ def plan_watershed_task(
                 local_seeds,
                 padding=padding,
                 max_existing_label=max_label,
+                existing_label_ids=used_labels,
             )
         except WatershedError as exc:
             raise ValueError(str(exc)) from exc
@@ -2913,9 +3115,10 @@ def plan_split_components_task(
     from .cellable_port.split_components import SplitComponentsError, run_split_components_3d
 
     reader = _LazyPlanLabels(task, axis, pending_slices)
+    _assert_labels_unverified(task.volume, [target_label])
     try:
         try:
-            bbox, max_label = _scan_label_bbox(reader, target_label)
+            bbox, max_label, _used_labels = _scan_label_bbox(reader, target_label)
             if bbox is None:
                 raise ValueError(f"Label {target_label} not found in the volume.")
             labels = _load_label_crop(reader, bbox)
@@ -2950,6 +3153,7 @@ def plan_merge_labels_task(
         raise ValueError("Both label ids must be positive integers.")
     if a == b:
         raise ValueError("The two label ids must be different.")
+    _assert_labels_unverified(task.volume, [a, b])
     kept, removed = min(a, b), max(a, b)
     reader = _LazyPlanLabels(task, axis, pending_slices)
     slices = []
@@ -2991,6 +3195,7 @@ def plan_delete_label_task(
     label_id = int(label_id)
     if label_id < 1:
         raise ValueError("label_id must be positive.")
+    _assert_labels_unverified(task.volume, [label_id])
     reader = _LazyPlanLabels(task, axis, pending_slices)
     slices = []
     voxels = 0
@@ -3069,6 +3274,7 @@ def plan_task_interpolation(
     from .visualization.slice_io import encode_label_rle
 
     volume = task.volume
+    _assert_labels_unverified(volume, [label_id])
     _mm, _rel, lo, hi, disk_first, disk_last = _interpolation_endpoints(
         volume, axis, first_index, last_index
     )
@@ -3111,6 +3317,7 @@ def plan_task_interpolation(
     }
 
 
+@_serialized_task_volume_write
 def apply_task_interpolation(
     task, actor, *, axis: str, first_index: int, last_index: int, label_id: int,
     overwrite_mode: str | None = None, idempotency_key: str = "",
@@ -3135,6 +3342,7 @@ def apply_task_interpolation(
     from .visualization.slice_io import resolve_path
 
     volume = task.volume
+    _assert_labels_unverified(volume, [label_id])
     mm, owned_rel, lo, hi, first, last = _interpolation_endpoints(
         volume, axis, first_index, last_index
     )
@@ -3143,6 +3351,25 @@ def apply_task_interpolation(
         first_labels=first, last_labels=last, label_id=int(label_id),
         depth=hi - lo, spacing=_plane_spacing(volume, axis), overwrite_mode=mode,
     )
+    protected_ids = _verified_label_ids(volume)
+
+    # Validate the complete operation before its first filesystem write, so a
+    # conflict on a later plane cannot leave an earlier plane partially saved.
+    for offset, mask in plan.masks.items():
+        current = _read_axis_slice(mm, axis, lo + int(offset))
+        write_mask = mask
+        if roi_only:
+            from .region_mask import region_mask_slice
+
+            write_mask = mask & region_mask_slice(
+                volume, axis, lo + int(offset), mask.shape
+            )
+        updated = core.apply_to_slice(
+            current, write_mask, label_id=int(plan.label_id), overwrite_mode=mode
+        )
+        _assert_verified_labels_unchanged(
+            volume, current, updated, protected=protected_ids
+        )
 
     owned_path = resolve_path(owned_rel)
     written: list[int] = []
@@ -3218,6 +3445,7 @@ def _task_flood_plan(
     if axis not in AXES:
         raise ToolError(f"Unknown axis {axis!r}.", reason="bad_axis")
     volume = task.volume
+    _assert_labels_unverified(volume, [label_id])
     if not volume.image_location:
         raise ToolError("Volume has no image.", reason="missing_image")
     image = _open_volume(resolve_path(volume.image_location))
@@ -3292,6 +3520,7 @@ def plan_task_flood_fill(task, **kwargs) -> dict:
     }
 
 
+@_serialized_task_volume_write
 def apply_task_flood_fill(task, actor, *, idempotency_key: str = "", **kwargs) -> dict:
     """Apply a planned fill and append exactly one AnnotationOperation."""
     import numpy as np
@@ -3307,6 +3536,15 @@ def apply_task_flood_fill(task, actor, *, idempotency_key: str = "", **kwargs) -
     owned_path = resolve_path(owned_rel)
     written = []
     highest = 0
+    protected_ids = _verified_label_ids(task.volume)
+
+    for absolute_index, absolute_mask in slices:
+        current = np.asarray(_read_axis_slice(mm, axis, absolute_index)).copy()
+        updated = current.copy()
+        updated[absolute_mask] = int(plan.label_id)
+        _assert_verified_labels_unchanged(
+            task.volume, current, updated, protected=protected_ids
+        )
 
     def write_slice(offset, mask):
         nonlocal highest
@@ -3342,6 +3580,7 @@ def apply_task_flood_fill(task, actor, *, idempotency_key: str = "", **kwargs) -
     }
 
 
+@_serialized_task_volume_write
 def run_merge_labels_task(
     task, label_a: int, label_b: int, *, roi_only: bool = False
 ) -> dict:
@@ -3437,6 +3676,7 @@ def get_labels_summary(volume, *, readonly: bool = False) -> dict:
     return {"labels": rows, "stats": stats}
 
 
+@_serialized_task_volume_write
 def reset_working_labels_to_registered(task: AnnotationTask) -> dict:
     """Throw away this task's working annotation and re-seed it from the
     volume's *registered* label mask.
@@ -3517,8 +3757,10 @@ def reset_working_labels_to_registered(task: AnnotationTask) -> dict:
 
     sidecar = resolve_path(working_label_metadata_rel_path(volume))
     assert_owned(sidecar, what="label metadata sidecar")
-    if sidecar.exists():
-        os.remove(sidecar)
+    for lifecycle_path in (sidecar, sidecar.with_name(f"{sidecar.name}.bak")):
+        assert_owned(lifecycle_path, what="label metadata sidecar")
+        if lifecycle_path.exists():
+            os.remove(lifecycle_path)
 
     working_path.parent.mkdir(parents=True, exist_ok=True)
     _seed_working_label(volume, working_path, shape, source)
@@ -3557,6 +3799,7 @@ def get_region_label_ids(volume, *, readonly: bool = False) -> dict:
     return {"has_region": True, "ids": sorted(ids)}
 
 
+@_serialized_volume_write
 def set_label_lifecycle_action(volume, label_id: int, action: str) -> dict:
     """Apply a Cellable-parity lifecycle action to one label: ``"verify"``,
     ``"unverify"`` (VERIFIED -> EDITED), ``"revert"`` (restore the single-
@@ -3579,12 +3822,27 @@ def set_label_lifecycle_action(volume, label_id: int, action: str) -> dict:
     label_int = int(label_id)
 
     if action == "verify":
+        from .cellable_port.labels_3d import label_summary
+
+        path = _working_label_path_for_read(volume)
+        present = path is not None and any(
+            int(row["id"]) == label_int for row in label_summary(path)["labels"]
+        )
+        if not present:
+            raise ValueError(
+                f"Label {label_int} is not present in the saved working volume. "
+                "Save it before verifying."
+            )
         meta = store.verify(label_int)
     elif action == "unverify":
         meta = store.unverify(label_int)
         if meta is None:
             raise ValueError(f"Label {label_int} is not currently verified.")
     elif action in ("revert", "reject"):
+        # These actions mutate raster geometry too. Keep the direct lifecycle
+        # endpoint consistent with brush and tool writes: a verified label can
+        # only be reverted or rejected after an explicit Unverify.
+        _assert_labels_unverified(volume, [label_int])
         if action == "revert" and not store.can_revert(label_int):
             raise ValueError(f"Label {label_int} has no proposed snapshot to revert to.")
         if not volume.image_location:
@@ -3725,7 +3983,9 @@ def _render_voxel_size(volume) -> tuple[float, float, float]:
 #     (``can_annotate_task``) — otherwise "Annotate" would be a button that
 #     403s, since a case's edits are ordinary edits to the task's working copy.
 
-def create_hard_case(*, task: AnnotationTask, user, label_id: int) -> HardCase:
+def create_hard_case(
+    *, task: AnnotationTask, user, label_id: int, note: str = ""
+) -> HardCase:
     """Record ``label_id`` on ``task`` as a hard case for the whole project.
 
     Denormalizes the task's project/volume onto the row so the project page and
@@ -3740,6 +4000,7 @@ def create_hard_case(*, task: AnnotationTask, user, label_id: int) -> HardCase:
         project=task.project,
         volume=task.volume,
         label_id=int(label_id),
+        note=(note or "").strip(),
         created_by=user,
     )
 

@@ -25,6 +25,10 @@ The case belongs to the project and captures enough view context to return to
 that label. Project members can browse it in **Hard Cases**; its creator and
 managers can work on it according to current permissions.
 
+The confirmation includes an optional **Why is this hard?** note (up to 1,000
+characters). Empty is allowed. A note is stored with the case and appears in
+the Hard Cases list, member detail view, and public read-only share view.
+
 Opening a hard case — from **Hard Cases** or from a public hard-case link —
 lands on a layer where the recorded label is actually painted, with that label
 soloed on the canvas and shown in the 3D view. The recipient sees the label

@@ -64,9 +64,10 @@ describe("loadRegionIndex", () => {
   });
 
   it("keeps each axis and each volume apart", async () => {
-    const fetcher = vi.fn(async (_volumeId: number, axis: string) =>
-      index(axis === "z" ? [1] : [9]),
-    );
+    const fetcher = vi.fn(async (_volumeId: number, axis: "z" | "y" | "x") => ({
+      ...index(axis === "z" ? [1] : [9]),
+      axis,
+    }));
 
     expect(await loadRegionIndex(7, "z", fetcher)).toEqual([1]);
     expect(await loadRegionIndex(7, "y", fetcher)).toEqual([9]);
@@ -97,5 +98,18 @@ describe("loadRegionIndex", () => {
 
     await expect(loadRegionIndex(7, "z", fetcher)).rejects.toThrow("boom");
     expect(await loadRegionIndex(7, "z", fetcher)).toEqual([6]);
+  });
+
+  it("rejects an axis-raced response instead of using another axis", async () => {
+    const fetcher = vi.fn(async () => ({ ...index([9]), axis: "y" as const }));
+    await expect(loadRegionIndex(7, "z", fetcher)).rejects.toThrow(/expected z/);
+  });
+
+  it("drops duplicate and out-of-range server indices", async () => {
+    const fetcher = vi.fn(async () => ({
+      ...index([4, -1, 4, 99, 2]),
+      axis_length: 8,
+    }));
+    expect(await loadRegionIndex(7, "z", fetcher)).toEqual([2, 4]);
   });
 });

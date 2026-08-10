@@ -15,6 +15,7 @@ image in its own tempdir, so nothing here can touch real microscopy data.
 from __future__ import annotations
 
 import tempfile
+import threading
 from unittest import mock
 from pathlib import Path
 
@@ -189,9 +190,98 @@ class SaveRejectsAnOutOfRangeSlice(WholeVolumeOpsApiTestCase):
         self.assertEqual(resp.status_code, 200, resp.content[:300])
         self.assertIn(21, set(int(v) for v in np.unique(after[SHAPE[0] - 1])))
 
+    def test_stale_tab_gets_a_conflict_instead_of_overwriting_newer_work(self):
+        from annotation.services import set_label_slice_ids
+        from annotation.visualization.slice_io import encode_label_rle
+
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(self._two_blobs())
+            stale = self.client.get(
+                f"/api/tasks/{self.task.pk}/label-ids/?axis=z&index=0"
+            ).json()
+            newer = np.full(SHAPE[1:], 23, dtype=np.int32)
+            set_label_slice_ids(
+                self.volume, "z", 0, list(newer.shape), encode_label_rle(newer)
+            )
+            response = self.client.put(
+                f"/api/tasks/{self.task.pk}/label-ids/",
+                {
+                    "axis": "z",
+                    "index": 0,
+                    "shape": list(newer.shape),
+                    "runs": [[99, int(newer.size)]],
+                    "expected_revision": stale["revision"],
+                },
+                content_type="application/json",
+            )
+            after = self._read_working()
+
+        self.assertEqual(response.status_code, 409, response.content[:300])
+        self.assertEqual(response.json()["reason"], "write_conflict")
+        self.assertTrue(np.all(after[0] == 23))
+
+    def test_concurrent_slice_writes_are_serialized_without_corruption(self):
+        from annotation.services import set_label_slice_ids
+        from annotation.visualization.slice_io import encode_label_rle
+
+        failures = []
+        barrier = threading.Barrier(2)
+
+        def write(index, label):
+            try:
+                plane = np.full(SHAPE[1:], label, dtype=np.int32)
+                barrier.wait()
+                set_label_slice_ids(
+                    self.volume,
+                    "z",
+                    index,
+                    list(plane.shape),
+                    encode_label_rle(plane),
+                )
+            except Exception as exc:  # pragma: no cover - asserted below
+                failures.append(exc)
+
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(np.zeros(SHAPE, dtype=np.int32))
+            threads = [
+                threading.Thread(target=write, args=(0, 31)),
+                threading.Thread(target=write, args=(1, 32)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+            after = self._read_working()
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(failures, [])
+        self.assertTrue(np.all(after[0] == 31))
+        self.assertTrue(np.all(after[1] == 32))
+
 
 @override_settings(MITO_TRACKING_PROVIDER="local")
 class SplitComponentsReturnsPendingPlan(WholeVolumeOpsApiTestCase):
+    def test_split_refuses_a_verified_target_before_planning(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(self._two_blobs())
+            verified = self.client.post(
+                f"/api/tasks/{self.task.pk}/labels/5/lifecycle/",
+                {"action": "verify"},
+                content_type="application/json",
+            )
+            self.assertEqual(verified.status_code, 200, verified.content)
+            before = self._read_working().copy()
+            response = self.client.post(
+                f"/api/tasks/{self.task.pk}/split-components/",
+                {"label": 5},
+                content_type="application/json",
+            )
+            after = self._read_working()
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("Unverify", response.json()["detail"])
+        np.testing.assert_array_equal(after, before)
+
     def test_split_plan_relabels_without_touching_disk(self):
         with override_settings(MITO_DATA_ROOT=self.root.resolve()):
             path = self._seed_working_copy(self._two_blobs())
@@ -288,6 +378,50 @@ class SplitComponentsReturnsPendingPlan(WholeVolumeOpsApiTestCase):
             )
         self.assertEqual(self.image.read_bytes(), before)
         self.assertEqual(self.image.stat().st_mtime_ns, before_mtime)
+
+
+class WatershedReturnsPendingPlan(WholeVolumeOpsApiTestCase):
+    def test_reused_distant_label_id_uses_a_bounded_seed_local_crop(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            path = self._seed_working_copy(self._two_blobs())
+            before = self._read_working()
+            before_mtime = path.stat().st_mtime_ns
+            with mock.patch.dict("os.environ", {"MITO_TOOL_PLAN_MAX_VOXELS": "1000"}):
+                response = self.client.post(
+                    f"/api/tasks/{self.task.pk}/watershed/",
+                    {
+                        "label": 5,
+                        "seeds": [
+                            {"z": 1, "y": 3, "x": 3},
+                            {"z": 1, "y": 6, "x": 6},
+                        ],
+                    },
+                    content_type="application/json",
+                )
+            after = self._read_working()
+        self.assertEqual(response.status_code, 200, response.content[:300])
+        self.assertTrue(response.json()["slices"])
+        self.assertEqual(response.json()["new_label_ids"], [1])
+        self.assertEqual(path.stat().st_mtime_ns, before_mtime)
+        np.testing.assert_array_equal(after, before)
+
+    def test_seed_local_crop_still_refuses_a_truly_oversized_seed_span(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(self._two_blobs())
+            with mock.patch.dict("os.environ", {"MITO_TOOL_PLAN_MAX_VOXELS": "1000"}):
+                response = self.client.post(
+                    f"/api/tasks/{self.task.pk}/watershed/",
+                    {
+                        "label": 5,
+                        "seeds": [
+                            {"z": 1, "y": 3, "x": 3},
+                            {"z": 1, "y": 16, "x": 16},
+                        ],
+                    },
+                    content_type="application/json",
+                )
+        self.assertEqual(response.status_code, 400, response.content[:300])
+        self.assertIn("Z×Y×X", response.json()["detail"])
 
 
 @override_settings(MITO_TRACKING_PROVIDER="local")

@@ -39,9 +39,14 @@ deployment-identity checks.
 
 ## Access versus assignment
 
-The project's **Access** list combines explicit project membership, working-team
-membership, and task assignment. Explicit membership grants participation
-without workload; the working team grants participation and assignment
-eligibility; a task assignment identifies the single annotator responsible for
-a volume. The Access table labels which route brought each person into the
-project and shows working-team members even when they have no tasks yet.
+The project's **Access** list combines explicit project membership,
+working-team membership, and task assignment. Adding an annotator through
+Access also seats them on the project's working team; adding them to that team
+also creates explicit Access. Thus either manager surface produces one
+assignable roster. A task assignment still identifies the single annotator
+responsible for a volume.
+
+Removal is deliberately explicit. Removing an Access membership does not
+silently withdraw assignments or team eligibility. Removing someone from the
+working team removes eligibility (and withdraws affected assignments) but an
+explicit Access row may continue to grant browsing and Hard Cases.

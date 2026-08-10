@@ -17,6 +17,7 @@ const harness = vi.hoisted(() => ({
   decodeRegionMask: vi.fn(),
   fetchObjectUrl: vi.fn(),
   putLabelIds: vi.fn(),
+  runSplitComponents: vi.fn(),
   confirm: vi.fn(),
   overlayPixels: null as Uint8ClampedArray | null,
 }));
@@ -40,6 +41,7 @@ vi.mock("../../api/viewer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api/viewer")>()),
   fetchObjectUrl: harness.fetchObjectUrl,
   putLabelIds: harness.putLabelIds,
+  runSplitComponents: harness.runSplitComponents,
 }));
 
 const W = 8;
@@ -194,6 +196,11 @@ describe("Region only and edits outside the region", () => {
     harness.putLabelIds
       .mockReset()
       .mockResolvedValue({ max_label_id: 9, next_label_id: 10 });
+    harness.runSplitComponents.mockReset();
+    api.getLabelsSummary.mockReset().mockResolvedValue({
+      labels: [],
+      stats: { total: 0, proposed: 0, edited: 0, verified: 0 },
+    });
     harness.confirm.mockReset().mockReturnValue(true);
     harness.overlayPixels = null;
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (
@@ -236,6 +243,91 @@ describe("Region only and edits outside the region", () => {
       clickSave();
     });
     expect(harness.confirm).not.toHaveBeenCalled();
+  });
+
+  it("cannot paint through a verified label even while Hide Verified hides it", async () => {
+    api.getLabelsSummary.mockResolvedValue({
+      labels: [{
+        id: 5,
+        voxel_count: 1,
+        z_start: 0,
+        z_end: 0,
+        state: "verified",
+        origin: "manual",
+        verified_at: "2026-08-10T00:00:00Z",
+      }],
+      stats: { total: 1, proposed: 0, edited: 0, verified: 1 },
+    } as never);
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(screen.getByLabelText("Hide Verified")).toBeTruthy());
+    await screen.findByText(/●1/);
+    // Ignore any mount-time synchronization; this assertion is specifically
+    // about whether the hidden verified pixel can create a pending user edit.
+    harness.putLabelIds.mockClear();
+    fireEvent.click(screen.getByLabelText("Hide Verified"));
+    fireEvent.change(screen.getByTitle("Active label id"), { target: { value: "6" } });
+    selectBrush();
+    paintPixel(1, 6);
+    await act(async () => clickSave());
+
+    // The brush may paint empty neighbours, but the hidden verified voxel at
+    // its centre must survive byte-for-byte.
+    await waitFor(() => expect(harness.putLabelIds).toHaveBeenCalled());
+    expect(lastSavedPlane()[STORED_AT]).toBe(5);
+  });
+
+  it("offers the canvas label under the cursor in the shared 3D pin menu", async () => {
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    const target = overlay();
+    target.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: W, height: H, right: W, bottom: H, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.contextMenu(target, { clientX: 6.5, clientY: 1.5 });
+    const show3D = await screen.findByRole("button", { name: "Show 3D label 5" });
+    fireEvent.click(show3D);
+    expect(screen.queryByRole("button", { name: "Show 3D label 5" })).toBeNull();
+  });
+
+  it("saves a Region-only split plan outside the mask without clipping it", async () => {
+    const before = storedRuns();
+    const after: [number, number][] = [
+      [0, STORED_AT],
+      [9, 1],
+      [0, H * W - STORED_AT - 1],
+    ];
+    harness.runSplitComponents.mockResolvedValue({
+      axis: "z",
+      slices: [{ index: 0, shape: [H, W], before_runs: before, runs: after }],
+    });
+    const { regionOnly } = mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    regionOnly(true);
+    await waitFor(() => expect(harness.decodeRegionMask).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByTitle("Active label id"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    const splitButtons = await screen.findAllByRole("button", { name: "Split" });
+    fireEvent.click(splitButtons[splitButtons.length - 1]);
+    await waitFor(() => expect(harness.runSplitComponents).toHaveBeenCalled());
+    await act(async () => clickSave());
+    await waitFor(() => expect(harness.putLabelIds).toHaveBeenCalled());
+
+    expect(lastSavedPlane()[STORED_AT]).toBe(9);
+    // putLabelIds(..., roiOnly) — plan-produced planes intentionally bypass
+    // the per-pixel ROI guard so the exact 3-D result reaches disk.
+    expect(harness.putLabelIds.mock.lastCall?.[6]).toBe(false);
+
+    const alpha = () => harness.overlayPixels?.[STORED_AT * 4 + 3] ?? -1;
+    await waitFor(() => expect(alpha()).toBeGreaterThan(0));
+    regionOnly(false);
+    await waitFor(() => expect(alpha()).toBeGreaterThan(0));
+    regionOnly(true);
+    // Re-entering Region only drops the session exception and restores the
+    // server's strict volume-wide membership, which excludes outside-only 9.
+    await waitFor(() => expect(alpha()).toBe(0));
   });
 
   it("blocks brush paint over a hidden label under overwrite-all", async () => {

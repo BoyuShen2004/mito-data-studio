@@ -57,6 +57,7 @@ import {
   regionMembership,
 } from "./regionOverlap";
 import { OutsideRegionEditStore } from "./outsideRegionEdits";
+import { protectLabelIds } from "./labelProtection";
 import {
   brushRadius,
   loadBrushCursorStyle,
@@ -147,8 +148,8 @@ const yieldToMainThread = () =>
 /** Slice-navigation caches (see `sliceImageUrl` / `labelRunsFor`).
  * Images are blobs, so this is bounded tightly; label RLE is a few KB and can
  * afford more entries. */
-const SLICE_IMG_CACHE_MAX = 16;
-const SLICE_RUNS_CACHE_MAX = 64;
+const SLICE_IMG_CACHE_MAX = 48;
+const SLICE_RUNS_CACHE_MAX = 128;
 const SIDE_PANEL_DEFAULT = 320;
 const SIDE_PANEL_MIN = 180;
 const SIDE_PANEL_MAX = 520;
@@ -624,6 +625,13 @@ export default function AnnotationCanvas({
   /** The `roiVolumeIds` object `regionTouchingIdsRef` was last seeded from, so
    * a repaint can tell a fresh server answer from its own accumulated one. */
   const regionMembershipBaseRef = useRef<ReadonlySet<number> | null>(null);
+  // Split/Watershed may mint pieces outside the ROI. Keep those ids visible
+  // for this uninterrupted Region-only editing session; toggling the mode
+  // starts a fresh strict membership view.
+  const roiSessionVisibleIdsRef = useRef(new Set<number>());
+  // Plan-produced planes are saved without the ordinary per-pixel ROI guard,
+  // otherwise the server-approved 3-D result would be clipped on disk.
+  const roiPlanSaveSlicesRef = useRef(new Set<number>());
   const [regionMaskBitsUrl, setRegionMaskBitsUrl] = useState<string | null>(null);
   /** Ids the server reports as touching the ROI anywhere in z. `null` = not
    * known (no ROI, not fetched yet, or the request failed), which falls back to
@@ -876,6 +884,7 @@ export default function AnnotationCanvas({
   const labelsSummaryRowsRef = useRef(labelsSummaryRows);
   labelsSummaryRowsRef.current = labelsSummaryRows;
   const [labelsSummaryLoading, setLabelsSummaryLoading] = useState(false);
+  const [labelsSummaryError, setLabelsSummaryError] = useState<string | null>(null);
   // Default OFF so all labels are visible on open (Hide Verified is an
   // opt-in filter, sitting beside Filters Options — not buried inside it).
   const [hideVerified, setHideVerified] = useState(false);
@@ -1103,9 +1112,19 @@ export default function AnnotationCanvas({
 
   const refreshLabelsSummary = useCallback(() => {
     setLabelsSummaryLoading(true);
+    setLabelsSummaryError(null);
     api.getLabelsSummary(taskId)
       .then((res) => setLabelsSummaryRows(res.labels ?? []))
-      .catch(() => setLabelsSummaryRows([]))
+      .catch((error) => {
+        // Keep the last known lifecycle state. Clearing it on a transient
+        // request failure made verified labels appear to vanish and removed
+        // their client-side edit protection until the next successful fetch.
+        setLabelsSummaryError(
+          error instanceof Error
+            ? error.message
+            : "Could not refresh label verification state.",
+        );
+      })
       .finally(() => setLabelsSummaryLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
@@ -1180,6 +1199,8 @@ export default function AnnotationCanvas({
     () => new Set(labelsSummaryRows.filter((r) => r.state === "verified").map((r) => r.id)),
     [labelsSummaryRows],
   );
+  const verifiedIdsRef = useRef<ReadonlySet<number>>(verifiedIds);
+  verifiedIdsRef.current = verifiedIds;
 
   // Heavy pass: recompute the per-pixel label/preview fill (labels + the
   // green AI-preview fill) and blit it. Only needed when that fill actually
@@ -1246,6 +1267,12 @@ export default function AnnotationCanvas({
       const known = regionTouchingIdsRef.current;
       if (known) for (const id of planeRegionIds) known.add(id);
       else regionTouchingIdsRef.current = regionMembership(roiVolumeIds, planeRegionIds);
+    }
+    if (roiOnly && roiSessionVisibleIdsRef.current.size > 0) {
+      if (!regionTouchingIdsRef.current) regionTouchingIdsRef.current = new Set();
+      for (const id of roiSessionVisibleIdsRef.current) {
+        regionTouchingIdsRef.current.add(id);
+      }
     }
     const regionIds = roiOnly ? regionTouchingIdsRef.current : null;
     const showAiPreview = AI_PREVIEW_TOOLS.includes(paintTool);
@@ -1572,12 +1599,15 @@ export default function AnnotationCanvas({
   // and putting its stale response back. This revision gate makes any read
   // overlapping a write retry against the post-write working mask.
   const labelReadRevisionRef = useRef(new RevisionedFetch());
+  const workingLabelRevisionRef = useRef("");
   const sliceImgInflightRef = useRef<Map<string, Promise<string>>>(new Map());
   const sliceKey = useCallback((a: Axis, index: number) => `${a}:${index}`, []);
 
   /** One controller for every prefetch this canvas ever fires — aborted only
    * on unmount (see the prefetch effect for why not per navigation). */
   const prefetchAbortRef = useRef<AbortController>(new AbortController());
+  const scrubDirectionRef = useRef<1 | -1>(1);
+  const previousScrubIndexRef = useRef(index);
 
   useEffect(() => {
     chunkRendererRef.current?.dispose();
@@ -1670,6 +1700,12 @@ export default function AnnotationCanvas({
         // Union, not replace: the volume-wide set is what keeps an instance
         // editable on the planes where it sits outside the ROI.
         regionTouchingIdsRef.current = regionMembership(roiVolumeIdsRef.current, plane);
+        if (roiSessionVisibleIdsRef.current.size > 0) {
+          if (!regionTouchingIdsRef.current) regionTouchingIdsRef.current = new Set();
+          for (const id of roiSessionVisibleIdsRef.current) {
+            regionTouchingIdsRef.current.add(id);
+          }
+        }
         regionMembershipBaseRef.current = roiVolumeIdsRef.current;
         setRegionMaskBitsUrl(url);
       })
@@ -1944,6 +1980,7 @@ export default function AnnotationCanvas({
         // Drop stale responses after z OR axis moved on — including the image,
         // which must never be swapped in for a slice/view the user already left.
         if (i !== indexRef.current || loadAxis !== axisRef.current) return;
+        if (resp.revision) workingLabelRevisionRef.current = resp.revision;
         // A stroke that finished after this fetch started owns the plane —
         // do not replace it with a pre-stroke server/cache response.
         if (
@@ -2050,10 +2087,13 @@ export default function AnnotationCanvas({
   const loadSliceRef = useRef(loadSlice);
   loadSliceRef.current = loadSlice;
   useEffect(() => {
+    const previous = previousScrubIndexRef.current;
+    if (index !== previous) scrubDirectionRef.current = index > previous ? 1 : -1;
+    previousScrubIndexRef.current = index;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       void loadSliceRef.current(index, controller.signal);
-    }, 100);
+    }, 16);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -2080,7 +2120,10 @@ export default function AnnotationCanvas({
     if (!meta.data) return;
     const signal = prefetchAbortRef.current.signal;
     const timer = setTimeout(() => {
-      for (const z of [index + 1, index - 1, index + 2]) {
+      const direction = scrubDirectionRef.current;
+      const candidates = [1, 2, 3, 4, 5].map((distance) => index + direction * distance);
+      candidates.push(index - direction);
+      for (const z of candidates) {
         if (z < 0 || z >= axisLen) continue;
         void sliceImageUrl(z, signal).catch(() => {});
         void labelRunsFor(z, signal).catch(() => {});
@@ -2091,7 +2134,7 @@ export default function AnnotationCanvas({
           void sliceRegionUrl(z, signal).catch(() => {});
         }
       }
-    }, 250);
+    }, 35);
     return () => clearTimeout(timer);
   }, [index, axis, axisLen, meta.data, sliceImageUrl, labelRunsFor, sliceRegionUrl]);
 
@@ -2183,7 +2226,9 @@ export default function AnnotationCanvas({
         const outside = snapshots.reduce(
           (total, snapshot) =>
             total +
-            (outsideEditsRef.current.peek(snapshot.index)?.pendingCount(snapshot.ids) ?? 0),
+            (roiPlanSaveSlicesRef.current.has(snapshot.index)
+              ? 0
+              : outsideEditsRef.current.peek(snapshot.index)?.pendingCount(snapshot.ids) ?? 0),
           0,
         );
         if (
@@ -2212,6 +2257,7 @@ export default function AnnotationCanvas({
                 regionOnly: roiOnlyRef.current,
                 overwriteMode: regionOverwriteModeRef.current,
               }) ?? snapshot.ids;
+            const preservePlannedOutside = roiPlanSaveSlicesRef.current.has(snapshot.index);
             const runs = encodeRuns(committed as unknown as Uint32Array);
             const res = await putLabelIds(
               taskId,
@@ -2220,8 +2266,10 @@ export default function AnnotationCanvas({
               [h, w],
               runs,
               origin,
-              roiOnlyRef.current,
+              roiOnlyRef.current && !preservePlannedOutside,
+              workingLabelRevisionRef.current,
             );
+            if (res.revision) workingLabelRevisionRef.current = res.revision;
             if (
               pendingSlicesRef.current.acknowledge(
                 snapshot.index,
@@ -2232,6 +2280,7 @@ export default function AnnotationCanvas({
               // was deliberately left off it). Either way those pixels are no
               // longer pending, so its sparse overwrite baseline goes too.
               outsideEditsRef.current.delete(snapshot.index);
+              roiPlanSaveSlicesRef.current.delete(snapshot.index);
             }
             // What the server now holds for this plane differs from what we
             // cached before the write (and every plane of the other two axes
@@ -2247,9 +2296,14 @@ export default function AnnotationCanvas({
           refreshInstances();
           setLabelsSummaryToken((v) => v + 1);
           return remaining === 0;
-        } catch {
+        } catch (error) {
           syncDirtyFromPending();
           setStatus("error");
+          window.alert(
+            error instanceof Error
+              ? error.message
+              : "Save failed. Reload the layer before retrying.",
+          );
           return false;
         } finally {
           saveInFlightRef.current = null;
@@ -2288,6 +2342,7 @@ export default function AnnotationCanvas({
   const [shareCase, setShareCase] = useState<HardCase | null>(null);
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [hardCaseNote, setHardCaseNote] = useState("");
   // `copyState` drives the link row's button: it starts on **Copy** and only
   // becomes **Copied** after the user clicks it *and* the clipboard write
   // resolves (03 item D). Recording deliberately does NOT auto-copy — a modal
@@ -2305,6 +2360,7 @@ export default function AnnotationCanvas({
     setShareError(null);
     setCopyState("idle");
     setShareCase(null);
+    setHardCaseNote("");
     const label = activeIdRef.current;
     // Only record ids that exist as real labels in the volume summary.
     if (!labelsSummaryRows.some((r) => r.id === label)) {
@@ -2322,7 +2378,11 @@ export default function AnnotationCanvas({
     setSharing(true);
     setShareError(null);
     try {
-      const created = await createHardCase(taskId, activeIdRef.current);
+      const created = await createHardCase(
+        taskId,
+        activeIdRef.current,
+        hardCaseNote.trim(),
+      );
       setShareCase(created);
       setShareStage("done");
     } catch (e) {
@@ -2333,7 +2393,7 @@ export default function AnnotationCanvas({
     } finally {
       setSharing(false);
     }
-  }, [taskId]);
+  }, [taskId, hardCaseNote]);
 
   const shareUrl = shareCase ? window.location.origin + shareCase.url : null;
 
@@ -2353,6 +2413,7 @@ export default function AnnotationCanvas({
     setShareStage(null);
     setShareCase(null);
     setShareError(null);
+    setHardCaseNote("");
     setCopyState("idle");
   }, []);
 
@@ -2509,6 +2570,8 @@ export default function AnnotationCanvas({
       // Same reasoning: a plane index means a different plane on the new axis,
       // so its sparse overwrite baselines cannot follow the axis switch.
       outsideEditsRef.current.clear();
+      roiPlanSaveSlicesRef.current.clear();
+      roiSessionVisibleIdsRef.current.clear();
       clearAllHistory();
       dirtyRef.current = false;
       currentSliceDirtyRef.current = false;
@@ -2539,6 +2602,18 @@ export default function AnnotationCanvas({
     };
   }, []);
 
+  const changeRegionOnly = useCallback((enabled: boolean) => {
+    if (enabled === roiOnlyRef.current) return;
+    // A toggle boundary deliberately ends the temporary visibility exception.
+    // Re-fetching after re-entry restores the strict volume-wide membership
+    // rule from the saved working mask.
+    roiSessionVisibleIdsRef.current.clear();
+    regionTouchingIdsRef.current = null;
+    regionMembershipBaseRef.current = null;
+    if (enabled) setRegionMembershipToken((value) => value + 1);
+    setRoiOnly(enabled);
+  }, []);
+
   // Publish navigation, position, and the existing Region display/edit gate
   // to the page topbar (View + Annotate).
   useEffect(() => {
@@ -2550,7 +2625,7 @@ export default function AnnotationCanvas({
       currentLocation: currentViewLocation,
       hasRegion: Boolean(meta.data?.has_region_mask),
       regionOnly: roiOnly,
-      changeRegionOnly: setRoiOnly,
+      changeRegionOnly,
       regionOverwriteMode,
       changeRegionOverwriteMode: setRegionOverwriteMode,
     });
@@ -2564,6 +2639,7 @@ export default function AnnotationCanvas({
     currentViewLocation,
     meta.data?.has_region_mask,
     roiOnly,
+    changeRegionOnly,
     regionOverwriteMode,
   ]);
 
@@ -2641,6 +2717,11 @@ export default function AnnotationCanvas({
           if (dx * dx + dy * dy > r2) continue;
           const at = y * w + x;
           const prior = target[at];
+          const verified = verifiedIdsRef.current;
+          if (
+            (prior > 0 && verified.has(prior)) ||
+            (value > 0 && value !== prior && verified.has(value))
+          ) continue;
           if (touching && prior > 0 && !touching.has(prior)) continue;
           if (outside && roi![at] === 0 && !outside.has(at)) {
             // Baseline is what the *server* holds, not what is on screen: a
@@ -2942,6 +3023,10 @@ export default function AnnotationCanvas({
         for (let i = 0; i < ids.length; i++) {
           if (!preview.mask[i]) continue;
           const prior = ids[i];
+          if (
+            verifiedIdsRef.current.has(prior) ||
+            (prior !== activeId && verifiedIdsRef.current.has(activeId))
+          ) continue;
           if (visible && prior > 0 && !visible.has(prior)) continue;
           ids[i] = activeId;
         }
@@ -3115,6 +3200,7 @@ export default function AnnotationCanvas({
         for (let y = Math.max(0, y0); y <= cy1; y++) {
           for (let x = Math.max(0, x0); x <= cx1; x++) {
             const at = y * w + x;
+            if (verifiedIdsRef.current.has(ids[at])) continue;
             if (visible && ids[at] > 0 && !visible.has(ids[at])) continue;
             ids[at] = 0;
           }
@@ -3222,6 +3308,8 @@ export default function AnnotationCanvas({
           protectHiddenRegionLabels(before, after, region, regionVisibleIdsFor(before, region));
           changed = !before.every((value, offset) => value === after[offset]);
         }
+        protectLabelIds(before, after, verifiedIdsRef.current);
+        changed = !before.every((value, offset) => value === after[offset]);
         if (!changed) continue;
         compound.push({ index: zi, before, after });
         rememberCommittedLabel(label, zi);
@@ -3344,6 +3432,7 @@ export default function AnnotationCanvas({
           // here because it reaches the ROI elsewhere is editable here.
           protectHiddenRegionLabels(before, after, region, regionVisibleIdsFor(before, region));
         }
+        protectLabelIds(before, after, verifiedIdsRef.current);
         if (before.every((v, i) => v === after[i])) continue;
         compound.push({ index: zi, before, after });
         if (after.some((value) => value === activeId)) {
@@ -3432,6 +3521,7 @@ export default function AnnotationCanvas({
   const applyPendingToolPlan = useCallback(async (
     plannedAxis: Axis,
     slices: PlannedLabelSlice[],
+    options: { preserveOutsideRoi?: boolean } = {},
   ): Promise<boolean> => {
     if (plannedAxis !== axisRef.current || idsIndexRef.current !== indexRef.current) return false;
     const liveIndex = idsIndexRef.current;
@@ -3457,13 +3547,23 @@ export default function AnnotationCanvas({
         }
       }
       const after = decodeRuns(slice.runs, h * w);
-      if (roiOnlyRef.current) {
+      if (roiOnlyRef.current && !options.preserveOutsideRoi) {
         const regionUrl = await sliceRegionUrl(slice.index, undefined, plannedAxis);
         if (!regionUrl) return false;
         const region = await decodeRegionMask(regionUrl, w, h);
         protectHiddenRegionLabels(before, after, region, regionVisibleIdsFor(before, region));
       }
+      protectLabelIds(before, after, verifiedIdsRef.current);
       if (before.every((value, offset) => value === after[offset])) continue;
+      if (roiOnlyRef.current && options.preserveOutsideRoi) {
+        roiPlanSaveSlicesRef.current.add(slice.index);
+        const visible = roiSessionVisibleIdsRef.current;
+        for (let offset = 0; offset < after.length; offset++) {
+          if (before[offset] !== after[offset] && after[offset] > 0) {
+            visible.add(after[offset]);
+          }
+        }
+      }
       compound.push({ index: slice.index, before, after });
       for (const value of after) if (value > maxLabel) maxLabel = value;
       if (sliceOffset % 2 === 1) await yieldToMainThread();
@@ -3486,7 +3586,9 @@ export default function AnnotationCanvas({
         const result = await runSplitComponents(
           taskId, label, axisRef.current, pendingToolSlices(),
         );
-        await applyPendingToolPlan(result.axis, result.slices);
+        await applyPendingToolPlan(result.axis, result.slices, {
+          preserveOutsideRoi: true,
+        });
       } catch (e) {
         window.alert(e instanceof Error ? e.message : "Split failed");
       } finally {
@@ -4032,18 +4134,31 @@ export default function AnnotationCanvas({
     ) => {
       const liveZ = idsIndexRef.current;
       if (result.kind === "slice") {
-        idsRef.current = result.raster;
+        const current = idsRef.current;
+        const protectedRaster = result.raster.slice();
+        if (current) {
+          // History can predate a later Verify. Undo/Redo must not become a
+          // back door that temporarily erases or grows the newly locked id.
+          protectLabelIds(current, protectedRaster, verifiedIdsRef.current);
+        }
+        idsRef.current = protectedRaster;
         if (liveZ != null) {
-          pendingSlicesRef.current.markChanged(liveZ, result.raster);
+          pendingSlicesRef.current.markChanged(liveZ, protectedRaster);
         }
       } else {
         for (const edit of result.slices) {
-          const plane = direction === "undo" ? edit.before : edit.after;
+          const requested = direction === "undo" ? edit.before : edit.after;
+          const plane = requested.slice();
+          const current = liveZ != null && edit.index === liveZ && idsRef.current
+            ? idsRef.current
+            : pendingSlicesRef.current.get(edit.index)
+              ?? (direction === "undo" ? edit.after : edit.before);
+          protectLabelIds(current, plane, verifiedIdsRef.current);
           if (liveZ != null && edit.index === liveZ && idsRef.current) {
             idsRef.current.set(plane);
             pendingSlicesRef.current.markChanged(edit.index, idsRef.current);
           } else {
-            pendingSlicesRef.current.markChanged(edit.index, plane.slice());
+            pendingSlicesRef.current.markChanged(edit.index, plane);
           }
         }
       }
@@ -4104,6 +4219,7 @@ export default function AnnotationCanvas({
         : null;
       if (roiOnlyRef.current && !visible) return;
       for (let i = 0; i < ids.length; i++) {
+        if (verifiedIdsRef.current.has(ids[i])) continue;
         if (visible && ids[i] > 0 && !visible.has(ids[i])) continue;
         ids[i] = 0;
       }
@@ -4203,7 +4319,9 @@ export default function AnnotationCanvas({
         axisRef.current,
         pendingToolSlices(),
       );
-      if (!(await applyPendingToolPlan(result.axis, result.slices))) return;
+      if (!(await applyPendingToolPlan(result.axis, result.slices, {
+        preserveOutsideRoi: true,
+      }))) return;
       setWsSeeds([]);
       setWsTargetLabel(null);
     } catch (e) {
@@ -4942,7 +5060,19 @@ export default function AnnotationCanvas({
           );
           return await applyPendingToolPlan(result.axis, result.slices);
         }
-        await setLabelLifecycle(taskId, labelId, action);
+        if (action === "verify") {
+          // Verification describes saved geometry. Flush every pending plane
+          // first so a later Save cannot immediately demote the label back to
+          // Edited, and so an unsaved/phantom Active id is never verified.
+          const saved = await saveLabels();
+          if (!saved) return false;
+        }
+        const result = await setLabelLifecycle(taskId, labelId, action);
+        if (result.state) {
+          setLabelsSummaryRows((rows) => rows.map((row) =>
+            row.id === labelId ? { ...row, state: result.state! } : row
+          ));
+        }
         setLabelsSummaryToken((v) => v + 1);
         return true;
       } catch (e) {
@@ -4950,7 +5080,7 @@ export default function AnnotationCanvas({
         return false;
       }
     },
-    [taskId, applyPendingToolPlan, pendingToolSlices],
+    [taskId, applyPendingToolPlan, pendingToolSlices, saveLabels],
   );
 
   const runDeleteActiveNow = useCallback(async () => {
@@ -5716,6 +5846,16 @@ export default function AnnotationCanvas({
                   every annotator working on it. You and managers can annotate
                   it or take it down later; everyone else sees it View-only.
                 </p>
+                <label>
+                  <span>Why is this hard? (optional)</span>
+                  <textarea
+                    value={hardCaseNote}
+                    maxLength={1000}
+                    rows={3}
+                    onChange={(e) => setHardCaseNote(e.target.value)}
+                    placeholder="Add a short note for collaborators"
+                  />
+                </label>
               </>
             ) : shareError ? (
               <>
@@ -6183,6 +6323,11 @@ export default function AnnotationCanvas({
           {editable && lifecycleError && (
             <p className="error labels-lifecycle-error">{lifecycleError}</p>
           )}
+          {labelsSummaryError && (
+            <p className="error labels-lifecycle-error" role="alert">
+              Verification state could not be refreshed. Existing protections remain active. {labelsSummaryError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -6392,6 +6537,15 @@ export default function AnnotationCanvas({
                 }}
               >
                 ○ Solo label {contextMenu.labelId}
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  togglePinned3D(contextMenu.labelId as number);
+                  setContextMenu(null);
+                }}
+              >
+                {pinned3D.has(contextMenu.labelId) ? "Hide 3D" : "Show 3D"} label {contextMenu.labelId}
               </button>
             </>
           )}

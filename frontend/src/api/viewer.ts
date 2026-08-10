@@ -73,6 +73,8 @@ export function regionMaskSlicePath(volumeId: number, axis: Axis, index: number)
 export interface RegionIndex {
   axis: Axis;
   length: number;
+  axis_length?: number;
+  revision?: string;
   indices: number[];
 }
 
@@ -217,11 +219,13 @@ export const reviewTrackingPreview = (taskId: number, action: "confirm" | "rejec
 export interface LabelIdsResponse {
   shape: [number, number];
   runs: [number, number][]; // [id, run-length], row-major
+  revision?: string;
 }
 
 export interface LabelState {
   max_label_id: number;
   next_label_id: number;
+  revision?: string;
 }
 
 export const getLabelState = (taskId: number) =>
@@ -241,6 +245,7 @@ export const putLabelIds = (
   runs: [number, number][],
   origin: "manual" | "ai" = "manual",
   roiOnly = false,
+  expectedRevision = "",
 ) =>
   api.put<LabelState>(`/tasks/${taskId}/label-ids/`, {
     axis,
@@ -249,6 +254,7 @@ export const putLabelIds = (
     runs,
     origin,
     roi_only: roiOnly,
+    expected_revision: expectedRevision,
   });
 
 /** Decode row-major RLE runs into a flat Int32Array of instance ids. */
@@ -736,6 +742,7 @@ export interface PublicHardCaseMeta extends VolumeMeta {
   z_end: number;
   volume_name: string;
   project_title: string;
+  note: string;
 }
 
 const publicBase = (token: string) => `/public/hard-cases/${encodeURIComponent(token)}`;

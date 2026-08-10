@@ -324,6 +324,7 @@ class HardCaseSerializer(serializers.ModelSerializer):
             "volume",
             "volume_name",
             "label_id",
+            "note",
             "z_start",
             "z_end",
             "status",

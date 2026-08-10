@@ -191,6 +191,15 @@ describe("AnnotateToolChrome — flood and overwrite", () => {
   });
 });
 
+describe("AnnotateToolChrome — Seeds", () => {
+  it("uses clicked seeds as the target and hides Active/New", () => {
+    renderChrome({ paintTool: "seeds", wsTargetLabel: 17, wsSeedCount: 2 });
+    expect(screen.queryByText("Active")).toBeNull();
+    expect(screen.queryByRole("button", { name: "New" })).toBeNull();
+    expect(screen.getByText(/target.*17/i)).toBeTruthy();
+  });
+});
+
 describe("AnnotateToolChrome — brush/erase cursor style", () => {
   it("offers five cursor styles on Brush, defaulting to the current look", () => {
     const onCursorStyle = vi.fn();

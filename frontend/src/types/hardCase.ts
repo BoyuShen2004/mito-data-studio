@@ -15,6 +15,7 @@ export interface HardCase {
   volume: number | null;
   volume_name: string;
   label_id: number;
+  note: string;
   z_start: number;
   z_end: number;
   status: HardCaseStatus;

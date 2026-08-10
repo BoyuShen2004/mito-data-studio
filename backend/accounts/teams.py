@@ -84,6 +84,7 @@ def add_team_member(team, user, *, role=TeamRole.MEMBER, actor=None) -> TeamMemb
             actor, AuditVerb.TEAM_MEMBER_ADDED, team,
             user_id=user.id, username=user.get_username(), role=str(role),
         )
+        _sync_working_project_access(team, user, actor=actor)
         return membership
 
     if membership.role != role:
@@ -95,7 +96,47 @@ def add_team_member(team, user, *, role=TeamRole.MEMBER, actor=None) -> TeamMemb
             user_id=user.id, username=user.get_username(),
             previous_role=str(previous), role=str(role),
         )
+    _sync_working_project_access(team, user, actor=actor)
     return membership
+
+
+def _sync_working_project_access(team, user, *, actor=None) -> None:
+    """Mirror working-team eligibility into explicit project browse access."""
+    from projects.models import ProjectMembership
+
+    for project in team.working_projects.all():
+        ProjectMembership.objects.get_or_create(
+            project=project, user=user, defaults={"added_by": actor}
+        )
+
+
+@transaction.atomic
+def ensure_project_assignee_eligible(project, user, *, actor=None):
+    """One roster write used by Project Access and assignment-team UI.
+
+    A project without a working team receives its organisation's default team;
+    the person is then both a team member (assignable) and an explicit project
+    member (browse/Hard Cases). No third roster is introduced.
+    """
+    from .models import Institution
+    from projects.models import ProjectMembership
+
+    team = project.working_team
+    if team is None:
+        organization = getattr(project, "institution", None)
+        if organization is None:
+            organization = getattr(getattr(user, "profile", None), "institution", None)
+        if organization is None:
+            organization = getattr(getattr(actor, "profile", None), "institution", None)
+        if organization is None:
+            organization, _ = Institution.objects.get_or_create(name="Mito Data Agent")
+        team = default_team_for(organization)
+        set_project_working_team(project, team, actor=actor)
+    membership = add_team_member(team, user, actor=actor)
+    access, _ = ProjectMembership.objects.get_or_create(
+        project=project, user=user, defaults={"added_by": actor}
+    )
+    return membership, access
 
 
 @transaction.atomic
@@ -194,6 +235,16 @@ def set_project_working_team(project, team, *, actor=None) -> dict:
         grant_project_team(project, team, actor=actor)
     project.working_team = team
     project.save(update_fields=["working_team"])
+    if team is not None:
+        from projects.models import ProjectMembership
+
+        ProjectMembership.objects.bulk_create(
+            [
+                ProjectMembership(project=project, user_id=user_id, added_by=actor)
+                for user_id in team.memberships.values_list("user_id", flat=True)
+            ],
+            ignore_conflicts=True,
+        )
     record_audit(
         actor,
         AuditVerb.PROJECT_TEAM_GRANTED,

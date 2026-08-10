@@ -24,6 +24,8 @@ from .serializers import (
     SubmitTaskSerializer,
 )
 from .services import (
+    LabelWriteConflict,
+    VerifiedLabelConflict,
     apply_assignment_plan,
     apply_task_interpolation,
     apply_task_flood_fill,
@@ -790,11 +792,24 @@ def _region_index_payload(volume, request):
     another request. The alternative the client would otherwise be left with is
     one region PNG fetch per candidate plane.
     """
+    from .visualization.slice_io import _open_volume, resolve_path
     from volumes.region_masks import region_nonempty_indices
 
     axis = request.query_params.get("axis", "z")
     indices = region_nonempty_indices(volume, axis)
-    return {"axis": axis, "length": len(indices), "indices": indices}
+    path = resolve_path(volume.region_mask_location)
+    mask = _open_volume(path)
+    axis_length = int(mask.shape[{"z": 0, "y": 1, "x": 2}[axis]])
+    stat = path.stat()
+    return {
+        "axis": axis,
+        "length": len(indices),
+        "axis_length": axis_length,
+        "indices": indices,
+        # Lets clients and diagnostics distinguish a rebuilt mask at the same
+        # volume id.  Nanosecond mtime plus size is stable and costs no scan.
+        "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
+    }
 
 
 class VolumeRegionIndexView(APIView):
@@ -1111,10 +1126,26 @@ class TaskLabelIdsView(APIView):
                 runs,
                 origin=origin,
                 roi_only=request_roi_only(request.data.get("roi_only")),
+                expected_revision=str(request.data.get("expected_revision") or ""),
             )
+        except (LabelWriteConflict, VerifiedLabelConflict) as exc:
+            reason = (
+                "verified_label_locked"
+                if isinstance(exc, VerifiedLabelConflict)
+                else "write_conflict"
+            )
+            return Response({"detail": str(exc), "reason": reason}, status=409)
         except (ValueError, SliceIOError, OSError) as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"max_label_id": max_id, "next_label_id": max_id + 1})
+        from .label_paths import working_label_rel_path
+        from .services import _working_label_revision
+        from .visualization.slice_io import resolve_path
+
+        return Response({
+            "max_label_id": max_id,
+            "next_label_id": max_id + 1,
+            "revision": _working_label_revision(resolve_path(working_label_rel_path(task.volume))),
+        })
 
 
 # --- Cellable-ported interactive AI tools (Point/Box/Boundary, Seeds) -------
@@ -1819,7 +1850,15 @@ class HardCaseCreateView(APIView):
                 },
                 status=400,
             )
-        case = create_hard_case(task=task, user=request.user, label_id=label_id)
+        note = str(request.data.get("note") or "").strip()
+        if len(note) > 1000:
+            return Response(
+                {"detail": "Hard-case notes must be 1,000 characters or fewer."},
+                status=400,
+            )
+        case = create_hard_case(
+            task=task, user=request.user, label_id=label_id, note=note
+        )
         return Response(
             HardCaseSerializer(case, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -2004,6 +2043,10 @@ class PublicHardCaseMetaView(_PublicHardCaseView):
         )
         meta["task_id"] = case.task_id
         meta["label_id"] = case.label_id
+        # Some legacy/share adapters expose a case-shaped object rather than a
+        # freshly loaded HardCase row; keep those public links compatible while
+        # older records naturally render an empty note.
+        meta["note"] = getattr(case, "note", "")
         meta["z_start"] = case.task.z_start
         meta["z_end"] = case.task.z_end
         meta["volume_name"] = volume.name

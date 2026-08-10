@@ -2,12 +2,11 @@
  * "Jump to region": which planes of the current axis actually hold ROI, and
  * which of them is nearest.
  *
- * The list is a property of the volume's immutable region mask, so it is
- * fetched at most once per (volume, axis) per browser session — an in-memory
- * map de-dupes concurrent clicks, and `sessionStorage` carries the answer
- * across page navigations within the tab (View -> Annotate -> back). It is
- * deliberately *not* `localStorage`: a region mask that is replaced on the
- * server must not be answered for out of a cache that outlives the tab.
+ * The list is keyed by (volume, axis). An in-memory map de-dupes concurrent
+ * clicks and `sessionStorage` is a fast fallback within the tab, while each
+ * viewer mount/axis change forces a server revalidation so a rebuilt mask
+ * cannot leave navigation on stale planes. It is deliberately not
+ * `localStorage`: a region mask replacement must not survive the tab.
  */
 
 import type { Axis, RegionIndex } from "../../api/viewer";
@@ -44,19 +43,28 @@ export function loadRegionIndex(
   volumeId: number,
   axis: Axis,
   fetcher: (volumeId: number, axis: Axis) => Promise<RegionIndex>,
+  options: { refresh?: boolean } = {},
 ): Promise<number[]> {
   const key = cacheKey(volumeId, axis);
   const inflight = memory.get(key);
-  if (inflight) return inflight;
-  const stored = readSession(key);
-  if (stored) {
+  if (inflight && !options.refresh) return inflight;
+  const stored = options.refresh ? null : readSession(key);
+  if (stored !== null) {
     const resolved = Promise.resolve(stored);
     memory.set(key, resolved);
     return resolved;
   }
   const request = fetcher(volumeId, axis)
     .then((response) => {
-      const indices = response.indices ?? [];
+      if (response.axis !== axis) {
+        throw new Error(`Region index returned axis ${response.axis}; expected ${axis}`);
+      }
+      const upper = Number.isInteger(response.axis_length)
+        ? Number(response.axis_length)
+        : Infinity;
+      const indices = [...new Set(response.indices ?? [])]
+        .filter((value) => Number.isInteger(value) && value >= 0 && value < upper)
+        .sort((a, b) => a - b);
       writeSession(key, indices);
       return indices;
     })

@@ -44,8 +44,10 @@ export default function CollaborationManager() {
       <h3>Teams &amp; assignment eligibility</h3>
       <p className="muted">
         A team is just a name and its annotators. {currentProject
-          ? `A new team here becomes the working team for ${currentProject.title}.`
-          : "Choose it as a project’s working team when its members should receive that project’s volumes."}
+          ? `A new team here becomes the working team for ${currentProject.title}; its annotators also appear in that project’s Access list.`
+          : "Choose it as a project’s working team when its members should receive that project’s volumes; they also receive project browse access."}
+        {" "}Removing someone from a working team removes assignment eligibility,
+        but any explicit browse access remains until it is removed on the project.
       </p>
       <TeamEditor
         annotators={annotators}

@@ -154,3 +154,26 @@ class AnnotateShortcutProfileApiTests(TestCase):
             format="json",
         )
         self.assertEqual(client.get(reverse("api-me")).data["display_name"], "Ann")
+
+    def test_two_accounts_keep_distinct_maps_across_refreshes(self):
+        other = self._person("shortcut-other", UserRole.ANNOTATOR)
+        first_client = self._client(self.annotator)
+        second_client = self._client(other)
+        first_client.patch(
+            reverse("api-people-me"),
+            {"annotate_shortcuts": {"brush": "n"}},
+            format="json",
+        )
+        second_client.patch(
+            reverse("api-people-me"),
+            {"annotate_shortcuts": {"brush": "q"}},
+            format="json",
+        )
+        self.assertEqual(
+            first_client.get(reverse("api-me")).data["annotate_shortcuts"]["brush"],
+            "n",
+        )
+        self.assertEqual(
+            second_client.get(reverse("api-me")).data["annotate_shortcuts"]["brush"],
+            "q",
+        )

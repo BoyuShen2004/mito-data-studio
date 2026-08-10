@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LabelLifecycleAction, LabelLifecycleState, LabelSummaryRow } from "../../api/viewer";
 import { labelColorCss } from "./labelColor";
 import { displayLayerRange } from "./layerIndex";
@@ -112,6 +112,13 @@ export default function LabelsPanel({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showFilter, setShowFilter] = useState<ShowFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("id_asc");
+  const [rowMenu, setRowMenu] = useState<{
+    id: number;
+    state: LabelLifecycleState;
+    x: number;
+    y: number;
+  } | null>(null);
+  const rowMenuRef = useRef<HTMLDivElement | null>(null);
 
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
 
@@ -172,6 +179,29 @@ export default function LabelsPanel({
   }, [rows, filterText, hideVerified, outsideRegion, showFilter, sortMode]);
 
   const activeRow = rowsById.get(activeId);
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    const close = (event: PointerEvent) => {
+      if (!rowMenuRef.current?.contains(event.target as Node)) setRowMenu(null);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [rowMenu]);
+
+  const openRowMenu = (
+    event: React.MouseEvent,
+    id: number,
+    state: LabelLifecycleState = rowsById.get(id)?.state ?? "proposed",
+  ) => {
+    event.preventDefault();
+    setRowMenu({
+      id,
+      state,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 170)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 180)),
+    });
+  };
 
   // "All" is one row per instance in the whole volume — thousands on a real EM
   // volume — so it renders windowed once it gets big (`useVirtualRows`). The
@@ -470,6 +500,7 @@ export default function LabelsPanel({
             {filteredSlice.map((id) => (
               <li
                 key={id}
+                onContextMenu={(event) => openRowMenu(event, id)}
                 ref={id === activeId ? activeRowRef : id === focusId ? focusRowRef : undefined}
                 className={`row spread${id === activeId ? " labels-row-active" : ""}`}
               >
@@ -516,6 +547,7 @@ export default function LabelsPanel({
             {windowedAllRows.map((row) => (
               <li
                 key={row.id}
+                onContextMenu={(event) => openRowMenu(event, row.id, row.state)}
                 data-row=""
                 ref={row.id === activeId ? activeRowRef : row.id === focusId ? focusRowRef : undefined}
                 className={`row spread${row.id === activeId ? " labels-row-active" : ""}`}
@@ -557,6 +589,63 @@ export default function LabelsPanel({
         </>
       )}
       </div>
+      {rowMenu && (
+        <div
+          ref={rowMenuRef}
+          className="canvas-context-menu labels-row-context-menu"
+          role="menu"
+          aria-label={`Label ${rowMenu.id} actions`}
+          style={{ position: "fixed", left: rowMenu.x, top: rowMenu.y }}
+        >
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                className="secondary"
+                disabled={rowMenu.state === "verified"}
+                onClick={() => {
+                  onLifecycleAction(rowMenu.id, "verify");
+                  setRowMenu(null);
+                }}
+              >
+                Verify
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={rowMenu.state !== "verified"}
+                onClick={() => {
+                  onLifecycleAction(rowMenu.id, "unverify");
+                  setRowMenu(null);
+                }}
+              >
+                Unverify
+              </button>
+              <hr />
+            </>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              onTogglePinned(rowMenu.id);
+              setRowMenu(null);
+            }}
+          >
+            {pinnedIds.has(rowMenu.id) ? "Hide 3D" : "Show 3D"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              onToggleSolo(rowMenu.id);
+              setRowMenu(null);
+            }}
+          >
+            {soloId === rowMenu.id ? "Unsolo" : "Solo"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

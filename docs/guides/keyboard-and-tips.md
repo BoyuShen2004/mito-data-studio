@@ -49,6 +49,9 @@ of the navbar, then **Annotate shortcuts**.
   you press Save profile).
 - Bindings are stored on your account, not in the browser, so they follow you to
   another machine.
+- Logging out clears the authenticated profile; login and `/api/me` refresh
+  supply the next account's map. Two accounts can therefore use different maps
+  concurrently without a shared browser setting.
 
 Tool switching plus the active-label Verify and Solo actions are customisable.
 Save, Undo, Redo, layer navigation, the other label-lifecycle keys and the
@@ -74,3 +77,17 @@ browser one.
 - On CPU-only deployments, expect SAM2 Track to be slower; ordinary paint tools
   do not depend on the model runtime.
 - Before Submit, press Save and confirm the Unsaved marker is gone.
+
+## Concurrent editing policy
+
+Writes to one working volume (slice saves, lifecycle metadata and whole-volume
+tools) are serialized across request threads and workers. A client Save carries
+the working-copy revision it loaded. If another tab or user changed that copy
+first, the stale Save receives a conflict warning and keeps its edits pending;
+reload before retrying. Distinct tasks/volumes remain independent and do not
+evict one another's warm slice caches.
+
+Layer paging prefetches five planes ahead in the current A/D direction and one
+behind, retains a larger recent working set, and coalesces display work to one
+animation-frame-sized interval. This keeps held-key scrubbing even without
+relaxing the axis/index and post-Save revision gates.

@@ -19,6 +19,7 @@ than an empty list.
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Count, Q
 
 from annotation.models import AnnotationTask, HardCase, ReviewRecord
@@ -62,11 +63,18 @@ def person_card(user, *, extra: dict | None = None) -> dict:
     return card
 
 
+@transaction.atomic
 def update_own_profile(user, data: dict) -> UserProfile:
     """Apply the editable subset of ``data`` to ``user``'s profile."""
     from .shortcuts import may_customize_annotate_shortcuts
 
-    profile = _profile_of(user) or UserProfile.objects.create(user=user)
+    # Serialize profile PATCHes for the same account.  Two tabs commonly save
+    # display details and shortcut bindings seconds apart; without re-reading
+    # the locked row, the later request could write an older in-memory profile
+    # over fields the first request had just committed.
+    profile = UserProfile.objects.select_for_update().filter(user=user).first()
+    if profile is None:
+        profile = UserProfile.objects.create(user=user)
     changed = []
     for field in EDITABLE_PROFILE_FIELDS:
         if field in data:

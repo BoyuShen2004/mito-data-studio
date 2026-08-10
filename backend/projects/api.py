@@ -151,12 +151,21 @@ class ProjectViewSet(viewsets.ModelViewSet):
             ).first()
             if user is None:
                 return Response({"detail": "Choose an active user."}, status=400)
-            membership, created = ProjectMembership.objects.get_or_create(
-                project=project, user=user, defaults={"added_by": request.user}
+            from accounts.roles import get_role
+            from accounts.teams import ensure_project_assignee_eligible
+            from core.choices import UserRole
+
+            if get_role(user) != UserRole.ANNOTATOR:
+                return Response({"detail": "Choose an active annotator."}, status=400)
+            was_explicit = ProjectMembership.objects.filter(
+                project=project, user=user
+            ).exists()
+            _team_membership, membership = ensure_project_assignee_eligible(
+                project, user, actor=request.user
             )
             return Response(
                 ProjectMembershipSerializer(membership).data,
-                status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+                status=status.HTTP_200_OK if was_explicit else status.HTTP_201_CREATED,
             )
 
         explicit = {

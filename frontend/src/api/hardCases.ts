@@ -4,8 +4,8 @@ import { api } from "./client";
 /** Record the Active label on `taskId` as a hard case for its project.
  * Returns the full row — including `app_url` (in-app, for project members)
  * and `url`/`token` (the optional public copyable link). */
-export const createHardCase = (taskId: number, labelId: number) =>
-  api.post<HardCase>(`/tasks/${taskId}/hard-cases/`, { label_id: labelId });
+export const createHardCase = (taskId: number, labelId: number, note = "") =>
+  api.post<HardCase>(`/tasks/${taskId}/hard-cases/`, { label_id: labelId, note });
 
 /** The Hard Cases inbox, newest first. Server-scoped to what the caller may
  * see; `project`/`volume` narrow it for the per-project section. */

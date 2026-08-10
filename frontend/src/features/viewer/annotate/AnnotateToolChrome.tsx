@@ -333,7 +333,8 @@ export default function AnnotateToolChrome({
 
       {/* Fixed-height context row — Active/New on the left (hidden for Split). */}
       <div className="row canvas-toolrow tool-context">
-        {paintTool !== "split_3d" &&
+        {paintTool !== "seeds" &&
+          paintTool !== "split_3d" &&
           paintTool !== "merge" &&
           paintTool !== "delete" && (
           <>

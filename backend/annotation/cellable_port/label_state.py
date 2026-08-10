@@ -27,11 +27,17 @@ proposed — see :func:`LabelMetadataStore.create_proposed`, and
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+
+
+logger = logging.getLogger(__name__)
 
 
 class LabelState(Enum):
@@ -76,8 +82,9 @@ class LabelMetadata:
         return self.snapshot_rle is not None and self.snapshot_shape is not None
 
     def mark_edited(self) -> None:
-        # Re-editing a verified label puts it back to EDITED — same rule as
-        # Cellable's ``LabelMetadata.mark_edited``.
+        # Callers enforce the Verified geometry lock before reaching this
+        # transition. This remains valid for Proposed/Edited labels and after
+        # an explicit Unverify.
         self.state = LabelState.EDITED
         self.last_modified_at = _now()
 
@@ -229,31 +236,99 @@ class LabelMetadataStore:
             out[meta.state.value] += 1
         return out
 
+    def verified_ids(self) -> set[int]:
+        """Ids currently protected by the explicit Verified edit lock."""
+        return {
+            int(label_id)
+            for label_id, metadata in self._labels.items()
+            if metadata.state == LabelState.VERIFIED
+        }
+
     # ----- Persistence -----
 
     def save(self, filepath) -> None:
+        labels = {lid: meta.to_dict() for lid, meta in self._labels.items()}
         data = {
             "version": self.VERSION,
-            "labels": {lid: meta.to_dict() for lid, meta in self._labels.items()},
+            "labels": labels,
+            # Detect valid-JSON damage too (for example a state string changed
+            # from "verified" to "proposed"). Older sidecars without this
+            # field remain readable after strict structural validation.
+            "labels_sha256": hashlib.sha256(
+                json.dumps(labels, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest(),
             "saved_at": _now(),
         }
-        tmp = f"{filepath}.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, filepath)
+        directory = os.path.dirname(filepath) or "."
+        for destination in (filepath, f"{filepath}.bak"):
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=directory, delete=False
+            ) as handle:
+                tmp = handle.name
+                json.dump(data, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            try:
+                os.replace(tmp, destination)
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
 
     def load(self, filepath) -> bool:
-        if not os.path.exists(filepath):
-            return False
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            self._labels.clear()
-            for lid, meta_dict in data.get("labels", {}).items():
-                self._labels[lid] = LabelMetadata.from_dict(meta_dict)
-            return True
-        except (OSError, json.JSONDecodeError, KeyError, ValueError):
-            return False
+        for candidate in (filepath, f"{filepath}.bak"):
+            if not os.path.exists(candidate):
+                continue
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if not isinstance(data, dict):
+                    raise ValueError("metadata root must be an object")
+                raw_labels = data.get("labels")
+                if not isinstance(raw_labels, dict):
+                    raise ValueError("metadata labels must be an object")
+                expected_hash = data.get("labels_sha256")
+                if expected_hash is not None:
+                    actual_hash = hashlib.sha256(
+                        json.dumps(
+                            raw_labels, sort_keys=True, separators=(",", ":")
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    if not isinstance(expected_hash, str) or actual_hash != expected_hash:
+                        raise ValueError("metadata checksum mismatch")
+                for lid, meta_dict in raw_labels.items():
+                    if not isinstance(meta_dict, dict):
+                        raise ValueError("label metadata must be an object")
+                    if str(meta_dict.get("label_id", "")) != str(lid):
+                        raise ValueError("label metadata id mismatch")
+                    if str(meta_dict.get("state", "")).lower() not in {
+                        state.value for state in LabelState
+                    }:
+                        raise ValueError("unknown label state")
+                    if str(meta_dict.get("origin", "")).lower() not in {
+                        origin.value for origin in LabelOrigin
+                    }:
+                        raise ValueError("unknown label origin")
+                loaded = {
+                    lid: LabelMetadata.from_dict(meta_dict)
+                    for lid, meta_dict in raw_labels.items()
+                }
+                self._labels = loaded
+                if candidate != filepath:
+                    logger.warning(
+                        "Recovered label lifecycle metadata from backup %s",
+                        candidate,
+                    )
+                return True
+            except (
+                OSError,
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+                AttributeError,
+            ):
+                continue
+        return False
 
     @staticmethod
     def sidecar_path(mask_filepath: str) -> str:

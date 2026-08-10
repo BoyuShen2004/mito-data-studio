@@ -11,8 +11,11 @@ Task bounds are stored as zero-based half-open ranges (`z_start` included,
 ## Assign work
 
 1. As a manager, approve the project.
-2. In **People**, put eligible annotators in a team.
-3. In the project's **Assign** tab, select the working team.
+2. Add eligible annotators either under **Project → Access** or to the
+   project's working team in **People**. Both routes update the same roster.
+3. If the project has no working team yet, adding through Access attaches the
+   organisation's default team automatically; managers may replace it in the
+   project's **Assign** tab.
 4. Select one assignee per volume from the main table. Each row reads left to
    right as task, current status, volume (format, shape, voxel size, region
    coverage and label type, matching **Data**), and assignee.
@@ -27,6 +30,18 @@ the project's working team, and any remaining task assignees. It labels those
 sources as **Project member**, **Working team**, or **Via assigned task**. A
 working-team member appears there even before receiving a task; only explicit
 project memberships have a **Remove membership** action.
+
+Adding an annotator through Access grants both explicit browse/Hard Cases
+access and working-team assignment eligibility. Adding them to the current
+working team creates the explicit access row as well. The removal operations
+remain intentionally separate: **Remove membership** removes explicit
+browse-only access but does not remove working-team eligibility; removing the
+person from the working team withdraws assignment eligibility while retaining
+any explicit browse access.
+
+Existing installations can preview the forward-only roster sync with
+`python manage.py sync_project_rosters`; add `--apply` (and optionally
+`--project-id ID`) to write it. The command is dry-run by default.
 
 ## Reset an assignee's labels
 
@@ -61,6 +76,9 @@ The assignee can do the same for their own task from the editor; see
 Managers can transfer assignments and can lock or reopen annotation from
 **Project → Assign → Details**. An approved-and-closed task loses Annotate
 and Submit until a manager reopens it.
+Approval installs the reviewed snapshot as a new official checkpoint and
+starts a fresh per-label verification lifecycle. If the task is kept open or
+later reopened, labels are verified again for that new annotation round.
 
 `auto_fill` is an operator-run, explicitly enabled scheduler. It never runs just
 because the UI is open; deployments that use it should document their cron or

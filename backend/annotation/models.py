@@ -308,6 +308,7 @@ class HardCase(models.Model):
     # The Active instance id at record time — the "case" itself. Viewers
     # default to soloing this id (canvas + 3D), but may reveal others.
     label_id = models.PositiveIntegerField()
+    note = models.TextField(max_length=1000, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

@@ -965,12 +965,30 @@ class HardCaseApiTests(TestCase):
         c.force_authenticate(user=user)
         return c
 
-    def _create_case(self, user, label_id=7, task=None):
+    def _create_case(self, user, label_id=7, task=None, note=None):
         return self._client(user).post(
             f"/api/tasks/{(task or self.task).id}/hard-cases/",
-            {"label_id": label_id},
+            {"label_id": label_id, **({"note": note} if note is not None else {})},
             format="json",
         )
+
+    def test_hard_case_note_is_optional_and_returned_everywhere(self):
+        without = self._create_case(self.annotator, label_id=3)
+        self.assertEqual(without.status_code, 201, without.content)
+        self.assertEqual(without.json()["note"], "")
+
+        created = self._create_case(
+            self.annotator, label_id=7, note="  boundary is ambiguous near cristae  "
+        )
+        self.assertEqual(created.status_code, 201, created.content)
+        row = created.json()
+        self.assertEqual(row["note"], "boundary is ambiguous near cristae")
+        listed = self._client(self.annotator).get("/api/hard-cases/").json()
+        self.assertEqual(next(item for item in listed if item["id"] == row["id"])["note"], row["note"])
+        detail = self._client(self.annotator).get(f"/api/hard-cases/{row['id']}/")
+        self.assertEqual(detail.json()["note"], row["note"])
+        public = APIClient().get(f"/api/public/hard-cases/{row['token']}/meta/")
+        self.assertEqual(public.json()["note"], row["note"])
 
     def test_full_task_share_is_public_read_only_and_permission_scoped(self):
         created = self._client(self.annotator).post(

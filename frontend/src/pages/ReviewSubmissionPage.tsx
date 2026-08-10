@@ -168,6 +168,10 @@ export default function ReviewSubmissionPage() {
                 ? "The annotator keeps Annotate + Submit; a new submission starts another review round."
                 : "Approving closes the task: no more painting or submitting until you reopen it."}
             </span>
+            <span className="muted" style={{ display: "block", fontSize: "0.78rem" }}>
+              Approval installs this snapshot as a new official checkpoint and
+              starts a fresh per-label verification lifecycle for any later round.
+            </span>
           </span>
         </label>
         <div className="row">

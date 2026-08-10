@@ -29,6 +29,10 @@ registered mask across every layer. See
 unsaved paint and Track parent classes — so it fills the holes Merge, Delete and
 Reject leave behind instead of always counting up.
 
+Seeds does not show **Active** or **New**. The first seed selects the target
+instance, subsequent seeds must land on it, and Watershed automatically assigns
+the smallest safe new IDs using the full saved-plus-pending label set.
+
 ## Overwrite policy
 
 Interpolate, Flood fill, and Track propagation share an **Overwrite** policy:
@@ -50,10 +54,15 @@ preview. An unavailable AI runtime should fail the assist, not the editor.
 
 ## Seeds and Watershed
 
-Choose Seeds, select the target label, and place two or more meaningful seeds
+Choose Seeds and place two or more meaningful seeds
 within it across the relevant layers. **Run Watershed** computes a bounded
 plan and applies the changed planes as one pending, undoable result. Clear
 seeds to start again.
+
+When one ID is reused by distant disconnected objects, an oversized global
+bounding box falls back to the padded seed neighbourhood. Truly oversized seed
+spans are still refused with the Z×Y×X dimensions and bounded voxel limit; the
+global safety limit is not raised.
 
 ## Interpolate endpoints
 
@@ -69,4 +78,19 @@ Right-click the canvas for Cancel plus the full list: Select, Brush, Erase,
 Box Erase, Box Mask, Point Mask, Boundary, Seeds, Interpolate, Flood fill,
 Split, Merge, and Delete. Feature-flagged tools appear only when enabled. If
 you right-click a label, choosing Interpolate sets that label Active and uses
-the current layer as an endpoint.
+the current layer as an endpoint. The same menu can Verify, Solo, or Show/Hide
+that label in 3D. Right-clicking a row in **Labels** offers row-specific Verify
+and Unverify (plus Solo and 3D) without first changing Active. Verification is
+applied to saved geometry: if work is pending, Verify saves it first. A Verified
+label is then locked against Brush, Erase, Box Erase, Delete layer, Split,
+Merge, Watershed, Interpolate, Flood fill, Track, and API writes until the user
+explicitly chooses Unverify. Hide Verified changes display only; hidden
+Verified voxels remain protected. The metadata sidecar is written atomically
+with a checksummed, same-generation backup and survives reopening. If the
+primary copy is damaged, the backup is used; if neither copy validates, edits
+stop with an error instead of silently treating verified labels as unverified.
+
+**Reset labels** deliberately clears verification together with the discarded
+working draft. Approving a submission also establishes a new official
+checkpoint and starts a fresh working lifecycle; if a manager later reopens
+that task, its labels must be verified for the new round.

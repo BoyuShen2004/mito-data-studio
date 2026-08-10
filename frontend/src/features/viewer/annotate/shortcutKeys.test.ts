@@ -71,4 +71,12 @@ describe("toolForShortcut", () => {
   it("returns null when the account has no shortcut map yet", () => {
     expect(toolForShortcut(key("b", { ctrlKey: true }), null, false)).toBeNull();
   });
+
+  it("resolves the current account map without cross-talk from another account", () => {
+    const accountA = { ...profile, brush: "n" };
+    const accountB = { ...profile, brush: "q" };
+    expect(toolForShortcut(key("n", { ctrlKey: true }), accountA, false)).toBe("brush");
+    expect(toolForShortcut(key("n", { ctrlKey: true }), accountB, false)).toBeNull();
+    expect(toolForShortcut(key("q", { ctrlKey: true }), accountB, false)).toBe("brush");
+  });
 });

@@ -2993,6 +2993,21 @@ button.dev-reset-btn:hover:not(:disabled) {
 .hard-case-resolved {
   opacity: 0.62;
 }
+.hard-case-note {
+  max-width: 60ch;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hard-case-detail-note {
+  max-width: 36ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Editor topbar note shown in place of Submit once a task is locked. */
 .editor-lock-note {

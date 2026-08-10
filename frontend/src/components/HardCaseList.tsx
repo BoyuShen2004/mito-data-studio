@@ -66,6 +66,11 @@ export default function HardCaseList({
                 {showProject && c.project_title ? `${c.project_title} · ` : ""}
                 {c.volume_name || "volume"} · z{displayTaskLayerRange(c.z_start, c.z_end)} · task #{c.task}
               </div>
+              {c.note && (
+                <div className="hard-case-note" title={c.note}>
+                  {c.note}
+                </div>
+              )}
               <div className="muted" style={{ fontSize: "0.78rem" }}>
                 by {c.created_by_username || "—"} ·{" "}
                 {new Date(c.created_at).toLocaleString()}

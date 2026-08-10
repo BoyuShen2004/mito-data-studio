@@ -29,6 +29,7 @@ function Harness({
   readOnly = false,
   soloId = null,
   onResetVisibility = vi.fn(),
+  onLifecycleAction = vi.fn(),
   pinActiveToTopToken = 0,
 }: {
   initialScope?: LabelsScope;
@@ -38,6 +39,7 @@ function Harness({
   readOnly?: boolean;
   soloId?: number | null;
   onResetVisibility?: () => void;
+  onLifecycleAction?: (id: number, action: "verify" | "unverify" | "revert" | "reject") => void;
   pinActiveToTopToken?: number;
 }) {
   const [scope, setScope] = useState<LabelsScope>(initialScope);
@@ -50,7 +52,7 @@ function Harness({
     onPinMany={vi.fn()} onJumpToZ={vi.fn()} hideVerified={false}
     onHideVerifiedChange={vi.fn()} hasRegionMask={region} hideOutsideRegion={false}
     onHideOutsideRegionChange={vi.fn()} regionMemberIds={new Set(data.map((row) => row.id))}
-    onLifecycleAction={vi.fn()} onRefresh={onRefresh} readOnly={readOnly}
+    onLifecycleAction={onLifecycleAction} onRefresh={onRefresh} readOnly={readOnly}
     pinActiveToTopToken={pinActiveToTopToken}
   /></>;
 }
@@ -157,6 +159,27 @@ describe("LabelsPanel list chrome and selection", () => {
 
     fireEvent.click(showAll);
     expect(onResetVisibility).toHaveBeenCalledOnce();
+  });
+
+  it("offers row-specific Verify and Unverify on right click", () => {
+    const onLifecycleAction = vi.fn();
+    const data = [
+      { ...rows[0], id: 1, state: "edited" as const },
+      { ...rows[1], id: 2, state: "verified" as const },
+    ];
+    const { container } = render(
+      <Harness data={data} onLifecycleAction={onLifecycleAction} />,
+    );
+    const listRows = container.querySelectorAll(".labels-list li");
+    fireEvent.contextMenu(listRows[0], { clientX: 20, clientY: 20 });
+    expect((screen.getByRole("button", { name: "Verify" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Unverify" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+    expect(onLifecycleAction).toHaveBeenCalledWith(1, "verify");
+
+    fireEvent.contextMenu(listRows[1], { clientX: 20, clientY: 20 });
+    fireEvent.click(screen.getByRole("button", { name: "Unverify" }));
+    expect(onLifecycleAction).toHaveBeenCalledWith(2, "unverify");
   });
 
   it("scrolls a 1000+ row virtual All list by sorted index only when pinning from canvas token", () => {

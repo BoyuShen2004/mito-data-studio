@@ -695,6 +695,14 @@ class CellablePortApiTests(TestCase):
         owned = os.path.join(_TMP, working_label_rel_path(self.volume))
         if os.path.exists(owned):
             os.remove(owned)
+        # Lifecycle sidecars share the stable project/dataset path rather than
+        # the database PK. Isolate tests from deliberately corrupting one.
+        from annotation.label_paths import working_label_metadata_rel_path
+
+        sidecar = os.path.join(_TMP, working_label_metadata_rel_path(self.volume))
+        for candidate in (sidecar, f"{sidecar}.bak"):
+            if os.path.exists(candidate):
+                os.remove(candidate)
         self.task = AnnotationTask.objects.create(
             project=self.project, volume=self.volume, assigned_to=self.annotator,
             z_start=0, z_end=6, y_end=32, x_end=32,
@@ -1091,16 +1099,26 @@ class CellablePortApiTests(TestCase):
         self.assertEqual(row["origin"], "ai")
         self.assertTrue(row["can_revert"])
 
-    def test_repainting_a_verified_label_marks_it_edited_again(self):
+    def test_repainting_a_verified_label_requires_explicit_unverify(self):
+        from annotation.services import VerifiedLabelConflict
+
         self._paint_instance(13, 1, 0, 4, 0, 4, origin="manual")
-        resp = self._client(self.annotator).post(
+        client = self._client(self.annotator)
+        resp = client.post(
             f"/api/tasks/{self.task.id}/labels/13/lifecycle/", {"action": "verify"}, format="json",
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(self._lifecycle_row(13)["state"], "verified")
 
-        # Expand the same label on a new slice — an existing tracked id is
-        # always marked EDITED on further changes, even from VERIFIED.
+        with self.assertRaises(VerifiedLabelConflict):
+            self._paint_instance(13, 2, 0, 4, 0, 4, origin="manual")
+        self.assertEqual(self._lifecycle_row(13)["state"], "verified")
+
+        client.post(
+            f"/api/tasks/{self.task.id}/labels/13/lifecycle/",
+            {"action": "unverify"},
+            format="json",
+        )
         self._paint_instance(13, 2, 0, 4, 0, 4, origin="manual")
         self.assertEqual(self._lifecycle_row(13)["state"], "edited")
 
@@ -1113,6 +1131,218 @@ class CellablePortApiTests(TestCase):
         resp = c.post(f"/api/tasks/{self.task.id}/labels/14/lifecycle/", {"action": "unverify"}, format="json")
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(self._lifecycle_row(14)["state"], "edited")
+
+    def test_verified_state_survives_a_fresh_api_session_and_volume_reload(self):
+        self._paint_instance(20, 1, 0, 4, 0, 4, origin="manual")
+        verified = self._client(self.annotator).post(
+            f"/api/tasks/{self.task.id}/labels/20/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        self.assertEqual(verified.status_code, 200, verified.content)
+
+        # New ORM objects and a new client model close/reopen rather than an
+        # in-memory state echo. The summary must reload the JSON sidecar.
+        self.volume = Volume.objects.get(pk=self.volume.pk)
+        self.task = AnnotationTask.objects.select_related("volume").get(pk=self.task.pk)
+        fresh = APIClient()
+        fresh.force_authenticate(user=User.objects.get(pk=self.annotator.pk))
+        response = fresh.get(f"/api/tasks/{self.task.id}/labels-summary/")
+        row = next(item for item in response.json()["labels"] if item["id"] == 20)
+        self.assertEqual(row["state"], "verified")
+        self.assertTrue(row["verified_at"])
+
+    def test_verified_label_voxels_are_locked_until_explicit_unverify(self):
+        from annotation.services import get_label_slice_ids
+        from annotation.visualization.slice_io import decode_label_rle, encode_label_rle
+
+        self._paint_instance(23, 1, 0, 4, 0, 4, origin="manual")
+        client = self._client(self.annotator)
+        verified = client.post(
+            f"/api/tasks/{self.task.id}/labels/23/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        self.assertEqual(verified.status_code, 200, verified.content)
+
+        rejected = client.post(
+            f"/api/tasks/{self.task.id}/labels/23/lifecycle/",
+            {"action": "reject"},
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 400, rejected.content)
+        self.assertIn("Unverify", rejected.json()["detail"])
+
+        current = get_label_slice_ids(self.volume, "z", 1)
+        changed = decode_label_rle(current["runs"], tuple(current["shape"]))
+        changed[0, 0] = 0
+        response = client.put(
+            f"/api/tasks/{self.task.id}/label-ids/",
+            {
+                "axis": "z",
+                "index": 1,
+                "shape": current["shape"],
+                "runs": encode_label_rle(changed),
+                "expected_revision": current["revision"],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["reason"], "verified_label_locked")
+        self.assertEqual(self._lifecycle_row(23)["state"], "verified")
+        persisted = get_label_slice_ids(self.volume, "z", 1)
+        restored = decode_label_rle(persisted["runs"], tuple(persisted["shape"]))
+        self.assertEqual(int(restored[0, 0]), 23)
+
+        unverified = client.post(
+            f"/api/tasks/{self.task.id}/labels/23/lifecycle/",
+            {"action": "unverify"},
+            format="json",
+        )
+        self.assertEqual(unverified.status_code, 200, unverified.content)
+        allowed = client.put(
+            f"/api/tasks/{self.task.id}/label-ids/",
+            {
+                "axis": "z",
+                "index": 1,
+                "shape": persisted["shape"],
+                "runs": encode_label_rle(changed),
+                "expected_revision": persisted["revision"],
+            },
+            format="json",
+        )
+        self.assertEqual(allowed.status_code, 200, allowed.content)
+
+    def test_verified_label_cannot_be_grown_without_unverify(self):
+        from annotation.services import get_label_slice_ids
+        from annotation.visualization.slice_io import decode_label_rle, encode_label_rle
+
+        self._paint_instance(24, 1, 0, 2, 0, 2, origin="manual")
+        client = self._client(self.annotator)
+        client.post(
+            f"/api/tasks/{self.task.id}/labels/24/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        current = get_label_slice_ids(self.volume, "z", 1)
+        changed = decode_label_rle(current["runs"], tuple(current["shape"]))
+        changed[5, 5] = 24
+        response = client.put(
+            f"/api/tasks/{self.task.id}/label-ids/",
+            {
+                "axis": "z",
+                "index": 1,
+                "shape": current["shape"],
+                "runs": encode_label_rle(changed),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["reason"], "verified_label_locked")
+
+    def test_verify_rejects_an_id_absent_from_the_saved_volume(self):
+        response = self._client(self.annotator).post(
+            f"/api/tasks/{self.task.id}/labels/999/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("Save it before verifying", response.json()["detail"])
+
+    def test_corrupt_primary_sidecar_recovers_latest_verified_state_from_backup(self):
+        from annotation.label_paths import working_label_metadata_rel_path
+        from annotation.visualization.slice_io import resolve_path
+
+        self._paint_instance(25, 1, 0, 3, 0, 3, origin="manual")
+        response = self._client(self.annotator).post(
+            f"/api/tasks/{self.task.id}/labels/25/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        sidecar = resolve_path(working_label_metadata_rel_path(self.volume))
+        backup = sidecar.with_name(f"{sidecar.name}.bak")
+        self.assertTrue(backup.exists())
+        sidecar.write_text("{truncated", encoding="utf-8")
+
+        row = self._lifecycle_row(25)
+        self.assertEqual(row["state"], "verified")
+        self.assertTrue(row["verified_at"])
+
+    def test_valid_json_state_tamper_recovers_verified_state_from_backup(self):
+        import json
+
+        from annotation.label_paths import working_label_metadata_rel_path
+        from annotation.visualization.slice_io import resolve_path
+
+        self._paint_instance(27, 1, 0, 3, 0, 3, origin="manual")
+        response = self._client(self.annotator).post(
+            f"/api/tasks/{self.task.id}/labels/27/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        sidecar = resolve_path(working_label_metadata_rel_path(self.volume))
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+        payload["labels"]["27"]["state"] = "proposed"
+        # Keep the original checksum: valid JSON with semantically changed
+        # lifecycle data must be rejected just like truncation.
+        sidecar.write_text(json.dumps(payload), encoding="utf-8")
+
+        row = self._lifecycle_row(27)
+        self.assertEqual(row["state"], "verified")
+        self.assertTrue(row["verified_at"])
+
+    def test_two_corrupt_sidecars_fail_closed_without_overwriting_evidence(self):
+        from annotation.label_paths import working_label_metadata_rel_path
+        from annotation.visualization.slice_io import resolve_path
+
+        self._paint_instance(26, 1, 0, 3, 0, 3, origin="manual")
+        client = self._client(self.annotator)
+        client.post(
+            f"/api/tasks/{self.task.id}/labels/26/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        sidecar = resolve_path(working_label_metadata_rel_path(self.volume))
+        backup = sidecar.with_name(f"{sidecar.name}.bak")
+        sidecar.write_text("{broken-primary", encoding="utf-8")
+        backup.write_text("{broken-backup", encoding="utf-8")
+
+        summary = client.get(f"/api/tasks/{self.task.id}/labels-summary/")
+        change = client.post(
+            f"/api/tasks/{self.task.id}/labels/26/lifecycle/",
+            {"action": "unverify"},
+            format="json",
+        )
+        self.assertEqual(summary.status_code, 400, summary.content)
+        self.assertEqual(change.status_code, 400, change.content)
+        self.assertEqual(sidecar.read_text(encoding="utf-8"), "{broken-primary")
+        self.assertEqual(backup.read_text(encoding="utf-8"), "{broken-backup")
+
+    def test_legacy_sidecar_is_adopted_even_when_new_mask_already_exists(self):
+        from annotation.label_paths import (
+            legacy_working_label_metadata_rel_path,
+            working_label_metadata_rel_path,
+        )
+        from annotation.visualization.slice_io import resolve_path
+
+        self._paint_instance(21, 1, 0, 4, 0, 4, origin="manual")
+        client = self._client(self.annotator)
+        client.post(
+            f"/api/tasks/{self.task.id}/labels/21/lifecycle/",
+            {"action": "verify"},
+            format="json",
+        )
+        current = resolve_path(working_label_metadata_rel_path(self.volume))
+        legacy = resolve_path(legacy_working_label_metadata_rel_path(self.volume))
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        current.replace(legacy)
+
+        row = self._lifecycle_row(21)
+        self.assertEqual(row["state"], "verified")
+        self.assertTrue(current.exists())
+        self.assertFalse(legacy.exists())
 
     def test_unverify_when_not_verified_is_400(self):
         self._paint_instance(15, 1, 0, 4, 0, 4, origin="manual")

@@ -22,6 +22,7 @@ import struct
 import threading
 import zlib
 from collections import OrderedDict
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -63,6 +64,39 @@ _label_max_cache: dict[str, int] = {}
 # pointer swaps. Re-entrant because `drop_file` is reachable from within other
 # guarded helpers.
 _cache_lock = threading.RLock()
+_write_locks_guard = threading.Lock()
+_write_locks: dict[str, threading.RLock] = {}
+
+
+@contextmanager
+def serialized_file_write(path: Path | str):
+    """Serialize mutations of one working-volume artifact.
+
+    Django row locks do not cover TIFF/JSON bytes and are ineffective between
+    two endpoints that do not share a database transaction.  This combines a
+    process-local re-entrant lock with a sibling advisory lock file, so two
+    request threads or Gunicorn workers cannot concurrently rewrite a mask and
+    its lifecycle sidecar.  Callers use the working mask path as the common
+    key even when the bytes being changed are in the metadata sidecar.
+    """
+    target = str(Path(path))
+    with _write_locks_guard:
+        local = _write_locks.setdefault(target, threading.RLock())
+    with local:
+        lock_path = Path(f"{target}.write.lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as handle:
+            try:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            except ImportError:  # pragma: no cover - Linux in supported deploys
+                fcntl = None
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 class SliceIOError(Exception):

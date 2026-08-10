@@ -219,7 +219,10 @@ function ProjectMembers({ projectId }: { projectId: number }) {
       <div className="section-heading"><h2>Access members</h2></div>
       <p className="muted">
         Members can view the project and Hard Cases without being assigned a
-        task. Work assignment stays separate in the Assign tab.
+        task. Adding an annotator here also adds them to this project&rsquo;s
+        working team so they can be assigned work. Removing Access removes
+        browse-only membership; remove them from the working team in People to
+        remove assignment eligibility.
       </p>
       <div className="row">
         <select value={selected} onChange={(e) => setSelected(e.target.value)}>

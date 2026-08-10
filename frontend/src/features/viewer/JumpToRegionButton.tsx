@@ -43,7 +43,9 @@ export default function JumpToRegionButton({
     let alive = true;
     // Prefetch is deliberately non-blocking: the button remains clickable and
     // joins the same de-duplicated promise if the user gets there first.
-    void loadRegionIndex(volumeId, axis, getRegionIndex)
+    // Revalidate on each mount/axis change. sessionStorage is only a fast
+    // click fallback; it must never outlive a rebuilt server-side mask.
+    void loadRegionIndex(volumeId, axis, getRegionIndex, { refresh: true })
       .then((known) => {
         if (alive) setIndices(known);
       })

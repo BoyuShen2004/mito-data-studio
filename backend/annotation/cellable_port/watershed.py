@@ -48,6 +48,7 @@ def run_watershed_3d(
     seeds_zyx,
     padding: int = 5,
     max_existing_label: int | None = None,
+    existing_label_ids=None,
 ) -> dict:
     """Split ``target_label`` inside ``mask`` (mutated in place) using
     watershed seeded at ``seeds_zyx`` (an iterable of ``(z, y, x)`` voxel
@@ -112,11 +113,22 @@ def run_watershed_3d(
         max_existing_label = int(mask.max())
     else:
         max_existing_label = int(max_existing_label)
-    new_labels_array = np.arange(
-        max_existing_label + 1,
-        max_existing_label + split_regions.size + 1,
-        dtype=mask.dtype,
-    )
+    if existing_label_ids is None:
+        new_labels_array = np.arange(
+            max_existing_label + 1,
+            max_existing_label + split_regions.size + 1,
+            dtype=mask.dtype,
+        )
+    else:
+        used = {int(value) for value in existing_label_ids if int(value) > 0}
+        allocated = []
+        candidate = 1
+        while len(allocated) < int(split_regions.size):
+            if candidate not in used:
+                allocated.append(candidate)
+                used.add(candidate)
+            candidate += 1
+        new_labels_array = np.asarray(allocated, dtype=mask.dtype)
     region_to_label = np.zeros(int(ws_labels_sub.max()) + 1, dtype=mask.dtype)
     region_to_label[largest_region] = target_label
     region_to_label[split_regions] = new_labels_array

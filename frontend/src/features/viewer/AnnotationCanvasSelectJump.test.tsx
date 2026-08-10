@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AnnotationCanvas from "./AnnotationCanvas";
@@ -20,11 +20,16 @@ vi.mock("../rendering", () => ({
 
 vi.mock("./Labels3DPanel", () => ({ default: () => <div /> }));
 
-const hoisted = vi.hoisted(() => ({ fetchObjectUrl: vi.fn(), setLabelLifecycle: vi.fn() }));
+const hoisted = vi.hoisted(() => ({
+  fetchObjectUrl: vi.fn(),
+  putLabelIds: vi.fn(),
+  setLabelLifecycle: vi.fn(),
+}));
 
 vi.mock("../../api/viewer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api/viewer")>()),
   fetchObjectUrl: hoisted.fetchObjectUrl,
+  putLabelIds: hoisted.putLabelIds,
   setLabelLifecycle: hoisted.setLabelLifecycle,
   getTrackingPrompts: vi.fn(async () => ({ version: 1, items: [], pending_review: null })),
 }));
@@ -116,8 +121,15 @@ async function selectOnCanvas() {
 describe("Select tool label picking", () => {
   beforeEach(() => {
     hoisted.fetchObjectUrl.mockReset().mockImplementation(async (path: string) => `blob:${path}`);
-    hoisted.setLabelLifecycle.mockReset();
+    hoisted.putLabelIds.mockReset().mockResolvedValue({ max_label_id: 7, next_label_id: 8 });
+    hoisted.setLabelLifecycle.mockReset().mockResolvedValue({
+      label_id: 7,
+      action: "verify",
+      state: "verified",
+      removed: false,
+    });
     api.getLabelIds.mockClear();
+    api.getLabelsSummary.mockClear();
   });
 
   it("jumps to where the label starts while the list is scoped to All", async () => {
@@ -153,5 +165,51 @@ describe("Select tool label picking", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "R", shiftKey: true }));
     });
     expect(hoisted.setLabelLifecycle).not.toHaveBeenCalled();
+  });
+
+  it("saves pending geometry before verifying it", async () => {
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    fireEvent.change(screen.getByTitle("Active label id"), { target: { value: "6" } });
+    fireEvent.click(document.querySelector('button[title^="Erase (circular)"]')!);
+
+    const target = overlay();
+    target.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 4, height: 4, right: 4, bottom: 4, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    target.setPointerCapture = () => {};
+    target.releasePointerCapture = () => {};
+    const pointer = (type: string) => {
+      const event = new MouseEvent(type, {
+        clientX: 1.5,
+        clientY: 1.5,
+        button: 0,
+        bubbles: true,
+      });
+      Object.defineProperty(event, "pointerId", { value: 1 });
+      return event;
+    };
+    act(() => {
+      target.dispatchEvent(pointer("pointerdown"));
+      target.dispatchEvent(pointer("pointerup"));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters Options/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^✓ Verify$/ }));
+    await waitFor(() => expect(hoisted.setLabelLifecycle).toHaveBeenCalledWith(5, 6, "verify"));
+    expect(hoisted.putLabelIds).toHaveBeenCalled();
+    expect(hoisted.putLabelIds.mock.invocationCallOrder[0]).toBeLessThan(
+      hoisted.setLabelLifecycle.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("keeps the last known label state when a summary refresh fails", async () => {
+    mount();
+    await screen.findByTitle(/64 voxels/);
+    api.getLabelsSummary.mockRejectedValueOnce(new Error("temporary network failure"));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await screen.findByRole("alert");
+    expect(screen.getByTitle(/64 voxels/)).toBeTruthy();
   });
 });

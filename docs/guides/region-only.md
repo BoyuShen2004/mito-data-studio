@@ -15,9 +15,13 @@ This is what a mitochondrion needs: one 40-layer object that enters the region
 on five of those layers is one object, and hiding it on the other 35 showed a
 single mito as a handful of disconnected fragments.
 
-Painting outside the region does not create a visibility exemption. Switching
-Region only off and on, or undoing an outside stroke, always returns to the
-same strict touch-based display.
+Ordinary painting outside the region does not create a visibility exemption.
+A Split or Watershed result is the exception during the uninterrupted editing
+session: newly produced pieces remain visible while Region only stays on, so
+the result cannot disappear before it can be reviewed and saved. Switching
+Region only off and later on ends that temporary exception and re-fetches the
+strict touch-based membership; a label that never touches the region is hidden
+again.
 
 Unsaved work counts immediately: a label you have just drawn inside the region
 appears as soon as the stroke touches it, without waiting for a Save — the
@@ -78,7 +82,14 @@ undone outside stroke is not projected later.
 
 ## Saving while focused
 
-Save remains explicit. If Region only is still on, outside-region pending paint
-is protected from the disk write. When that would omit work, the editor asks
-whether to save only inside-region edits and explains that switching Region
-only off first is required to save the outside work too.
+Save remains explicit. Ordinary outside-region pending paint is protected from
+the disk write; when that would omit work, the editor asks whether to save only
+inside-region edits. Split and Watershed planes are saved as the exact bounded
+3-D plan, including their outside-mask extent, because clipping those planes
+would turn a reviewed on-screen result into different bytes on disk. Their
+temporary visibility lasts only until Region only is toggled.
+
+**Jump to region** revalidates its cached plane list on viewer open and on axis
+changes, rejects an axis-mismatched response, and only selects an index the
+server reported as non-empty. An empty mask disables the action; if the current
+plane already contains region, the button is a documented no-op.

@@ -52,6 +52,11 @@ export default function HardCaseSharePage() {
           <span className="muted" style={{ fontSize: "0.78rem" }}>
             {meta.project_title} · {meta.volume_name} · label #{meta.label_id}
           </span>
+          {meta.note && (
+            <span className="hard-case-detail-note" title={meta.note}>
+              Note: {meta.note}
+            </span>
+          )}
           <span className="spacer" />
           <ShareViewerActions controls={axisControls} id="topbar-hard-case-axis" />
           <span className="share-public-badge">READ-ONLY · NO ACCOUNT NEEDED</span>

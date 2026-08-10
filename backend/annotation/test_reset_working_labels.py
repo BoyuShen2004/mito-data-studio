@@ -123,12 +123,15 @@ class ResetWorkingLabelsTests(TestCase):
         sidecar = resolve_path(working_label_metadata_rel_path(self.volume))
         sidecar.parent.mkdir(parents=True, exist_ok=True)
         sidecar.write_text('{"labels": {"9": {"state": "verified"}}}')
+        backup = sidecar.with_name(f"{sidecar.name}.bak")
+        backup.write_text('{"labels": {"9": {"state": "verified"}}}')
         self.assertTrue(sidecar.exists())
 
         reset_working_labels_to_registered(self.task)
 
         # Both described voxels that no longer exist.
         self.assertFalse(sidecar.exists())
+        self.assertFalse(backup.exists())
         self.volume.refresh_from_db()
         self.task.volume = self.volume
         self.assertEqual(list_tracking_prompts(self.task), [])

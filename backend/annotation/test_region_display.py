@@ -95,6 +95,15 @@ class RegionNonemptyIndexTests(_RegionVolumeMixin, TestCase):
         self.assertEqual(indices["y"], [2, 3, 4])
         self.assertEqual(indices["x"], [1, 2, 3])
 
+    def test_two_distant_blocks_never_report_an_empty_plane_between_them(self):
+        region = np.zeros((9, 6, 6), dtype=np.uint8)
+        region[1, 1:3, 1:3] = 1
+        region[7, 4:6, 4:6] = 1
+        tifffile.imwrite(self.root / "distant-roi.tif", region)
+        indices = calculate_region_nonempty_indices("distant-roi.tif")
+        self.assertEqual(indices["z"], [1, 7])
+        self.assertNotIn(4, indices["z"])
+
     def test_slab_boundaries_do_not_change_the_answer(self):
         """A chunked scan must agree with a single-slab one, plane for plane."""
         self.assertEqual(
@@ -209,6 +218,8 @@ class RegionDisplayApiTests(_RegionVolumeMixin, APITestCase):
         self.assertEqual(response.data["axis"], "z")
         self.assertEqual(response.data["indices"], [1, 2])
         self.assertEqual(response.data["length"], 2)
+        self.assertEqual(response.data["axis_length"], 4)
+        self.assertTrue(response.data["revision"])
 
     def test_region_index_404s_for_a_volume_without_a_region_mask(self):
         self.volume.region_mask_path = ""
