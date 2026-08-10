@@ -12,6 +12,7 @@ import AnnotationCanvas, {
 } from "../features/viewer/AnnotationCanvas";
 import AxisSelect from "../features/viewer/AxisSelect";
 import RegionOnlyButton from "../features/viewer/RegionOnlyButton";
+import HardCaseNotesModal from "../components/HardCaseNotesModal";
 
 /**
  * One hard case, opened by a project member at `/hard-cases/:id`.
@@ -37,6 +38,7 @@ export default function HardCaseDetailPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [axisControls, setAxisControls] = useState<AxisControls | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const onAxisControls = useCallback((c: AxisControls | null) => {
     setAxisControls(c);
   }, []);
@@ -109,14 +111,16 @@ export default function HardCaseDetailPage() {
             {hardCase.created_by_username || "—"} ·{" "}
             {new Date(hardCase.created_at).toLocaleDateString()}
           </span>
-          {hardCase.note && (
-            <span className="hard-case-detail-note" title={hardCase.note}>
-              Note: {hardCase.note}
-            </span>
-          )}
           <span className="spacer" />
           {notice && <span className="error">{notice}</span>}
           <div className="editor-actions">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setNotesOpen(true)}
+            >
+              Note{hardCase.message_count ? ` (${hardCase.message_count})` : ""}
+            </button>
             {axisControls && (
               <>
                 <AxisSelect
@@ -181,6 +185,13 @@ export default function HardCaseDetailPage() {
         initialSoloId={hardCase.label_id}
         onAxisControls={onAxisControls}
       />
+      {notesOpen && (
+        <HardCaseNotesModal
+          hardCase={hardCase}
+          onClose={() => setNotesOpen(false)}
+          onChanged={reload}
+        />
+      )}
     </ViewerShell>
   );
 }

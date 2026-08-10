@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { displayTaskLayerRange } from "../features/viewer/layerIndex";
 import { setHardCaseStatus } from "../api/hardCases";
 import type { HardCase } from "../types/hardCase";
+import HardCaseNotesModal from "./HardCaseNotesModal";
 
 /**
  * Hard cases, newest first — the shared list body for the `/hard-cases` inbox
@@ -22,6 +24,8 @@ export default function HardCaseList({
   onChanged?: () => void;
   emptyText?: string;
 }) {
+  const [notesCase, setNotesCase] = useState<HardCase | null>(null);
+
   if (cases.length === 0) {
     return (
       <p className="muted" style={{ marginBottom: 0 }}>
@@ -45,6 +49,7 @@ export default function HardCaseList({
   };
 
   return (
+    <>
     <ul className="hard-case-list">
       {cases.map((c) => (
         <li
@@ -80,6 +85,13 @@ export default function HardCaseList({
               </div>
             </div>
             <div className="row">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setNotesCase(c)}
+              >
+                Note{c.message_count ? ` (${c.message_count})` : ""}
+              </button>
               <Link to={`/hard-cases/${c.id}`}>
                 <button type="button" className="secondary">
                   {c.can_annotate ? "Open" : "View"}
@@ -99,5 +111,13 @@ export default function HardCaseList({
         </li>
       ))}
     </ul>
+    {notesCase && (
+      <HardCaseNotesModal
+        hardCase={notesCase}
+        onClose={() => setNotesCase(null)}
+        onChanged={onChanged}
+      />
+    )}
+    </>
   );
 }

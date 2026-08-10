@@ -2474,6 +2474,10 @@ button.dev-reset-btn:hover:not(:disabled) {
   line-height: 1.2;
   border-radius: 4px;
 }
+.labels-3d-bulk-actions {
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
 .labels-list {
   list-style: none;
   padding: 0;
@@ -2808,6 +2812,12 @@ button.dev-reset-btn:hover:not(:disabled) {
   border: none;
   border-top: 1px solid var(--border);
 }
+.canvas-label-context-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.15rem;
+}
 /* Labels panel "Filters Options" — Cellable's filters_popup_widget
    (Show/Hide Verified/Solo/Show All/Sort/Verify/Unverify), collapsed
    behind a toggle button instead of Cellable's QMenu popup so it never
@@ -2942,6 +2952,65 @@ button.dev-reset-btn:hover:not(:disabled) {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.9rem;
+}
+
+.hard-case-notes-modal {
+  width: min(38rem, 92vw);
+  max-height: min(44rem, 88vh);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+.hard-case-notes-heading h3,
+.hard-case-notes-modal h4,
+.hard-case-notes-modal p {
+  margin: 0;
+}
+.hard-case-notes-modal h4 {
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+}
+.hard-case-notes-modal textarea {
+  width: 100%;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.hard-case-note-save-row {
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 0.35rem;
+}
+.hard-case-discussion {
+  min-height: 7rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.hard-case-message-list {
+  overflow-y: auto;
+  min-height: 4rem;
+  max-height: 16rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem;
+}
+.hard-case-message + .hard-case-message {
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+.hard-case-message-meta {
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
+}
+.hard-case-message p,
+.hard-case-primary-note p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hard-case-reply {
+  flex: 0 0 auto;
 }
 
 /* --- People ------------------------------------------------------------- */

@@ -25,6 +25,7 @@ from .models import (
     AnnotationSubmission,
     AnnotationTask,
     HardCase,
+    HardCaseMessage,
     ReviewRecord,
 )
 
@@ -4040,12 +4041,15 @@ def create_hard_case(
     the caller's job (only someone who can open Annotate should — see the API
     view's gate); this function just records it.
     """
+    cleaned_note = (note or "").strip()
+    if len(cleaned_note) > 1000:
+        raise ValueError("Hard-case notes must be 1,000 characters or fewer.")
     return HardCase.objects.create(
         task=task,
         project=task.project,
         volume=task.volume,
         label_id=int(label_id),
-        note=(note or "").strip(),
+        note=cleaned_note,
         created_by=user,
     )
 
@@ -4080,7 +4084,7 @@ def visible_hard_cases(user, *, project=None, volume=None):
 
     qs = HardCase.objects.select_related(
         "task", "volume", "project", "created_by", "resolved_by"
-    )
+    ).annotate(message_count_value=Count("messages"))
     if project is not None:
         qs = qs.filter(project=project)
     if volume is not None:
@@ -4136,6 +4140,35 @@ def can_take_down_hard_case(user, case: HardCase) -> bool:
     from accounts.roles import is_manager
 
     return is_manager(user) or case.created_by_id == getattr(user, "id", None)
+
+
+def update_hard_case_note(case: HardCase, *, user, note: str) -> HardCase:
+    """Replace the primary note; only its creator or a manager may do so."""
+    if not can_take_down_hard_case(user, case):
+        raise PermissionError("Only the person who recorded this case, or a manager, can edit its note.")
+    cleaned = (note or "").strip()
+    if len(cleaned) > 1000:
+        raise ValueError("Hard-case notes must be 1,000 characters or fewer.")
+    case.note = cleaned
+    case.save(update_fields=["note"])
+    return case
+
+
+def list_hard_case_messages(case: HardCase):
+    """Return the append-only discussion in stable chronological order."""
+    return case.messages.select_related("author").order_by("created_at", "id")
+
+
+def add_hard_case_message(case: HardCase, *, user, body: str) -> HardCaseMessage:
+    """Append one non-empty, bounded reply from a case viewer."""
+    if not can_view_hard_case(user, case):
+        raise PermissionError("You do not have access to discuss this hard case.")
+    cleaned = (body or "").strip()
+    if not cleaned:
+        raise ValueError("Message cannot be blank.")
+    if len(cleaned) > 2000:
+        raise ValueError("Messages must be 2,000 characters or fewer.")
+    return HardCaseMessage.objects.create(hard_case=case, author=user, body=cleaned)
 
 
 def set_hard_case_status(case: HardCase, *, status: str, user=None) -> HardCase:

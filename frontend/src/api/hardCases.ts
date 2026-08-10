@@ -1,4 +1,4 @@
-import type { HardCase, HardCaseStatus } from "../types/hardCase";
+import type { HardCase, HardCaseMessage, HardCaseStatus } from "../types/hardCase";
 import { api } from "./client";
 
 /** Record the Active label on `taskId` as a hard case for its project.
@@ -32,3 +32,12 @@ export const setHardCaseStatus = (id: number, status: HardCaseStatus) =>
 /** Kill (or restore) the public token link only. */
 export const setHardCaseRevoked = (id: number, revoked: boolean) =>
   api.post<HardCase>(`/hard-cases/${id}/revoke/`, { revoked });
+
+export const updateHardCaseNote = (id: number, note: string) =>
+  api.patch<HardCase>(`/hard-cases/${id}/note/`, { note });
+
+export const listHardCaseMessages = (id: number) =>
+  api.get<HardCaseMessage[]>(`/hard-cases/${id}/messages/`);
+
+export const addHardCaseMessage = (id: number, body: string) =>
+  api.post<HardCaseMessage>(`/hard-cases/${id}/messages/`, { body });

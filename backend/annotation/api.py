@@ -19,6 +19,7 @@ from .serializers import (
     AnnotationTaskSerializer,
     AssignmentPlanSerializer,
     HardCaseSerializer,
+    HardCaseMessageSerializer,
     ReviewSerializer,
     SubmitInappTaskSerializer,
     SubmitTaskSerializer,
@@ -36,9 +37,11 @@ from .services import (
     can_submit_task,
     can_take_down_hard_case,
     can_view_hard_case,
+    add_hard_case_message,
     can_view_task,
     can_view_volume,
     create_hard_case,
+    list_hard_case_messages,
     get_public_hard_case,
     get_label_max_id,
     get_label_max_id_readonly,
@@ -66,6 +69,7 @@ from .services import (
     review_submission,
     set_hard_case_revoked,
     set_hard_case_status,
+    update_hard_case_note,
     set_label_lifecycle_action,
     set_label_slice_ids,
     set_task_annotation_lock,
@@ -1963,6 +1967,58 @@ class HardCaseStatusView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(HardCaseSerializer(case, context={"request": request}).data)
+
+
+class HardCaseNoteView(APIView):
+    """``PATCH /api/hard-cases/<pk>/note/`` — edit the primary short note."""
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        case = get_object_or_404(
+            HardCase.objects.select_related("task", "project", "created_by"), pk=pk
+        )
+        if "note" not in request.data:
+            return Response({"detail": "note is required."}, status=400)
+        try:
+            update_hard_case_note(case, user=request.user, note=str(request.data.get("note") or ""))
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(HardCaseSerializer(case, context={"request": request}).data)
+
+
+class HardCaseMessagesView(APIView):
+    """List or append authenticated project discussion for one hard case."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _case(self, pk):
+        return get_object_or_404(
+            HardCase.objects.select_related("task", "project", "created_by"), pk=pk
+        )
+
+    def get(self, request, pk):
+        case = self._case(pk)
+        if not can_view_hard_case(request.user, case):
+            return Response(
+                {"detail": "You do not have access to this hard case."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return Response(HardCaseMessageSerializer(list_hard_case_messages(case), many=True).data)
+
+    def post(self, request, pk):
+        case = self._case(pk)
+        try:
+            message = add_hard_case_message(
+                case, user=request.user, body=str(request.data.get("body") or "")
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(HardCaseMessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
 
 class HardCaseRevokeView(APIView):

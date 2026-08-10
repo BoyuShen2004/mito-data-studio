@@ -21,13 +21,23 @@ are shared. Stopping a parent share does not silently rewrite unrelated data.
 ## Hard cases
 
 In Annotate, make an existing label Active and choose **Record hard case**.
+The optional create-time note is the case's primary note: the person who
+recorded the case (and managers) can revise it later from **Note** on the Hard
+Cases list or detail page. After recording, **Edit notes** opens that same
+notes window immediately.
+
+Every signed-in project member who can view the case can read its primary note
+and append replies in the chronological discussion. Members other than the
+creator or a manager cannot overwrite the primary note. Public token links are
+read-only and do not permit anonymous replies.
 The case belongs to the project and captures enough view context to return to
 that label. Project members can browse it in **Hard Cases**; its creator and
 managers can work on it according to current permissions.
 
 The confirmation includes an optional **Why is this hard?** note (up to 1,000
-characters). Empty is allowed. A note is stored with the case and appears in
-the Hard Cases list, member detail view, and public read-only share view.
+characters). Empty is allowed. A note is stored with the case, appears as a
+preview in the Hard Cases list, and opens from **Note** in member views; the
+public share metadata remains read-only.
 
 Opening a hard case — from **Hard Cases** or from a public hard-case link —
 lands on a layer where the recorded label is actually painted, with that label

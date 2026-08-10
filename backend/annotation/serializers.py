@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AnnotationSubmission, AnnotationTask, HardCase, ReviewRecord
+from .models import AnnotationSubmission, AnnotationTask, HardCase, HardCaseMessage, ReviewRecord
 
 
 class AnnotationTaskSerializer(serializers.ModelSerializer):
@@ -315,6 +315,9 @@ class HardCaseSerializer(serializers.ModelSerializer):
     app_url = serializers.CharField(source="app_path", read_only=True)
     can_annotate = serializers.SerializerMethodField()
     can_take_down = serializers.SerializerMethodField()
+    can_edit_note = serializers.SerializerMethodField()
+    can_comment = serializers.SerializerMethodField()
+    message_count = serializers.SerializerMethodField()
 
     class Meta:
         model = HardCase
@@ -343,6 +346,9 @@ class HardCaseSerializer(serializers.ModelSerializer):
             "app_url",
             "can_annotate",
             "can_take_down",
+            "can_edit_note",
+            "can_comment",
+            "message_count",
         ]
 
     def _user(self):
@@ -360,6 +366,30 @@ class HardCaseSerializer(serializers.ModelSerializer):
 
         user = self._user()
         return bool(user and can_take_down_hard_case(user, obj))
+
+    def get_can_edit_note(self, obj) -> bool:
+        return self.get_can_take_down(obj)
+
+    def get_can_comment(self, obj) -> bool:
+        from .services import can_view_hard_case
+
+        user = self._user()
+        return bool(user and getattr(user, "is_authenticated", False) and can_view_hard_case(user, obj))
+
+    def get_message_count(self, obj) -> int:
+        annotated = getattr(obj, "message_count_value", None)
+        return int(annotated if annotated is not None else obj.messages.count())
+
+
+class HardCaseMessageSerializer(serializers.ModelSerializer):
+    author_username = serializers.CharField(
+        source="author.username", read_only=True, default=""
+    )
+
+    class Meta:
+        model = HardCaseMessage
+        fields = ["id", "hard_case", "author", "author_username", "body", "created_at"]
+        read_only_fields = fields
 
 
 class PlanEntrySerializer(serializers.Serializer):

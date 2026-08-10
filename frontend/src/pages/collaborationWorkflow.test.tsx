@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
   reload: vi.fn(),
   reviewSubmission: vi.fn(),
   submitInappTask: vi.fn(),
+  listHardCaseMessages: vi.fn(),
 }));
 
 vi.mock("../hooks/useAsync", () => ({
@@ -52,6 +53,9 @@ vi.mock("../api/hardCases", () => ({
   getHardCase: vi.fn(),
   setHardCaseRevoked: vi.fn(),
   setHardCaseStatus: vi.fn(),
+  listHardCaseMessages: harness.listHardCaseMessages,
+  updateHardCaseNote: vi.fn(),
+  addHardCaseMessage: vi.fn(),
 }));
 
 const task = (overrides: Record<string, unknown> = {}) => ({
@@ -78,6 +82,7 @@ describe("collaboration workflow pages", () => {
     harness.reload.mockReset();
     harness.reviewSubmission.mockReset().mockResolvedValue({});
     harness.submitInappTask.mockReset();
+    harness.listHardCaseMessages.mockReset().mockResolvedValue([]);
   });
 
   it("keeps the task canvas mounted and exposes another submit round", async () => {
@@ -238,6 +243,10 @@ describe("collaboration workflow pages", () => {
       revoked: false,
       can_annotate: false,
       can_take_down: false,
+      can_edit_note: false,
+      can_comment: true,
+      message_count: 0,
+      note: "Needs a second look",
       z_start: 2,
       z_end: 6,
       project_title: "Project A",
@@ -256,6 +265,10 @@ describe("collaboration workflow pages", () => {
     );
 
     expect(screen.getByText("View only")).toBeTruthy();
+    expect(screen.queryByText(/Note: Needs a second look/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Note" }));
+    expect(screen.getByRole("dialog", { name: "Notes · label #44" })).toBeTruthy();
+    expect(screen.getByText("Needs a second look")).toBeTruthy();
     expect(harness.canvasProps).toHaveBeenLastCalledWith(
       expect.objectContaining({
         taskId: 7,

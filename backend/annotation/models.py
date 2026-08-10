@@ -351,6 +351,29 @@ class HardCase(models.Model):
         return f"/hard-cases/{self.pk}"
 
 
+class HardCaseMessage(models.Model):
+    """One append-only discussion reply attached to a hard case."""
+
+    hard_case = models.ForeignKey(
+        HardCase, on_delete=models.CASCADE, related_name="messages"
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="hard_case_messages",
+    )
+    body = models.TextField(max_length=2000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"HardCaseMessage #{self.pk} on case #{self.hard_case_id}"
+
+
 class ReviewRecord(models.Model):
     """A manager/reviewer decision on a submission.
 

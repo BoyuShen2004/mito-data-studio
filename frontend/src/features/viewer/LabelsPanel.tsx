@@ -48,6 +48,7 @@ export default function LabelsPanel({
   pinnedIds,
   onTogglePinned,
   onPinMany,
+  onClearPins,
   onJumpToZ,
   hideVerified,
   onHideVerifiedChange,
@@ -81,6 +82,8 @@ export default function LabelsPanel({
   onTogglePinned: (id: number) => void;
   /** Pin many label ids into the 3D view at once (This slice / All). */
   onPinMany: (ids: number[]) => void;
+  /** Remove every label from the shared 3D view. */
+  onClearPins: () => void;
   onJumpToZ: (z: number) => void;
   hideVerified: boolean;
   onHideVerifiedChange: (v: boolean) => void;
@@ -195,6 +198,7 @@ export default function LabelsPanel({
     state: LabelLifecycleState = rowsById.get(id)?.state ?? "proposed",
   ) => {
     event.preventDefault();
+    if (readOnly) return;
     setRowMenu({
       id,
       state,
@@ -468,6 +472,7 @@ export default function LabelsPanel({
               ? "Loading…"
               : `${visibleAllRows.length} of ${rows.length} label(s)`}
         </p>
+        <span className="row labels-3d-bulk-actions">
         {scope === "slice" ? (
           <button
             type="button"
@@ -489,6 +494,16 @@ export default function LabelsPanel({
             3D all
           </button>
         )}
+          <button
+            type="button"
+            className="secondary labels-3d-bulk"
+            disabled={pinnedIds.size === 0}
+            title="Remove every label from the 3D view"
+            onClick={onClearPins}
+          >
+            Clear 3D
+          </button>
+        </span>
       </div>
       {scope === "slice" ? (
         <>
@@ -589,7 +604,7 @@ export default function LabelsPanel({
         </>
       )}
       </div>
-      {rowMenu && (
+      {rowMenu && !readOnly && (
         <div
           ref={rowMenuRef}
           className="canvas-context-menu labels-row-context-menu"
@@ -597,52 +612,27 @@ export default function LabelsPanel({
           aria-label={`Label ${rowMenu.id} actions`}
           style={{ position: "fixed", left: rowMenu.x, top: rowMenu.y }}
         >
-          {!readOnly && (
-            <>
-              <button
-                type="button"
-                className="secondary"
-                disabled={rowMenu.state === "verified"}
-                onClick={() => {
-                  onLifecycleAction(rowMenu.id, "verify");
-                  setRowMenu(null);
-                }}
-              >
-                Verify
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={rowMenu.state !== "verified"}
-                onClick={() => {
-                  onLifecycleAction(rowMenu.id, "unverify");
-                  setRowMenu(null);
-                }}
-              >
-                Unverify
-              </button>
-              <hr />
-            </>
-          )}
           <button
             type="button"
             className="secondary"
+            disabled={rowMenu.state === "verified"}
             onClick={() => {
-              onTogglePinned(rowMenu.id);
+              onLifecycleAction(rowMenu.id, "verify");
               setRowMenu(null);
             }}
           >
-            {pinnedIds.has(rowMenu.id) ? "Hide 3D" : "Show 3D"}
+            Verify
           </button>
           <button
             type="button"
             className="secondary"
+            disabled={rowMenu.state !== "verified"}
             onClick={() => {
-              onToggleSolo(rowMenu.id);
+              onLifecycleAction(rowMenu.id, "unverify");
               setRowMenu(null);
             }}
           >
-            {soloId === rowMenu.id ? "Unsolo" : "Solo"}
+            Unverify
           </button>
         </div>
       )}

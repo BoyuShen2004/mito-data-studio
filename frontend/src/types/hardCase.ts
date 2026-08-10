@@ -33,4 +33,16 @@ export interface HardCase {
   app_url: string;
   can_annotate: boolean;
   can_take_down: boolean;
+  can_edit_note: boolean;
+  can_comment: boolean;
+  message_count: number;
+}
+
+export interface HardCaseMessage {
+  id: number;
+  hard_case: number;
+  author: number | null;
+  author_username: string;
+  body: string;
+  created_at: string;
 }

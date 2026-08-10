@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AnnotationCanvas from "./AnnotationCanvas";
 
@@ -24,6 +25,17 @@ const hoisted = vi.hoisted(() => ({
   fetchObjectUrl: vi.fn(),
   putLabelIds: vi.fn(),
   setLabelLifecycle: vi.fn(),
+  createHardCase: vi.fn(),
+  listHardCaseMessages: vi.fn(),
+  updateHardCaseNote: vi.fn(),
+  addHardCaseMessage: vi.fn(),
+}));
+
+vi.mock("../../api/hardCases", () => ({
+  createHardCase: hoisted.createHardCase,
+  listHardCaseMessages: hoisted.listHardCaseMessages,
+  updateHardCaseNote: hoisted.updateHardCaseNote,
+  addHardCaseMessage: hoisted.addHardCaseMessage,
 }));
 
 vi.mock("../../api/viewer", async (importOriginal) => ({
@@ -79,7 +91,9 @@ const api = {
 
 function mount() {
   return render(
-    <AnnotationCanvas taskId={5} volumeId={3} zStart={0} zEnd={7} editable api={api as never} />,
+    <MemoryRouter>
+      <AnnotationCanvas taskId={5} volumeId={3} zStart={0} zEnd={7} editable api={api as never} />
+    </MemoryRouter>,
   );
 }
 
@@ -128,6 +142,36 @@ describe("Select tool label picking", () => {
       state: "verified",
       removed: false,
     });
+    hoisted.createHardCase.mockReset().mockResolvedValue({
+      id: 91,
+      token: "token",
+      task: 5,
+      task_status: "in_progress",
+      project: 1,
+      label_id: 6,
+      project_title: "Project",
+      volume: 3,
+      volume_name: "Volume",
+      z_start: 0,
+      z_end: 7,
+      status: "open",
+      revoked: false,
+      created_by: 4,
+      created_by_username: "annotator",
+      created_at: "2026-08-10T12:00:00Z",
+      resolved_by: null,
+      resolved_by_username: "",
+      resolved_at: null,
+      app_url: "/hard-cases/91",
+      url: "/share/hard-case/token",
+      note: "membrane is ambiguous",
+      can_annotate: true,
+      can_take_down: true,
+      can_edit_note: true,
+      can_comment: true,
+      message_count: 0,
+    });
+    hoisted.listHardCaseMessages.mockReset().mockResolvedValue([]);
     api.getLabelIds.mockClear();
     api.getLabelsSummary.mockClear();
   });
@@ -211,5 +255,28 @@ describe("Select tool label picking", () => {
 
     await screen.findByRole("alert");
     expect(screen.getByTitle(/64 voxels/)).toBeTruthy();
+  });
+
+  it("records a hard case with the optional note from the confirmation dialog", async () => {
+    mount();
+    await screen.findByTitle(/64 voxels/);
+    fireEvent.change(screen.getByTitle("Active label id"), { target: { value: "6" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Record hard case" }));
+    const note = await screen.findByPlaceholderText("Add a short note for collaborators");
+    fireEvent.change(note, { target: { value: "  membrane is ambiguous  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Share with the project" }));
+
+    await waitFor(() => {
+      expect(hoisted.createHardCase).toHaveBeenCalledWith(
+        5,
+        6,
+        "membrane is ambiguous",
+      );
+    });
+    expect(await screen.findByText("Hard case recorded")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit notes" }));
+    expect(await screen.findByRole("dialog", { name: "Notes · label #6" })).toBeTruthy();
+    expect(screen.getByLabelText("Primary note")).toBeTruthy();
   });
 });

@@ -990,6 +990,80 @@ class HardCaseApiTests(TestCase):
         public = APIClient().get(f"/api/public/hard-cases/{row['token']}/meta/")
         self.assertEqual(public.json()["note"], row["note"])
 
+    def test_creator_and_manager_can_update_primary_note_but_peer_cannot(self):
+        case_id = self._create_case(self.annotator, note="first").json()["id"]
+        creator = self._client(self.annotator).patch(
+            f"/api/hard-cases/{case_id}/note/", {"note": "  refined  "}, format="json"
+        )
+        self.assertEqual(creator.status_code, 200, creator.content)
+        self.assertEqual(creator.json()["note"], "refined")
+        self.assertTrue(creator.json()["can_edit_note"])
+
+        denied = self._client(self.peer).patch(
+            f"/api/hard-cases/{case_id}/note/", {"note": "overwrite"}, format="json"
+        )
+        self.assertEqual(denied.status_code, 403, denied.content)
+        manager = self._client(self.manager).patch(
+            f"/api/hard-cases/{case_id}/note/", {"note": "manager note"}, format="json"
+        )
+        self.assertEqual(manager.status_code, 200, manager.content)
+        self.assertEqual(manager.json()["note"], "manager note")
+        self.assertFalse(
+            self._client(self.peer).get(f"/api/hard-cases/{case_id}/").json()["can_edit_note"]
+        )
+
+    def test_project_viewers_append_messages_in_chronological_order(self):
+        case_id = self._create_case(self.annotator).json()["id"]
+        first = self._client(self.peer).post(
+            f"/api/hard-cases/{case_id}/messages/", {"body": "  peer reply  "}, format="json"
+        )
+        self.assertEqual(first.status_code, 201, first.content)
+        second = self._client(self.requester).post(
+            f"/api/hard-cases/{case_id}/messages/", {"body": "requester reply"}, format="json"
+        )
+        self.assertEqual(second.status_code, 201, second.content)
+        messages = self._client(self.annotator).get(
+            f"/api/hard-cases/{case_id}/messages/"
+        ).json()
+        self.assertEqual([row["body"] for row in messages], ["peer reply", "requester reply"])
+        self.assertEqual(messages[0]["author_username"], "hc_ann2")
+        detail = self._client(self.annotator).get(f"/api/hard-cases/{case_id}/").json()
+        self.assertEqual(detail["message_count"], 2)
+        self.assertTrue(detail["can_comment"])
+
+    def test_notes_and_messages_validate_lengths_and_blank_body(self):
+        case_id = self._create_case(self.annotator).json()["id"]
+        self.assertEqual(
+            self._client(self.annotator).patch(
+                f"/api/hard-cases/{case_id}/note/", {"note": "x" * 1001}, format="json"
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self._client(self.peer).post(
+                f"/api/hard-cases/{case_id}/messages/", {"body": "   "}, format="json"
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self._client(self.peer).post(
+                f"/api/hard-cases/{case_id}/messages/", {"body": "x" * 2001}, format="json"
+            ).status_code,
+            400,
+        )
+
+    def test_outsider_and_anonymous_cannot_read_or_post_discussion(self):
+        case_id = self._create_case(self.annotator).json()["id"]
+        url = f"/api/hard-cases/{case_id}/messages/"
+        self.assertEqual(self._client(self.outsider).get(url).status_code, 403)
+        self.assertEqual(
+            self._client(self.outsider).post(url, {"body": "no"}, format="json").status_code,
+            403,
+        )
+        anonymous = APIClient()
+        self.assertIn(anonymous.get(url).status_code, (401, 403))
+        self.assertIn(anonymous.post(url, {"body": "no"}, format="json").status_code, (401, 403))
+
     def test_full_task_share_is_public_read_only_and_permission_scoped(self):
         created = self._client(self.annotator).post(
             f"/api/tasks/{self.task.id}/share/", {}, format="json"

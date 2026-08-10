@@ -192,11 +192,24 @@ describe("AnnotateToolChrome — flood and overwrite", () => {
 });
 
 describe("AnnotateToolChrome — Seeds", () => {
-  it("uses clicked seeds as the target and hides Active/New", () => {
-    renderChrome({ paintTool: "seeds", wsTargetLabel: 17, wsSeedCount: 2 });
+  it("keeps fixed actions in order, then status, and hides Active/New", () => {
+    const { container } = renderChrome({ paintTool: "seeds", wsTargetLabel: 17, wsSeedCount: 2 });
+    const clear = screen.getByRole("button", { name: "Clear seeds" });
+    const run = screen.getByRole("button", { name: "Run Watershed" });
+    const status = screen.getByText(/target.*17/i);
     expect(screen.queryByText("Active")).toBeNull();
     expect(screen.queryByRole("button", { name: "New" })).toBeNull();
-    expect(screen.getByText(/target.*17/i)).toBeTruthy();
+    expect((clear as HTMLButtonElement).disabled).toBe(false);
+    expect((run as HTMLButtonElement).disabled).toBe(false);
+    expect(clear.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(run.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector(".seeds-status")).toBe(status);
+  });
+
+  it("always shows both seed actions disabled before the first seed", () => {
+    renderChrome({ paintTool: "seeds", wsTargetLabel: null, wsSeedCount: 0 });
+    expect((screen.getByRole("button", { name: "Clear seeds" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Run Watershed" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

@@ -33,6 +33,8 @@ from annotation.api import (
     HardCaseCreateView,
     HardCaseDetailView,
     HardCaseListView,
+    HardCaseMessagesView,
+    HardCaseNoteView,
     HardCaseRevokeView,
     HardCaseStatusView,
     MyCompletedTasksView,
@@ -460,6 +462,16 @@ urlpatterns = [
         "api/hard-cases/<int:pk>/status/",
         HardCaseStatusView.as_view(),
         name="api-hard-case-status",
+    ),
+    path(
+        "api/hard-cases/<int:pk>/note/",
+        HardCaseNoteView.as_view(),
+        name="api-hard-case-note",
+    ),
+    path(
+        "api/hard-cases/<int:pk>/messages/",
+        HardCaseMessagesView.as_view(),
+        name="api-hard-case-messages",
     ),
     path(
         "api/hard-cases/<int:pk>/revoke/",

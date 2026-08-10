@@ -38,6 +38,7 @@ import {
 import { getDeploymentIdentity } from "../../api/deployment";
 import type { HardCase } from "../../types/hardCase";
 import { createHardCase } from "../../api/hardCases";
+import HardCaseNotesModal from "../../components/HardCaseNotesModal";
 import { useAsync } from "../../hooks/useAsync";
 import { useAuth } from "../../auth/AuthContext";
 import {
@@ -2343,6 +2344,7 @@ export default function AnnotationCanvas({
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [hardCaseNote, setHardCaseNote] = useState("");
+  const [shareNotesOpen, setShareNotesOpen] = useState(false);
   // `copyState` drives the link row's button: it starts on **Copy** and only
   // becomes **Copied** after the user clicks it *and* the clipboard write
   // resolves (03 item D). Recording deliberately does NOT auto-copy — a modal
@@ -5757,6 +5759,11 @@ export default function AnnotationCanvas({
     setLabels3DRefreshKey((v) => v + 1);
   }, []);
 
+  const clearPinned3D = useCallback(() => {
+    setPinned3D(new Set());
+    setLabels3DRefreshKey((v) => v + 1);
+  }, []);
+
   // --- What the 3D panel loads, and what merely changes what it *draws* ----
   //
   // Coupling rule (03 item B3 — "don't over-hook unrelated features"):
@@ -5911,11 +5918,23 @@ export default function AnnotationCanvas({
               ) : (
                 <>
                   {shareCase && (
-                    <Link to={shareCase.app_url}>
-                      <button type="button" className="secondary">
-                        Open in Hard Cases
+                    <>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setShareStage(null);
+                          setShareNotesOpen(true);
+                        }}
+                      >
+                        Edit notes
                       </button>
-                    </Link>
+                      <Link to={shareCase.app_url}>
+                        <button type="button" className="secondary">
+                          Open in Hard Cases
+                        </button>
+                      </Link>
+                    </>
                   )}
                   <button
                     type="button"
@@ -5929,6 +5948,12 @@ export default function AnnotationCanvas({
             </div>
           </div>
         </div>
+      )}
+      {shareNotesOpen && shareCase && (
+        <HardCaseNotesModal
+          hardCase={shareCase}
+          onClose={() => setShareNotesOpen(false)}
+        />
       )}
       {editable && (
         <AnnotateToolChrome
@@ -6304,6 +6329,7 @@ export default function AnnotationCanvas({
             pinnedIds={pinned3D}
             onTogglePinned={togglePinned3D}
             onPinMany={pinManyTo3D}
+            onClearPins={clearPinned3D}
             onJumpToZ={jumpToZ}
             hideVerified={hideVerified}
             onHideVerifiedChange={setHideVerified}
@@ -6518,35 +6544,54 @@ export default function AnnotationCanvas({
           {contextMenu.labelId != null && (
             <>
               <hr />
-              <button
-                className="secondary"
-                onClick={() => {
-                  const id = contextMenu.labelId as number;
-                  setActiveId(id);
-                  handleLifecycleAction(id, "verify");
-                  setContextMenu(null);
-                }}
-              >
-                ✓ Verify label {contextMenu.labelId}
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  toggleSolo(contextMenu.labelId as number);
-                  setContextMenu(null);
-                }}
-              >
-                ○ Solo label {contextMenu.labelId}
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  togglePinned3D(contextMenu.labelId as number);
-                  setContextMenu(null);
-                }}
-              >
-                {pinned3D.has(contextMenu.labelId) ? "Hide 3D" : "Show 3D"} label {contextMenu.labelId}
-              </button>
+              <div className="canvas-label-context-actions">
+                <button
+                  className="secondary"
+                  aria-label={`Verify label ${contextMenu.labelId}`}
+                  disabled={verifiedIds.has(contextMenu.labelId)}
+                  onClick={() => {
+                    const id = contextMenu.labelId as number;
+                    setActiveId(id);
+                    handleLifecycleAction(id, "verify");
+                    setContextMenu(null);
+                  }}
+                >
+                  Verify
+                </button>
+                <button
+                  className="secondary"
+                  aria-label={`Unverify label ${contextMenu.labelId}`}
+                  disabled={!verifiedIds.has(contextMenu.labelId)}
+                  onClick={() => {
+                    const id = contextMenu.labelId as number;
+                    setActiveId(id);
+                    handleLifecycleAction(id, "unverify");
+                    setContextMenu(null);
+                  }}
+                >
+                  Unverify
+                </button>
+                <button
+                  className="secondary"
+                  aria-label={`${pinned3D.has(contextMenu.labelId) ? "Hide 3D" : "Show 3D"} label ${contextMenu.labelId}`}
+                  onClick={() => {
+                    togglePinned3D(contextMenu.labelId as number);
+                    setContextMenu(null);
+                  }}
+                >
+                  {pinned3D.has(contextMenu.labelId) ? "Hide 3D" : "Show 3D"}
+                </button>
+                <button
+                  className="secondary"
+                  aria-label={`${soloId === contextMenu.labelId ? "Unsolo" : "Solo"} label ${contextMenu.labelId}`}
+                  onClick={() => {
+                    toggleSolo(contextMenu.labelId as number);
+                    setContextMenu(null);
+                  }}
+                >
+                  {soloId === contextMenu.labelId ? "Unsolo" : "Solo"}
+                </button>
+              </div>
             </>
           )}
         </div>

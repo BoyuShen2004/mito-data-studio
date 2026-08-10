@@ -30,6 +30,8 @@ function Harness({
   soloId = null,
   onResetVisibility = vi.fn(),
   onLifecycleAction = vi.fn(),
+  pinnedIds = new Set<number>(),
+  onClearPins = vi.fn(),
   pinActiveToTopToken = 0,
 }: {
   initialScope?: LabelsScope;
@@ -40,6 +42,8 @@ function Harness({
   soloId?: number | null;
   onResetVisibility?: () => void;
   onLifecycleAction?: (id: number, action: "verify" | "unverify" | "revert" | "reject") => void;
+  pinnedIds?: Set<number>;
+  onClearPins?: () => void;
   pinActiveToTopToken?: number;
 }) {
   const [scope, setScope] = useState<LabelsScope>(initialScope);
@@ -48,8 +52,8 @@ function Harness({
     scope={scope} onScopeChange={setScope} activeId={activeId} onSetActiveId={setActiveId}
     sliceInstances={data.map((row) => row.id)} rows={data} rowsLoading={false}
     hiddenIds={new Set()} soloId={soloId} onToggleHidden={vi.fn()} onToggleSolo={vi.fn()}
-    onResetVisibility={onResetVisibility} pinnedIds={new Set()} onTogglePinned={vi.fn()}
-    onPinMany={vi.fn()} onJumpToZ={vi.fn()} hideVerified={false}
+    onResetVisibility={onResetVisibility} pinnedIds={pinnedIds} onTogglePinned={vi.fn()}
+    onPinMany={vi.fn()} onClearPins={onClearPins} onJumpToZ={vi.fn()} hideVerified={false}
     onHideVerifiedChange={vi.fn()} hasRegionMask={region} hideOutsideRegion={false}
     onHideOutsideRegionChange={vi.fn()} regionMemberIds={new Set(data.map((row) => row.id))}
     onLifecycleAction={onLifecycleAction} onRefresh={onRefresh} readOnly={readOnly}
@@ -172,6 +176,9 @@ describe("LabelsPanel list chrome and selection", () => {
     );
     const listRows = container.querySelectorAll(".labels-list li");
     fireEvent.contextMenu(listRows[0], { clientX: 20, clientY: 20 });
+    const menu = screen.getByRole("menu", { name: "Label 1 actions" });
+    expect(menu.textContent).not.toMatch(/3D|Solo/i);
+    expect(menu.querySelectorAll("button")).toHaveLength(2);
     expect((screen.getByRole("button", { name: "Verify" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Unverify" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Verify" }));
@@ -180,6 +187,18 @@ describe("LabelsPanel list chrome and selection", () => {
     fireEvent.contextMenu(listRows[1], { clientX: 20, clientY: 20 });
     fireEvent.click(screen.getByRole("button", { name: "Unverify" }));
     expect(onLifecycleAction).toHaveBeenCalledWith(2, "unverify");
+  });
+
+  it("offers Clear 3D beside the scoped bulk action and disables it when empty", () => {
+    const onClearPins = vi.fn();
+    const { rerender } = render(<Harness onClearPins={onClearPins} />);
+    const clear = screen.getByRole("button", { name: "Clear 3D" });
+    expect(screen.getByRole("button", { name: "3D layer" })).toBeTruthy();
+    expect((clear as HTMLButtonElement).disabled).toBe(true);
+
+    rerender(<Harness pinnedIds={new Set([1])} onClearPins={onClearPins} />);
+    fireEvent.click(screen.getByRole("button", { name: "Clear 3D" }));
+    expect(onClearPins).toHaveBeenCalledOnce();
   });
 
   it("scrolls a 1000+ row virtual All list by sorted index only when pinning from canvas token", () => {

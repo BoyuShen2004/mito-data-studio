@@ -423,17 +423,17 @@ export default function AnnotateToolChrome({
         )}
         {paintTool === "seeds" && (
           <>
-            {wsTargetLabel != null && (
-              <span className="muted">
-                Target label {wsTargetLabel} · {wsSeedCount} seed(s)
-              </span>
-            )}
             <button className="secondary" onClick={onClearWsSeeds} disabled={wsSeedCount === 0}>
               Clear seeds
             </button>
             <button onClick={onRunWatershed} disabled={wsRunning || wsSeedCount === 0}>
               {wsRunning ? "Splitting…" : "Run Watershed"}
             </button>
+            {wsTargetLabel != null && (
+              <span className="muted seeds-status">
+                Target label {wsTargetLabel} · {wsSeedCount} seed(s)
+              </span>
+            )}
           </>
         )}
         {paintTool === "interpolate" && (
