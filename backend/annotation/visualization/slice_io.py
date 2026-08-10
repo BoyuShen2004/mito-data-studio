@@ -105,12 +105,22 @@ def serialized_file_write(path: Path | str, *, shared: bool = False):
     if held is None:
         held = _held_locks.paths = {}
 
-    if held.get(target):
-        held[target] += 1
+    depth, held_shared = held.get(target, (0, False))
+    if depth:
+        if held_shared and not shared:
+            # Silently continuing would run a writer while this thread only
+            # holds a read lock, so concurrent readers would observe a
+            # half-rewritten mask. Fail loudly instead of corrupting one.
+            raise RuntimeError(
+                f"Cannot upgrade a shared lock to exclusive for {target}. "
+                "Acquire serialized_file_write(...) exclusively before reading."
+            )
+        held[target] = (depth + 1, held_shared)
         try:
             yield
         finally:
-            held[target] -= 1
+            current, mode = held[target]
+            held[target] = (current - 1, mode)
         return
 
     lock_path = Path(f"{target}.write.lock")
@@ -129,11 +139,11 @@ def serialized_file_write(path: Path | str, *, shared: bool = False):
                     handle.fileno(),
                     _fcntl.LOCK_SH if shared else _fcntl.LOCK_EX,
                 )
-            held[target] = 1
+            held[target] = (1, shared)
             try:
                 yield
             finally:
-                held[target] = 0
+                held.pop(target, None)
                 if _fcntl is not None:
                     _fcntl.flock(handle.fileno(), _fcntl.LOCK_UN)
 

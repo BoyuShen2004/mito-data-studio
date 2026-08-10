@@ -132,3 +132,19 @@ class SerializedFileWriteTests(SimpleTestCase):
         w.join(5.0)
         self.assertTrue(reader_entered.wait(3.0), "reader never acquired after release")
         r.join(5.0)
+
+    def test_upgrading_a_shared_hold_to_exclusive_is_refused(self):
+        # Proceeding would let a writer run while this thread holds only a read
+        # lock, so concurrent readers could see a half-rewritten mask.
+        with serialized_file_write(self.target, shared=True):
+            with self.assertRaises(RuntimeError):
+                with serialized_file_write(self.target):
+                    pass
+
+    def test_nested_shared_inside_shared_is_allowed(self):
+        def nested():
+            with serialized_file_write(self.target, shared=True):
+                with serialized_file_write(self.target, shared=True):
+                    pass
+
+        self.assertTrue(self._run_guarded(nested), "shared-in-shared deadlocked")
