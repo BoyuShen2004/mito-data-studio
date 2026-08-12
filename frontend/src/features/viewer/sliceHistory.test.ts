@@ -152,7 +152,7 @@ describe("SliceHistory", () => {
       const before = new Int32Array([0, 2, 0]);
       const after = new Int32Array([7, 2, 7]);
       expect(history.recordCompound([{ index: 4, before, after }])).toBe(true);
-      pending.markChanged(4, after);
+      pending.markChanged(4, after, before);
       expect(pending.size).toBe(1); // dirty until explicit Save acknowledges it
 
       const undone = history.undo(after);

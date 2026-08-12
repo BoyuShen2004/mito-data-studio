@@ -41,6 +41,7 @@ import { createHardCase } from "../../api/hardCases";
 import HardCaseNotesModal from "../../components/HardCaseNotesModal";
 import { useAsync } from "../../hooks/useAsync";
 import { useAuth } from "../../auth/AuthContext";
+import { ApiError } from "../../api/client";
 import {
   axisLength,
   axisShortLabel,
@@ -102,6 +103,7 @@ import {
 } from "./annotate/paintTools";
 import { PendingSliceBuffer } from "./pendingSliceBuffer";
 import { RevisionedFetch } from "./revisionedFetch";
+import { labelIdsForCache } from "./workingLabelRevision";
 import { SliceHistory, type CompoundSliceEdit } from "./sliceHistory";
 import type { Axis } from "../../api/viewer";
 import { hasViewLocation, parseViewLocation, type ViewLocation } from "./viewLocation";
@@ -1942,7 +1944,11 @@ export default function AnnotationCanvas({
       const resp = await labelReadRevisionRef.current.loadLatest(() =>
         api.getLabelIds(taskId, a, z, signal),
       );
-      cache.set(key, resp);
+      // A plane from the same axis remains pixel-valid after another plane is
+      // saved, but its revision is volume-wide and is stale after that write.
+      // Cache only the plane so a later cache hit cannot roll the current Save
+      // token backwards and manufacture a same-tab LabelWriteConflict.
+      cache.set(key, labelIdsForCache(resp));
       while (cache.size > SLICE_RUNS_CACHE_MAX) {
         cache.delete(cache.keys().next().value as string);
       }
@@ -2176,7 +2182,7 @@ export default function AnnotationCanvas({
     // Keep a live ref while still editing this z; `stashCurrentSlice` freezes
     // it before the canvas buffer is reused for another slice.
     if (ids && z != null) {
-      pendingSlicesRef.current.markChanged(z, ids);
+      pendingSlicesRef.current.markChanged(z, ids, baselineIdsRef.current ?? ids);
     }
     // Keep New ahead of any id the user just painted / committed.
     const aid = activeIdRef.current;
@@ -2196,6 +2202,64 @@ export default function AnnotationCanvas({
     setDirty(remaining > 0);
     return remaining;
   }, []);
+
+  /** Reload a coherent server baseline after a real concurrent-write 409 and
+   * keep only this tab's non-overlapping voxel edits pending on top of it. */
+  const recoverPendingAfterConflict = useCallback(async (saveAxis: Axis) => {
+    const targets = pendingSlicesRef.current.snapshots().map(({ index }) => index);
+    if (targets.length === 0) return { reapplied: 0, conflicts: 0, remaining: 0 };
+
+    let loaded: { index: number; response: LabelIdsResponse }[] | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      invalidateSliceLabelCache();
+      const candidate = await Promise.all(targets.map(async (sliceIndex) => ({
+        index: sliceIndex,
+        response: await api.getLabelIds(taskId, saveAxis, sliceIndex),
+      })));
+      const revisions = new Set(candidate.map(({ response }) => response.revision).filter(Boolean));
+      if (revisions.size === 1 && candidate.every(({ response }) => response.revision)) {
+        loaded = candidate;
+        break;
+      }
+    }
+    if (!loaded) {
+      throw new Error("The working volume kept changing while recovery was loading it.");
+    }
+
+    workingLabelRevisionRef.current = loaded[0].response.revision!;
+    let reapplied = 0;
+    let conflicts = 0;
+    for (const { index: sliceIndex, response } of loaded) {
+      const [height, width] = response.shape;
+      const serverIds = decodeRuns(response.runs, height * width);
+      const result = pendingSlicesRef.current.rebase(sliceIndex, serverIds);
+      outsideEditsRef.current.rebase(sliceIndex, serverIds);
+      reapplied += result.reapplied;
+      conflicts += result.conflicts;
+      if (!result.pending) {
+        outsideEditsRef.current.delete(sliceIndex);
+        roiPlanSaveSlicesRef.current.delete(sliceIndex);
+      }
+      if (sliceIndex === idsIndexRef.current) {
+        baselineIdsRef.current = serverIds;
+        idsRef.current = pendingSlicesRef.current.get(sliceIndex)?.slice() ?? serverIds.slice();
+      }
+    }
+
+    // Undo snapshots were recorded against the superseded disk baseline. They
+    // cannot safely survive a rebase because replaying one could restore stale
+    // pixels that conflict recovery just protected.
+    clearAllHistory();
+    syncHistoryCounts();
+    const remaining = syncDirtyFromPending();
+    setStatus(remaining > 0 ? "dirty" : "idle");
+    renderOverlay();
+    refreshInstances();
+    setLabelsSummaryToken((value) => value + 1);
+    setRegionMembershipToken((value) => value + 1);
+    return { reapplied, conflicts, remaining };
+  }, [api, clearAllHistory, invalidateSliceLabelCache, refreshInstances, renderOverlay,
+    syncDirtyFromPending, syncHistoryCounts, taskId]);
 
   /**
    * Write every pending slice to the working mask. Only an explicit Save click
@@ -2298,6 +2362,38 @@ export default function AnnotationCanvas({
           setLabelsSummaryToken((v) => v + 1);
           return remaining === 0;
         } catch (error) {
+          const reason = error instanceof ApiError && error.data && typeof error.data === "object"
+            ? (error.data as { reason?: unknown }).reason
+            : null;
+          if (error instanceof ApiError && error.status === 409 && reason === "write_conflict") {
+            try {
+              const recovered = await recoverPendingAfterConflict(saveAxis);
+              window.alert(
+                "Newer annotation work was saved from another tab or session. "
+                + "This tab reloaded the latest working volume and kept "
+                + `${recovered.reapplied} non-overlapping unsaved voxel edit`
+                + `${recovered.reapplied === 1 ? "" : "s"} pending. `
+                + (recovered.conflicts > 0
+                  ? `${recovered.conflicts} overlapping voxel edit${recovered.conflicts === 1 ? "" : "s"} `
+                    + "kept the newer saved value. "
+                  : "")
+                + "Undo history was cleared for safety. "
+                + (recovered.remaining > 0
+                  ? "Review the layer, then click Save again."
+                  : "The latest saved layer is now current; there are no local edits left to save."),
+              );
+              return false;
+            } catch (recoveryError) {
+              syncDirtyFromPending();
+              setStatus("error");
+              window.alert(
+                `${error.message}\n\nAutomatic recovery could not finish: `
+                + (recoveryError instanceof Error ? recoveryError.message : "unknown error")
+                + " Your unsaved edits are still kept in this tab.",
+              );
+              return false;
+            }
+          }
           syncDirtyFromPending();
           setStatus("error");
           window.alert(
@@ -2318,6 +2414,7 @@ export default function AnnotationCanvas({
       refreshInstances,
       stashCurrentSlice,
       invalidateSliceLabelCache,
+      recoverPendingAfterConflict,
       syncDirtyFromPending,
     ],
   );
@@ -3317,9 +3414,9 @@ export default function AnnotationCanvas({
         rememberCommittedLabel(label, zi);
         if (zi === liveZ && idsRef.current) {
           idsRef.current.set(after);
-          pendingSlicesRef.current.markChanged(zi, idsRef.current);
+          pendingSlicesRef.current.markChanged(zi, idsRef.current, before);
         } else {
-          pendingSlicesRef.current.markChanged(zi, after);
+          pendingSlicesRef.current.markChanged(zi, after, before);
         }
         if (plannedOffset % 2 === 1) await yieldToMainThread();
       }
@@ -3443,9 +3540,9 @@ export default function AnnotationCanvas({
         if (zi === liveZ) {
           recordOutsideChanges(zi, before, after);
           ids.set(after);
-          pendingSlicesRef.current.markChanged(zi, ids);
+          pendingSlicesRef.current.markChanged(zi, ids, before);
         } else {
-          pendingSlicesRef.current.markChanged(zi, after);
+          pendingSlicesRef.current.markChanged(zi, after, before);
         }
       }
       if (!historyRef.current.recordCompound(compound)) return;
@@ -3502,9 +3599,9 @@ export default function AnnotationCanvas({
       if (edit.index === liveIndex && idsRef.current) {
         recordOutsideChanges(edit.index, edit.before, edit.after);
         idsRef.current.set(edit.after);
-        pendingSlicesRef.current.markChanged(edit.index, idsRef.current);
+        pendingSlicesRef.current.markChanged(edit.index, idsRef.current, edit.before);
       } else {
-        pendingSlicesRef.current.markChanged(edit.index, edit.after);
+        pendingSlicesRef.current.markChanged(edit.index, edit.after, edit.before);
       }
     }
     nextIdRef.current = Math.max(nextIdRef.current, maxLabel + 1);
@@ -4137,6 +4234,7 @@ export default function AnnotationCanvas({
       const liveZ = idsIndexRef.current;
       if (result.kind === "slice") {
         const current = idsRef.current;
+        const baseline = current?.slice() ?? result.raster;
         const protectedRaster = result.raster.slice();
         if (current) {
           // History can predate a later Verify. Undo/Redo must not become a
@@ -4145,7 +4243,7 @@ export default function AnnotationCanvas({
         }
         idsRef.current = protectedRaster;
         if (liveZ != null) {
-          pendingSlicesRef.current.markChanged(liveZ, protectedRaster);
+          pendingSlicesRef.current.markChanged(liveZ, protectedRaster, baseline);
         }
       } else {
         for (const edit of result.slices) {
@@ -4157,10 +4255,11 @@ export default function AnnotationCanvas({
               ?? (direction === "undo" ? edit.after : edit.before);
           protectLabelIds(current, plane, verifiedIdsRef.current);
           if (liveZ != null && edit.index === liveZ && idsRef.current) {
+            const baseline = current.slice();
             idsRef.current.set(plane);
-            pendingSlicesRef.current.markChanged(edit.index, idsRef.current);
+            pendingSlicesRef.current.markChanged(edit.index, idsRef.current, baseline);
           } else {
-            pendingSlicesRef.current.markChanged(edit.index, plane);
+            pendingSlicesRef.current.markChanged(edit.index, plane, current);
           }
         }
       }

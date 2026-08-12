@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AnnotationCanvas, { type AxisControls } from "./AnnotationCanvas";
+import { ApiError } from "../../api/client";
 
 /**
  * Region only is a strict focus filter and must never vandalize labels it
@@ -81,7 +82,11 @@ const api = {
     labels: [],
     stats: { total: 0, proposed: 0, edited: 0, verified: 0 },
   })),
-  getLabelIds: vi.fn(async () => ({ shape: [H, W] as [number, number], runs: storedRuns() })),
+  getLabelIds: vi.fn(async () => ({
+    shape: [H, W] as [number, number],
+    runs: storedRuns(),
+    revision: undefined as string | undefined,
+  })),
   imageSlicePath: () => "/image",
   regionMaskSlicePath: () => "/region",
   getRegionIndex: vi.fn(async () => ({ axis: "z", length: 0, indices: [] })),
@@ -201,6 +206,11 @@ describe("Region only and edits outside the region", () => {
       labels: [],
       stats: { total: 0, proposed: 0, edited: 0, verified: 0 },
     });
+    api.getLabelIds.mockReset().mockResolvedValue({
+      shape: [H, W] as [number, number],
+      runs: storedRuns(),
+      revision: undefined,
+    });
     harness.confirm.mockReset().mockReturnValue(true);
     harness.overlayPixels = null;
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (
@@ -243,6 +253,93 @@ describe("Region only and edits outside the region", () => {
       clickSave();
     });
     expect(harness.confirm).not.toHaveBeenCalled();
+  });
+
+  it("does not roll the save token back when navigating to a prefetched plane", async () => {
+    api.getLabelIds.mockResolvedValue({
+      shape: [H, W] as [number, number],
+      runs: storedRuns(),
+      revision: "revision-before-first-save",
+    });
+    harness.putLabelIds
+      .mockResolvedValueOnce({
+        max_label_id: 9,
+        next_label_id: 10,
+        revision: "revision-after-first-save",
+      })
+      .mockResolvedValueOnce({
+        max_label_id: 9,
+        next_label_id: 10,
+        revision: "revision-after-second-save",
+      });
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    // The settled-slice prefetch fills z=1 with the original plane revision.
+    await waitFor(() => expect(api.getLabelIds.mock.calls.length).toBeGreaterThan(1));
+    selectBrush();
+    paintPixel(0, 0);
+    await act(async () => clickSave());
+    await waitFor(() => expect(harness.putLabelIds).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTitle("Next layer"));
+    await waitFor(() => expect(screen.getByTitle(/^z 2\/6$/)).toBeTruthy());
+    // Navigation state advances immediately; the cached plane installs on the
+    // canvas through the debounced load effect one frame later.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    paintPixel(0, 1);
+    await act(async () => clickSave());
+    await waitFor(() => expect(harness.putLabelIds).toHaveBeenCalledTimes(2));
+
+    // putLabelIds(..., expectedRevision): the cached z=1 pixels are reusable,
+    // but their old volume token must not replace the first Save's response.
+    expect(harness.putLabelIds.mock.calls[1][7]).toBe("revision-after-first-save");
+  });
+
+  it("reloads and retains only non-overlapping pending edits after a real conflict", async () => {
+    let newerWorkExists = false;
+    api.getLabelIds.mockImplementation(async () => newerWorkExists
+      ? {
+          shape: [H, W] as [number, number],
+          runs: [[0, H * W - 1], [9, 1]] as [number, number][],
+          revision: "newer-server-revision",
+        }
+      : {
+          shape: [H, W] as [number, number],
+          runs: [[0, H * W]] as [number, number][],
+          revision: "original-revision",
+        });
+    harness.putLabelIds
+      .mockImplementationOnce(async () => {
+        newerWorkExists = true;
+        throw new ApiError(409, "working volume changed", { reason: "write_conflict" });
+      })
+      .mockResolvedValueOnce({
+        max_label_id: 9,
+        next_label_id: 10,
+        revision: "after-recovered-save",
+      });
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    selectBrush();
+    paintPixel(0, 0);
+    await act(async () => clickSave());
+
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(
+      expect.stringContaining("reloaded the latest working volume"),
+    ));
+    await act(async () => clickSave());
+    await waitFor(() => expect(harness.putLabelIds).toHaveBeenCalledTimes(2));
+
+    const saved = lastSavedPlane();
+    expect(saved[0]).toBe(6); // this tab's non-overlapping brush edit survived
+    expect(saved[H * W - 1]).toBe(9); // newer disk work was not overwritten
+    expect(harness.putLabelIds.mock.calls[1][7]).toBe("newer-server-revision");
   });
 
   it("cannot paint through a verified label even while Hide Verified hides it", async () => {

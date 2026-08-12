@@ -105,6 +105,14 @@ describe("OutsideRegionEdits", () => {
     expect(frozen.size).toBe(1);
     expect(edits.size).toBe(2);
   });
+
+  it("refreshes stored values when conflict recovery loads newer disk", () => {
+    const edits = new OutsideRegionEdits();
+    edits.record(1, 4);
+    edits.rebase(plane([0, 9, 0]));
+
+    expect(edits.records()).toEqual([{ index: 1, baseline: 9 }]);
+  });
 });
 
 describe("OutsideRegionEditStore", () => {

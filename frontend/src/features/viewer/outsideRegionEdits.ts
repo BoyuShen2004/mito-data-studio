@@ -84,6 +84,13 @@ export class OutsideRegionEdits {
     this.baselines.clear();
   }
 
+  /** Refresh sparse stored values after conflict recovery loads newer disk. */
+  rebase(serverIds: Int32Array) {
+    for (const index of this.baselines.keys()) {
+      if (index < serverIds.length) this.baselines.set(index, serverIds[index]);
+    }
+  }
+
   /**
    * The plane as it should be *presented* (and saved) right now.
    *
@@ -156,6 +163,10 @@ export class OutsideRegionEditStore {
 
   delete(index: number) {
     this.planes.delete(index);
+  }
+
+  rebase(index: number, serverIds: Int32Array) {
+    this.planes.get(index)?.rebase(serverIds);
   }
 
   clear() {
