@@ -23,12 +23,13 @@ import {
   phase14ChunkRendererEnabled,
 } from "../rendering";
 
-// Bounded object-URL LRU (mirrors Cellable's MAX_SLICE_PIXMAP_CACHE = 256).
-// Revoking on eviction keeps browser memory flat no matter how far you scroll.
-const MAX_CACHED_SLICES = 256;
+// Three layers own one cache each, so 96 entries means at most 288 live blob
+// URLs rather than 768. Revoking on replacement/eviction keeps long scrubs
+// bounded without sacrificing the nearby-slice working set.
+const MAX_CACHED_SLICES = 96;
 const PREFETCH_RADIUS = 3;
 
-class BlobLRU {
+export class BlobLRU {
   private map = new Map<string, string>();
   constructor(private limit: number) {}
   get(key: string) {

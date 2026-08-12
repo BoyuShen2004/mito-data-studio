@@ -2502,9 +2502,9 @@ def set_label_slice_ids(
             "layer before saving so newer annotation work is not overwritten."
         )
     try:
-        mtime_before = owned_path.stat().st_mtime
+        mtime_ns_before = owned_path.stat().st_mtime_ns
     except OSError:
-        mtime_before = None
+        mtime_ns_before = None
 
     old_sl = _read_axis_slice(mm, axis, idx)
     if roi_only:
@@ -2523,8 +2523,10 @@ def set_label_slice_ids(
     # slice to fold in: drop the cache and let the next read rebuild it.
     from .cellable_port import labels_3d as _labels_3d
 
-    if axis == "z" and mtime_before is not None:
-        _labels_3d.update_summary_for_slice(owned_path, idx, sl, mtime_before=mtime_before)
+    if axis == "z" and mtime_ns_before is not None:
+        _labels_3d.update_summary_for_slice(
+            owned_path, idx, sl, mtime_ns_before=mtime_ns_before
+        )
     else:
         _labels_3d.forget_summary(owned_path)
 

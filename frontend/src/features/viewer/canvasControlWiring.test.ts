@@ -69,3 +69,18 @@ describe("Track review wiring", () => {
     expect(review).not.toContain("setTracking(");
   });
 });
+
+describe("3D working-geometry refresh wiring", () => {
+  it("bumps the pinned mesh revision after a successful Save", () => {
+    const start = annotationSource.indexOf("const saveLabels = useCallback");
+    const end = annotationSource.indexOf("useEffect(() => {", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const save = annotationSource.slice(start, end);
+
+    expect(save).toContain("await putLabelIds(");
+    expect(save).toMatch(
+      /setLabelsSummaryToken\(\(v\) => v \+ 1\);[\s\S]{0,400}setLabels3DRefreshKey\(\(v\) => v \+ 1\)/,
+    );
+  });
+});

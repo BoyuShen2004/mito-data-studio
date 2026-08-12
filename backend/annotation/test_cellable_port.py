@@ -369,15 +369,17 @@ class LabelsSummaryIncrementalTests(TestCase):
         it into the cached summary."""
         from annotation.cellable_port.labels_3d import update_summary_for_slice
 
-        mtime_before = self.path.stat().st_mtime
+        mtime_ns_before = self.path.stat().st_mtime_ns
         mm = tifffile.memmap(self.path_str, mode="r+")
         mm[z] = new_slice
         mm.flush()
         del mm
         # Filesystems can report the same mtime for two writes in quick
         # succession; force a change so this test exercises the real branch.
-        os.utime(self.path_str, (mtime_before + 1, mtime_before + 1))
-        return update_summary_for_slice(self.path, z, new_slice, mtime_before=mtime_before)
+        os.utime(self.path_str, ns=(mtime_ns_before + 1, mtime_ns_before + 1))
+        return update_summary_for_slice(
+            self.path, z, new_slice, mtime_ns_before=mtime_ns_before
+        )
 
     def _brute_force(self):
         vol = tifffile.imread(self.path_str)
@@ -439,7 +441,7 @@ class LabelsSummaryIncrementalTests(TestCase):
 
         label_summary(self.path)
         new = np.zeros((8, 8), dtype=np.uint16)
-        applied = update_summary_for_slice(self.path, 1, new, mtime_before=1.0)
+        applied = update_summary_for_slice(self.path, 1, new, mtime_ns_before=1)
         self.assertFalse(applied)
 
     def test_no_cache_entry_means_no_update(self):
@@ -448,7 +450,7 @@ class LabelsSummaryIncrementalTests(TestCase):
         _summary_cache.clear()
         self.assertFalse(
             update_summary_for_slice(
-                self.path, 1, np.zeros((8, 8), dtype=np.uint16), mtime_before=1.0
+                self.path, 1, np.zeros((8, 8), dtype=np.uint16), mtime_ns_before=1
             )
         )
 
@@ -491,6 +493,12 @@ class Labels3DMeshUnitTests(TestCase):
         tifffile.imwrite(path_str, vol)
         return Path(path_str)
 
+    def setUp(self):
+        from annotation.cellable_port import labels_3d
+
+        labels_3d._mesh_cache.clear()
+        labels_3d._summary_cache.clear()
+
     def test_mesh_is_a_closed_surface_inside_the_label_bbox(self):
         vol = np.zeros((24, 24, 24), dtype=np.uint16)
         zz, yy, xx = np.ogrid[:24, :24, :24]
@@ -532,6 +540,29 @@ class Labels3DMeshUnitTests(TestCase):
 
         self.assertEqual(labels_3d_mesh(path, [999])["meshes"], [])
         self.assertEqual(labels_3d_mesh(path, [])["meshes"], [])
+
+    def test_background_id_never_yields_geometry(self):
+        vol = np.zeros((8, 8, 8), dtype=np.uint16)
+        vol[2:6, 2:6, 2:6] = 1
+        path = self._write("mesh_no_background.tif", vol)
+
+        result = labels_3d_mesh(path, [0, 1])
+        self.assertEqual([mesh["id"] for mesh in result["meshes"]], [1])
+
+    def test_mesh_cache_invalidates_on_nanosecond_mtime_change(self):
+        vol = np.zeros((12, 12, 12), dtype=np.uint16)
+        vol[2:6, 2:6, 2:6] = 1
+        path = self._write("mesh_mtime.tif", vol)
+        before = labels_3d_mesh(path, [1])["meshes"][0]["vertices"].copy()
+        old_ns = path.stat().st_mtime_ns
+
+        changed = np.zeros_like(vol)
+        changed[6:10, 6:10, 6:10] = 1
+        tifffile.imwrite(path, changed)
+        os.utime(path, ns=(old_ns + 1, old_ns + 1))
+
+        after = labels_3d_mesh(path, [1])["meshes"][0]["vertices"]
+        self.assertGreater(float(after[:, 0].min()), float(before[:, 0].max()))
 
     def test_meshes_are_independent_of_the_other_requested_labels(self):
         """Per-label bbox crops + whole-volume coordinates: at a given level

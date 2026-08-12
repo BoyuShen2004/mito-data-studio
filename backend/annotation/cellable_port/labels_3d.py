@@ -36,7 +36,7 @@ import numpy as np
 
 _MAX_MESH_CACHE = 96
 _mesh_cache: "OrderedDict[tuple, tuple]" = OrderedDict()
-# {path: {"mtime": float, "stats": {label: {z: (count, y1, y2, x1, x2)}},
+# {path: {"mtime_ns": int, "stats": {label: {z: (count, y1, y2, x1, x2)}},
 #         "derived": rolled-up summary or None}} — see `label_summary`.
 _summary_cache: dict[str, dict] = {}
 
@@ -208,20 +208,20 @@ def label_summary(path) -> dict:
     path_str = str(path)
     if not path.exists():
         return {"labels": [], "bboxes": {}}
-    mtime = path.stat().st_mtime
+    mtime_ns = path.stat().st_mtime_ns
     entry = _summary_cache.get(path_str)
-    if entry is not None and entry["mtime"] == mtime:
+    if entry is not None and entry["mtime_ns"] == mtime_ns:
         if entry["derived"] is None:
             entry["derived"] = _derive_summary(entry["stats"])
         return entry["derived"]
 
     stats = _scan_stats(open_label_volume_readonly(path))
     derived = _derive_summary(stats)
-    _summary_cache[path_str] = {"mtime": mtime, "stats": stats, "derived": derived}
+    _summary_cache[path_str] = {"mtime_ns": mtime_ns, "stats": stats, "derived": derived}
     return derived
 
 
-def update_summary_for_slice(path, z: int, new_slice: np.ndarray, *, mtime_before: float) -> bool:
+def update_summary_for_slice(path, z: int, new_slice: np.ndarray, *, mtime_ns_before: int) -> bool:
     """Fold one just-written z-slice into the cached summary, in place.
 
     Returns ``True`` when the cache was updated (the caller's next
@@ -229,7 +229,7 @@ def update_summary_for_slice(path, z: int, new_slice: np.ndarray, *, mtime_befor
     there was nothing valid to update — in which case the next read simply
     rescans, which is the pre-existing behaviour.
 
-    ``mtime_before`` is the file's mtime *before* the write: if the cache
+    ``mtime_ns_before`` is the file's nanosecond mtime *before* the write: if the cache
     doesn't match it, someone else wrote in between and folding our slice in
     would produce a summary that never saw their change. Refusing the update
     there is what keeps this safe under more than one writer — the loser just
@@ -237,10 +237,10 @@ def update_summary_for_slice(path, z: int, new_slice: np.ndarray, *, mtime_befor
     """
     path_str = str(path)
     entry = _summary_cache.get(path_str)
-    if entry is None or entry["mtime"] != mtime_before:
+    if entry is None or entry["mtime_ns"] != mtime_ns_before:
         return False
     try:
-        mtime_after = path.stat().st_mtime
+        mtime_ns_after = path.stat().st_mtime_ns
     except OSError:
         _summary_cache.pop(path_str, None)
         return False
@@ -256,7 +256,7 @@ def update_summary_for_slice(path, z: int, new_slice: np.ndarray, *, mtime_befor
     for lid, value in fresh.items():
         stats.setdefault(lid, {})[z] = value
 
-    entry["mtime"] = mtime_after
+    entry["mtime_ns"] = mtime_ns_after
     entry["derived"] = None
     return True
 
@@ -401,26 +401,19 @@ def labels_3d_mesh(
         return empty
 
     path_str = str(path)
-    mtime = path.stat().st_mtime
+    mtime_ns = path.stat().st_mtime_ns
     bboxes = label_bboxes(path)
-    wanted = [lid for lid in dict.fromkeys(int(v) for v in label_ids) if lid in bboxes]
+    # Background is never a surface, even if a malformed/stale summary were
+    # ever to contain it. Keep this guard at the mesh boundary as well as in
+    # the summary scanner.
+    wanted = [
+        lid for lid in dict.fromkeys(int(v) for v in label_ids)
+        if lid > 0 and lid in bboxes
+    ]
     if not wanted:
         return empty
 
     mm = open_label_volume_readonly(path)
-
-    # One stride triple for every label in this request (the largest crop on
-    # each axis sets it), so pinned labels render at a consistent level of
-    # detail — and more labels means a coarser mesh each, keeping the payload
-    # bounded.
-    boxes = [bboxes[lid] for lid in wanted]
-    extents = (
-        max(b[1] - b[0] for b in boxes),
-        max(b[3] - b[2] for b in boxes),
-        max(b[5] - b[4] for b in boxes),
-    )
-    scaled_target = max(24, int(target_size / max(1.0, (len(wanted) / 8.0) ** 0.5)))
-    strides = _axis_strides(extents, scaled_target)
 
     meshes = []
     triangles = 0
@@ -429,7 +422,13 @@ def labels_3d_mesh(
         if triangles >= triangle_budget:
             truncated += 1
             continue
-        key = (path_str, mtime, lid, strides, padding)
+        bbox = bboxes[lid]
+        extents = (bbox[1] - bbox[0], bbox[3] - bbox[2], bbox[5] - bbox[4])
+        # Resolution belongs to this label, not to how many unrelated labels
+        # happen to be pinned beside it. The request triangle budget remains
+        # the aggregate resource bound.
+        strides = _axis_strides(extents, target_size)
+        key = (path_str, mtime_ns, lid, strides, padding)
         cached = _mesh_cache.get(key)
         if cached is not None:
             _mesh_cache.move_to_end(key)

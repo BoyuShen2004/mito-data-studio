@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { framingBox } from "./Labels3DPanel";
+import { framingBox, wireWebGLContextRecovery } from "./Labels3DPanel";
 
 function labelMesh(id: number, x: number) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
@@ -26,5 +26,29 @@ describe("Labels3DPanel camera framing", () => {
     group.add(labelMesh(1, 0));
 
     expect(framingBox(group, 9)).toBeNull();
+  });
+});
+
+describe("Labels3DPanel WebGL recovery", () => {
+  it("prevents permanent context loss and wires restore", () => {
+    const canvas = document.createElement("canvas");
+    let lost = 0;
+    let restored = 0;
+    const unwire = wireWebGLContextRecovery(
+      canvas,
+      () => { lost += 1; },
+      () => { restored += 1; },
+    );
+
+    const loss = new Event("webglcontextlost", { cancelable: true });
+    canvas.dispatchEvent(loss);
+    canvas.dispatchEvent(new Event("webglcontextrestored"));
+    expect(loss.defaultPrevented).toBe(true);
+    expect(lost).toBe(1);
+    expect(restored).toBe(1);
+
+    unwire();
+    canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    expect(lost).toBe(1);
   });
 });

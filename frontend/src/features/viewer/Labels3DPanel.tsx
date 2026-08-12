@@ -34,6 +34,25 @@ export function framingBox(group: THREE.Group, labelId?: number | null): THREE.B
   return box.isEmpty() ? null : box;
 }
 
+/** Keep the browser's WebGL context restorable and expose lifecycle events to
+ * React. Without preventDefault(), a lost context may be discarded forever. */
+export function wireWebGLContextRecovery(
+  canvas: HTMLCanvasElement,
+  onLost: () => void,
+  onRestored: () => void,
+): () => void {
+  const lost = (event: Event) => {
+    event.preventDefault();
+    onLost();
+  };
+  canvas.addEventListener("webglcontextlost", lost);
+  canvas.addEventListener("webglcontextrestored", onRestored);
+  return () => {
+    canvas.removeEventListener("webglcontextlost", lost);
+    canvas.removeEventListener("webglcontextrestored", onRestored);
+  };
+}
+
 function effectiveVoxelZ(
   data: Labels3DMesh,
 ): { vz: number; vy: number; vx: number; boosted: boolean } {
@@ -97,6 +116,8 @@ export default function Labels3DPanel({
   );
   const [meshData, setMeshData] = useState<Labels3DMesh | null>(null);
   const [zBoosted, setZBoosted] = useState(false);
+  const [webglLost, setWebglLost] = useState(false);
+  const [rendererEpoch, setRendererEpoch] = useState(0);
 
   // Stable identity for the pin set: a re-render that produces an equal-but-
   // new array must not re-trigger the (expensive) load effect.
@@ -112,7 +133,13 @@ export default function Labels3DPanel({
     scene.background = new THREE.Color(0x0b0d10);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 20000);
     camera.position.set(WORLD_SPAN * 1.5, WORLD_SPAN * 1.1, WORLD_SPAN * 1.5);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+    } catch {
+      setWebglLost(true);
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     el.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -150,6 +177,7 @@ export default function Labels3DPanel({
     };
 
     let frame = 0;
+    let running = true;
     const resize = () => {
       const w = el.clientWidth || 1;
       const h = el.clientHeight || 1;
@@ -162,14 +190,29 @@ export default function Labels3DPanel({
     resize();
 
     const tick = () => {
+      if (!running) return;
       frame = requestAnimationFrame(tick);
       controls.update();
       renderer.render(scene, camera);
     };
+    const unwireContext = wireWebGLContextRecovery(
+      renderer.domElement,
+      () => {
+        running = false;
+        cancelAnimationFrame(frame);
+        setWebglLost(true);
+      },
+      () => {
+        setWebglLost(false);
+        setRendererEpoch((value) => value + 1);
+      },
+    );
     tick();
 
     return () => {
+      running = false;
       cancelAnimationFrame(frame);
+      unwireContext();
       ro.disconnect();
       controls.dispose();
       renderer.dispose();
@@ -177,7 +220,7 @@ export default function Labels3DPanel({
       groupRef.current = null;
       if (renderer.domElement.parentNode === el) el.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [rendererEpoch]);
 
   // Fetch mesh payload. Z-scale does NOT belong here — changing it must not
   // re-hit the expensive server mesher.
@@ -307,7 +350,7 @@ export default function Labels3DPanel({
     return () => {
       cancelled = true;
     };
-  }, [meshData]);
+  }, [meshData, rendererEpoch]);
 
   // Visibility only — hiding a pinned label in the Labels list must not cost
   // a refetch or a re-mesh (item B3).
@@ -329,7 +372,9 @@ export default function Labels3DPanel({
   }, [focusLabelId, stats]);
 
   const statusText =
-    phase === "fetching"
+    webglLost
+      ? "3D renderer lost — Retry"
+      : phase === "fetching"
       ? "Meshing on server…"
       : phase === "building"
         ? "Building surfaces…"
@@ -347,9 +392,21 @@ export default function Labels3DPanel({
     <div className="card labels-3d-panel">
       <div className="row spread labels-3d-header">
         <h3 style={{ margin: 0 }}>3D Labels</h3>
-        <span className={`muted labels-3d-status${phase === "error" ? " labels-3d-status-error" : ""}`}>
+        <span className={`muted labels-3d-status${phase === "error" || webglLost ? " labels-3d-status-error" : ""}`}>
           {statusText}
         </span>
+        {webglLost && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              setWebglLost(false);
+              setRendererEpoch((value) => value + 1);
+            }}
+          >
+            Retry
+          </button>
+        )}
         {onToggleSwap && (
           <button
             type="button"

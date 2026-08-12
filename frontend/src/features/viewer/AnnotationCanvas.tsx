@@ -105,6 +105,7 @@ import { PendingSliceBuffer } from "./pendingSliceBuffer";
 import { RevisionedFetch } from "./revisionedFetch";
 import { labelIdsForCache } from "./workingLabelRevision";
 import { SliceHistory, type CompoundSliceEdit } from "./sliceHistory";
+import { stageIntersectsViewport as canvasStageIntersectsViewport } from "./canvasRecovery";
 import type { Axis } from "../../api/viewer";
 import { hasViewLocation, parseViewLocation, type ViewLocation } from "./viewLocation";
 import {
@@ -697,6 +698,7 @@ export default function AnnotationCanvas({
   const regionRendererRef = useRef<ChunkRenderedImageSource | null>(null);
   const regionFallbackRef = useRef(false);
   const [rendererNotice, setRendererNotice] = useState<string | null>(null);
+  const [canvasRecoveryNotice, setCanvasRecoveryNotice] = useState<string | null>(null);
   const [chunkRendererRevision, setChunkRendererRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -898,13 +900,16 @@ export default function AnnotationCanvas({
   const [pinned3D, setPinned3D] = useState<Set<number>>(
     () => new Set(initialSoloId != null && initialSoloId > 0 ? [initialSoloId] : []),
   );
+  /** A Solo-only pin is temporary. Remember it so walking through labels does
+   * not grow the pin set (and GPU/server work) for the rest of the session. */
+  const autoPinnedSoloRef = useRef<number | null>(null);
   // Labels list summary (This slice / All) — bumped on Save and Labels → Refresh.
   const [labelsSummaryToken, setLabelsSummaryToken] = useState(0);
   /** Bumped only where an *exact* ROI membership answer is wanted (Labels →
    * Refresh, Reset labels) — see the fetch effect for why Save does not. */
   const [regionMembershipToken, setRegionMembershipToken] = useState(0);
-  // 3D mesh rebuild — ONLY from Labels-section 3D actions (pin / 3D slice /
-  // 3D all). Save and paint tools must not rebuild the 3D view.
+  // 3D mesh rebuild — pin actions and successful disk writes. Paint remains
+  // client-only and cheap; Save must replace stale pinned geometry.
   const [labels3DRefreshKey, setLabels3DRefreshKey] = useState(0);
 
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -1604,6 +1609,8 @@ export default function AnnotationCanvas({
   const labelReadRevisionRef = useRef(new RevisionedFetch());
   const workingLabelRevisionRef = useRef("");
   const sliceImgInflightRef = useRef<Map<string, Promise<string>>>(new Map());
+  const imageRecoveryInFlightRef = useRef(false);
+  const blackCanvasChecksRef = useRef(0);
   const sliceKey = useCallback((a: Axis, index: number) => `${a}:${index}`, []);
 
   /** One controller for every prefetch this canvas ever fires — aborted only
@@ -1870,6 +1877,31 @@ export default function AnnotationCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [volumeId, sliceKey],
   );
+
+  /** A decoded blob can still be evicted/corrupted by the browser under long
+   * memory pressure. Drop only the current image entry and fetch it again;
+   * labels and unsaved paint stay untouched. */
+  const recoverCurrentImage = useCallback(async () => {
+    if (imageRecoveryInFlightRef.current || sliceLoading) return;
+    imageRecoveryInFlightRef.current = true;
+    setCanvasRecoveryNotice("Recovering canvas image…");
+    const a = axisRef.current;
+    const z = indexRef.current;
+    const key = `image:${sliceKey(a, z)}`;
+    const cached = sliceImgCacheRef.current.get(key);
+    sliceImgCacheRef.current.delete(key);
+    if (cached) URL.revokeObjectURL(cached);
+    try {
+      const url = await sliceImageUrl(z, undefined, a);
+      if (a === axisRef.current && z === indexRef.current && imgRef.current) {
+        imgRef.current.src = url;
+      }
+    } catch {
+      setCanvasRecoveryNotice("Canvas image could not reload — retrying shortly.");
+    } finally {
+      imageRecoveryInFlightRef.current = false;
+    }
+  }, [sliceImageUrl, sliceKey, sliceLoading]);
 
   const sliceRegionUrl = useCallback(
     (z: number, signal?: AbortSignal, forAxis?: Axis): Promise<string | null> => {
@@ -2257,6 +2289,7 @@ export default function AnnotationCanvas({
     refreshInstances();
     setLabelsSummaryToken((value) => value + 1);
     setRegionMembershipToken((value) => value + 1);
+    setLabels3DRefreshKey((value) => value + 1);
     return { reapplied, conflicts, remaining };
   }, [api, clearAllHistory, invalidateSliceLabelCache, refreshInstances, renderOverlay,
     syncDirtyFromPending, syncHistoryCounts, taskId]);
@@ -2360,6 +2393,10 @@ export default function AnnotationCanvas({
           setStatus(remaining > 0 ? "dirty" : "idle");
           refreshInstances();
           setLabelsSummaryToken((v) => v + 1);
+          // Only pinned ids are requested by Labels3DPanel. An empty pin set
+          // makes this a no-op there, while an open 3D view immediately tracks
+          // the working draft revision that this Save just committed.
+          setLabels3DRefreshKey((v) => v + 1);
           return remaining === 0;
         } catch (error) {
           const reason = error instanceof ApiError && error.data && typeof error.data === "object"
@@ -4894,6 +4931,7 @@ export default function AnnotationCanvas({
       setSelectedTrackSubclass(selected?.subclasses[0]?.index ?? null);
       await loadSlice(index, undefined, { forceServer: true });
       setLabelsSummaryToken((value) => value + 1);
+      setLabels3DRefreshKey((value) => value + 1);
     } catch (error) {
       setTrackError(error instanceof Error ? error.message : `Could not ${action} Track preview`);
     } finally {
@@ -5228,11 +5266,17 @@ export default function AnnotationCanvas({
   const toggleSolo = useCallback((id: number) => {
     const entering = soloId !== id;
     setSoloId(entering ? id : null);
-    // Solo behaves like "only this label is in 3D": if it was not pinned,
-    // load it once; Labels3DPanel then frames its existing mesh without a
-    // rebuild on later Solo changes.
-    if (entering && !pinned3D.has(id)) {
-      setPinned3D((prev) => new Set(prev).add(id));
+    const next = new Set(pinned3D);
+    const oldAutoPin = autoPinnedSoloRef.current;
+    if (oldAutoPin != null) next.delete(oldAutoPin);
+    autoPinnedSoloRef.current = null;
+    if (entering && !next.has(id)) {
+      next.add(id);
+      autoPinnedSoloRef.current = id;
+    }
+    const changed = next.size !== pinned3D.size || [...next].some((value) => !pinned3D.has(value));
+    if (changed) {
+      setPinned3D(next);
       setLabels3DRefreshKey((value) => value + 1);
     }
   }, [pinned3D, soloId]);
@@ -5525,16 +5569,7 @@ export default function AnnotationCanvas({
         stageTop: number;
       },
     ) => {
-      const viewLeft = vp.scrollLeft;
-      const viewTop = vp.scrollTop;
-      const viewRight = viewLeft + vp.clientWidth;
-      const viewBottom = viewTop + vp.clientHeight;
-      return (
-        layout.stageLeft + layout.stageW > viewLeft &&
-        layout.stageLeft < viewRight &&
-        layout.stageTop + layout.stageH > viewTop &&
-        layout.stageTop < viewBottom
-      );
+      return canvasStageIntersectsViewport(vp, layout);
     },
     [],
   );
@@ -5724,6 +5759,50 @@ export default function AnnotationCanvas({
     setFitEpoch((e) => e + 1);
   }, []);
 
+  const toggleSwap = useCallback(() => {
+    const restoringCanvas = swapped;
+    setSwapped(!swapped);
+    if (restoringCanvas) {
+      // The center/dock exchange settles over more than one layout frame.
+      // Requesting a real Fit makes the editable stage visible after it moves.
+      requestAnimationFrame(() => requestFit("window"));
+    }
+  }, [requestFit, swapped]);
+
+  // Low-frequency guard for failures that do not emit an image error (for
+  // example, a ResizeObserver/chrome race leaves scroll entirely on padding).
+  // Require two consecutive checks so an ordinary in-progress resize cannot
+  // trigger a surprise Fit.
+  useEffect(() => {
+    if (swapped) {
+      blackCanvasChecksRef.current = 0;
+      return;
+    }
+    const check = () => {
+      const shell = shellRef.current;
+      const vp = viewportRef.current;
+      const layout = stageLayoutRef.current;
+      const img = imgRef.current;
+      if (!shell || !vp || shell.clientWidth <= 0 || shell.clientHeight <= 0) return;
+      const missingImage = Boolean(img?.complete && !img.naturalWidth && img.src);
+      const stranded = !layout || !canvasStageIntersectsViewport(vp, layout);
+      if (!missingImage && !stranded) {
+        blackCanvasChecksRef.current = 0;
+        return;
+      }
+      blackCanvasChecksRef.current += 1;
+      if (blackCanvasChecksRef.current < 2) return;
+      blackCanvasChecksRef.current = 0;
+      if (missingImage) void recoverCurrentImage();
+      if (stranded) {
+        setCanvasRecoveryNotice("Canvas view recovered.");
+        requestFit("window");
+      }
+    };
+    const timer = window.setInterval(check, 4000);
+    return () => window.clearInterval(timer);
+  }, [recoverCurrentImage, requestFit, swapped]);
+
   useLayoutEffect(() => {
     layoutStage();
     const shell = shellRef.current;
@@ -5841,6 +5920,7 @@ export default function AnnotationCanvas({
   }, [labelsSummaryRows, trackingPrompts]);
 
   const togglePinned3D = useCallback((id: number) => {
+    if (autoPinnedSoloRef.current === id) autoPinnedSoloRef.current = null;
     setPinned3D((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -5856,6 +5936,9 @@ export default function AnnotationCanvas({
    * even when every id was already pinned (re-click after Save). */
   const pinManyTo3D = useCallback((ids: number[]) => {
     if (ids.length === 0) return;
+    if (autoPinnedSoloRef.current != null && ids.includes(autoPinnedSoloRef.current)) {
+      autoPinnedSoloRef.current = null;
+    }
     setPinned3D((prev) => {
       const next = new Set(prev);
       for (const id of ids) {
@@ -5867,6 +5950,7 @@ export default function AnnotationCanvas({
   }, []);
 
   const clearPinned3D = useCallback(() => {
+    autoPinnedSoloRef.current = null;
     setPinned3D(new Set());
     setLabels3DRefreshKey((v) => v + 1);
   }, []);
@@ -5874,8 +5958,8 @@ export default function AnnotationCanvas({
   // --- What the 3D panel loads, and what merely changes what it *draws* ----
   //
   // Coupling rule (03 item B3 — "don't over-hook unrelated features"):
-  //   * **Rebuild 3D** only when the 3D pin set changes, or an explicit 3D
-  //     action fires (`labels3DRefreshKey`: pin toggle, 3D slice / 3D all).
+  //   * **Rebuild 3D** when the pin set changes, an explicit 3D action fires,
+  //     or Save changes the working file under already-pinned geometry.
   //     Meshing a label server-side is the most expensive call in the app.
   //   * **Never rebuild** for 2D-only visibility work. Solo / Hide / Hide
   //     Verified drive the canvas overlay, and at most toggle `mesh.visible`
@@ -6228,7 +6312,7 @@ export default function AnnotationCanvas({
                   ? "Swap back — restore the 2D canvas to the center"
                   : "Swap — enlarge 3D Labels"
               }
-              onClick={() => setSwapped((v) => !v)}
+              onClick={toggleSwap}
             >
               Swap
             </button>
@@ -6260,6 +6344,7 @@ export default function AnnotationCanvas({
                   <img
                     ref={imgRef}
                     onLoad={() => {
+                      setCanvasRecoveryNotice(null);
                       updateIntensityCanvas();
                       // Preserve pan across slice swaps: capture scroll before
                       // layout may rebuild stage metrics, then restore unless
@@ -6278,6 +6363,7 @@ export default function AnnotationCanvas({
                         vp.scrollTop = keepPan.top;
                       }
                     }}
+                    onError={() => { void recoverCurrentImage(); }}
                     style={{
                       display: "block",
                       width: "100%",
@@ -6386,9 +6472,9 @@ export default function AnnotationCanvas({
             <div className="canvas-status-overlay">
               <span ref={statusReadoutRef} />
             </div>
-            {rendererNotice && (
+            {(canvasRecoveryNotice || rendererNotice) && (
               <div className="canvas-renderer-notice" role="status">
-                {rendererNotice}
+                {canvasRecoveryNotice || rendererNotice}
               </div>
             )}
             {swapped && (
@@ -6416,7 +6502,7 @@ export default function AnnotationCanvas({
           hiddenIds={hidden3DIds}
           focusLabelId={soloId}
           swapped={swapped}
-          onToggleSwap={() => setSwapped((v) => !v)}
+          onToggleSwap={toggleSwap}
           fetchMesh={api.fetchLabels3DMesh}
         />
 
