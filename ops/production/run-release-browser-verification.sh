@@ -7,7 +7,7 @@ case "$phase" in
   *) echo "MITO_VERIFICATION_PHASE must be private or public" >&2; exit 2 ;;
 esac
 
-checkout=${MITO_PRODUCTION_ROOT:-/home/weidf/shenb/mito-data-agent-production-v1.1.0}
+checkout=${MITO_PRODUCTION_ROOT:-/home/weidf/shenb/mito-data-studio-production-v1.1.0}
 service_user=${MITO_PRODUCTION_USER:-mito-production-v11}
 service_home=${MITO_PRODUCTION_HOME:-/home/mito-production-v11}
 credentials=${MITO_PUBLIC_VERIFICATION_CREDENTIALS:-$checkout/run/.env.public-verification}

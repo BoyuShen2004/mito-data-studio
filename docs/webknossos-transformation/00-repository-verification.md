@@ -43,12 +43,12 @@
 ## Application under improvement
 
 ```text
-/home/weidf/shenb/mito-data-agent
+/home/weidf/shenb/mito-data-studio
 ```
 
 | Field | Value |
 |---|---|
-| Remote | `https://github.com/BoyuShen2004/mito-data-agent.git` |
+| Remote | `https://github.com/BoyuShen2004/mito-data-studio.git` |
 | Branch | `main` |
 | HEAD (at audit) | `83b547c` |
 | Working tree | dirty (in-progress hard-cases/people/submit-loop work; not modified by this research) |
@@ -61,7 +61,7 @@ Full source-level analysis of the **main application** requires cloning:
 /home/weidf/shenb/external-research/webknossos
 ```
 
-from `https://github.com/scalableminds/webknossos` (do **not** clone inside `mito-data-agent`).
+from `https://github.com/scalableminds/webknossos` (do **not** clone inside `mito-data-studio`).
 
 This Cursor research used:
 

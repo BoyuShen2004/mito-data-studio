@@ -10,7 +10,7 @@ file covers what the README deliberately leaves out.
 ### Day to day
 
 ```bash
-conda activate mito-data-agent
+conda activate mito-data-studio
 ./dev-launch.sh                     # both servers; Ctrl+C stops both
 ```
 
@@ -73,7 +73,7 @@ After any intentional env reshape (`conda env update`, manual `mkl`/`pytorch`
 install), verify:
 
 ```bash
-conda activate mito-data-agent
+conda activate mito-data-studio
 python -c "import torch; print(torch.__version__, 'cuda=', torch.cuda.is_available())"
 conda list mkl pytorch | grep -E '^(mkl|pytorch) '
 ./dev-setup.sh --smoke
@@ -106,7 +106,7 @@ npm run dev --prefix frontend               # UI on http://localhost:5173
 - `MITO_DATA_ROOT` — root dir for all volume/label/submission files. The DB
   stores only paths relative to this root, **never** the image data. A relative
   value resolves against the repo root (so `./data` means `<repo>/data`).
-  **Prefer a path outside the repo** (e.g. `../mito-data-agent-data` or a lab
+  **Prefer a path outside the repo** (e.g. `../mito-data-studio-data` or a lab
   path) — see "Keeping software and data apart" below. Per-volume working
   artifacts live under `<project>/<dataset>/`: `<image stem>_mask.tif`, a
   `metadata/` sidecar, and an `embeddings/<variant>/` SAM cache (see
@@ -343,7 +343,7 @@ Providers (`MITO_TRACKING_PROVIDER`):
   needed to point at it. To actually run it:
 
   ```bash
-  # On the GPU node, into the mito-data-agent conda env from environment.yml:
+  # On the GPU node, into the mito-data-studio conda env from environment.yml:
   export MITO_TRACKING_PROVIDER=sam2   # default in .env.example
   # Weights: vendor/sam2 (Git LFS). Override MITO_SAM2_* only if elsewhere.
   ```

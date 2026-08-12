@@ -1,8 +1,8 @@
 # Codex Prompt — Hard Case notes: editable primary note + discussion thread (shared backend)
 
 > **How to use:** Paste this whole file into Codex, or use the CLI one-liner at the bottom.
-> Work tree: `/home/weidf/shenb/mito-data-agent`
-> Production twin: `/home/weidf/shenb/mito-data-agent-production-v1.1.1`
+> Work tree: `/home/weidf/shenb/mito-data-studio`
+> Production twin: `/home/weidf/shenb/mito-data-studio-production-v1.1.1`
 > Related prior brief (UI polish + deploy): `docs/codex-prompts/2026-08-11-seeds-menus-3d-deploy.md`
 > Hard-case docs: `docs/guides/sharing-and-hard-cases.md`
 > Deploy runbook: `DEPLOYMENT.md`
@@ -198,10 +198,10 @@ who can edit, where the Note button lives.
 Same as the previous UI brief:
 
 1. DB backup under the usual `mito-backups/` (or runbook path).
-2. Align main tree → `mito-data-agent-production-v1.1.1` (exclude `.env`, `venv`,
+2. Align main tree → `mito-data-studio-production-v1.1.1` (exclude `.env`, `venv`,
    `var`, `logs`, `run`, `node_modules`).
 3. `migrate --noinput`, `collectstatic`, `npm run build:production --prefix frontend`.
-4. `sudo systemctl reload mito-data-agent-v1.1.1.service`.
+4. `sudo systemctl reload mito-data-studio-v1.1.1.service`.
 5. Health checks; hard-refresh Hard Cases and open Note on list + detail.
 
 If rsync/systemctl is blocked by policy, stop and report exact remaining commands.
@@ -247,13 +247,13 @@ edit, backup path, migrate, reload, smoke).
 ## CLI one-liner
 
 ```bash
-codex exec -C /home/weidf/shenb/mito-data-agent -s danger-full-access \
+codex exec -C /home/weidf/shenb/mito-data-studio -s danger-full-access \
   "Read and fully execute docs/codex-prompts/2026-08-11-hardcase-notes-discussion.md as the complete task brief (editable primary note + discussion thread, shared modal for list/detail/annotate, then production migrate/reload). Do not push git remotes unless asked."
 ```
 
 Safer variant:
 
 ```bash
-codex exec -C /home/weidf/shenb/mito-data-agent -s workspace-write \
+codex exec -C /home/weidf/shenb/mito-data-studio -s workspace-write \
   "Read and fully execute docs/codex-prompts/2026-08-11-hardcase-notes-discussion.md. Ask before sudo/systemctl/rsync to production if blocked."
 ```

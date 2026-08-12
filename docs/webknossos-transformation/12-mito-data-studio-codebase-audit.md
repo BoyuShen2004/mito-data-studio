@@ -1,6 +1,6 @@
-# 12 — mito-data-agent Codebase Audit
+# 12 — mito-data-studio Codebase Audit
 
-**Path:** `/home/weidf/shenb/mito-data-agent`
+**Path:** `/home/weidf/shenb/mito-data-studio`
 **Audit mode:** read-only (2026-07-27)
 
 ## Stack

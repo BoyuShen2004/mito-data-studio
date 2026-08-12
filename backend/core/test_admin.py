@@ -65,7 +65,7 @@ class AdminAccessTests(TestCase):
         res = self.client.get(reverse("admin:index"))
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "Operational dashboard")
-        self.assertContains(res, "Mito Data Agent Manager")
+        self.assertContains(res, "Mito Data Studio Manager")
 
     def test_manager_can_open_every_changelist(self):
         self.client.force_login(self.manager)

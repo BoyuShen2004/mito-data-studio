@@ -1,6 +1,6 @@
 """Fork-aware instance-label bookkeeping for SAM2 tracking.
 
-Ports the multi-branch idea from ``MTS/mts_mask_editor`` to mito-data-agent's
+Ports the multi-branch idea from ``MTS/mts_mask_editor`` to mito-data-studio's
 service layer: when a mitochondrion **forks**, each 8-connected branch is seeded
 as its own temporary track id so SAM2 can follow the branches independently, but
 they all belong to one logical group. After propagation the whole group is

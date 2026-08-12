@@ -1,7 +1,7 @@
 # Third-Party Notices
 
 Third-party software distributed with, vendored into, or reused by
-mito-data-agent, with its original licence.
+mito-data-studio, with its original licence.
 
 **Status of this file:** authoritative and current as of 2026-08-01.
 Every entry must be added *before* the corresponding code is committed.

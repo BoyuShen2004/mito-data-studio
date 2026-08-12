@@ -1,4 +1,4 @@
-# Mito Data Agent user guides
+# Mito Data Studio user guides
 
 These guides describe the current product. Choose a role, then use the shared
 annotation references as needed.

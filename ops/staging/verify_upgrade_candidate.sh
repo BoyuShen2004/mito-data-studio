@@ -8,7 +8,7 @@ repo_root=$(cd -- "$script_dir/../.." && pwd)
 python_bin=${MITO_PYTHON:-python}
 
 case "$repo_root" in
-  */mito-data-agent-production-v1.0.0)
+  */mito-data-studio-production-v1.0.0)
     echo "Refusing to run the upgrade gate in the frozen production checkout." >&2
     exit 2
     ;;

@@ -1,4 +1,4 @@
-# Mito Data Agent — one-command deployment.
+# Mito Data Studio — one-command deployment.
 #
 #   cp .env.docker.example .env.docker
 #   # edit .env.docker: set DJANGO_SECRET_KEY, MITO_DB_PASSWORD, DJANGO_ALLOWED_HOSTS
@@ -27,7 +27,7 @@
 #
 # GPU: `docker compose --env-file .env.docker --profile gpu up -d --build app-gpu`.
 
-name: mito-data-agent
+name: mito-data-studio
 
 x-app-base: &app-base
   restart: unless-stopped
@@ -98,7 +98,7 @@ services:
         # writes fail with EACCES. `id -u` / `id -g` on the host.
         APP_UID: ${APP_UID:-1000}
         APP_GID: ${APP_GID:-1000}
-    image: mito-data-agent:${MITO_IMAGE_TAG:-local}
+    image: mito-data-studio:${MITO_IMAGE_TAG:-local}
     ports:
       # Loopback-bound: put a TLS-terminating reverse proxy in front rather
       # than exposing the app container to the network directly. Change to
@@ -120,7 +120,7 @@ services:
         FRONTEND_BUILD_SCRIPT: ${FRONTEND_BUILD_SCRIPT:-build}
         APP_UID: ${APP_UID:-1000}
         APP_GID: ${APP_GID:-1000}
-    image: mito-data-agent:${MITO_IMAGE_TAG:-local}-gpu
+    image: mito-data-studio:${MITO_IMAGE_TAG:-local}-gpu
     ports:
       - "127.0.0.1:${MITO_HOST_PORT:-8000}:8000"
     deploy:

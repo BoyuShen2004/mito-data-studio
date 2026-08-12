@@ -38,7 +38,7 @@ export function volumesIn(share: PublicShareData, dataset: DatasetKey | null): S
 export function PublicShareChrome({scope, children}: {scope?: PublicShareData["scope"]; children: ReactNode}) {
   return <div className="public-share-page">
     <header className="navbar public-share-topbar">
-      <span className="brand">🧬 Mito Data Agent</span>
+      <span className="brand">🧬 Mito Data Studio</span>
       {scope && <span className="muted public-share-scope">{SCOPE_LABEL[scope]}</span>}
       <span className="spacer"/>
       {/* No badge on a dead link — it would promise access the page cannot give. */}

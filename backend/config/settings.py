@@ -1,7 +1,7 @@
 """
-Django settings for the Mito Data Agent project.
+Django settings for the Mito Data Studio project.
 
-Mito Data Agent is a web application for managing mitochondria annotation work:
+Mito Data Studio is a web application for managing mitochondria annotation work:
 projects, image volumes, frame-based annotation tasks, submissions, review, and
 workload tracking. Annotation work is unpaid; there is no payment tracking.
 """
@@ -336,7 +336,7 @@ LOGIN_REDIRECT_URL = "dashboard"
 LOGOUT_REDIRECT_URL = "login"
 
 
-# --- Mito Data Agent settings ----------------------------------------------
+# --- Mito Data Studio settings ----------------------------------------------
 
 # Root directory on the HPC / server / lab machine where image volumes,
 # optional labels, submissions, and generated task files live. The database

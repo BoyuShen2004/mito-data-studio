@@ -5,9 +5,9 @@ set -euo pipefail
 # restore. Its immutable source/reference files live in a systemd-read-only
 # root; browser Save/autosave writes only to the new v1.1 data root. This makes
 # public write-target proof repeatable without touching a user's real volume.
-checkout=${MITO_PRODUCTION_ROOT:-/home/weidf/shenb/mito-data-agent-production-v1.1.0}
-data_root=${MITO_PRODUCTION_DATA_ROOT:-/home/weidf/shenb/mito-data-agent-production-data-v1.1.0}
-source_root=${MITO_VALIDATION_SOURCE_ROOT:-/home/weidf/shenb/mito-data-agent-validation-source-v1.1.0}
+checkout=${MITO_PRODUCTION_ROOT:-/home/weidf/shenb/mito-data-studio-production-v1.1.0}
+data_root=${MITO_PRODUCTION_DATA_ROOT:-/home/weidf/shenb/mito-data-studio-production-data-v1.1.0}
+source_root=${MITO_VALIDATION_SOURCE_ROOT:-/home/weidf/shenb/mito-data-studio-validation-source-v1.1.0}
 service_user=${MITO_PRODUCTION_USER:-mito-production-v11}
 service_group=${MITO_PRODUCTION_GROUP:-mito-production-v11}
 credentials=${MITO_PUBLIC_VERIFICATION_CREDENTIALS:-$checkout/run/.env.public-verification}

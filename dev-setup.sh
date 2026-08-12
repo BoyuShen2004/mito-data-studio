@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# dev-setup.sh — verify/prepare everything Mito Data Agent needs to run.
+# dev-setup.sh — verify/prepare everything Mito Data Studio needs to run.
 #
-#   conda activate mito-data-agent
+#   conda activate mito-data-studio
 #   ./dev-setup.sh                 # check + migrate (does NOT pip/conda-install)
 #   ./dev-setup.sh --install-deps  # also pip-install any missing light packages
 #   ./dev-setup.sh --check-git     # fail if data/ DB / .env are tracked
@@ -17,7 +17,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-CONDA_ENV_NAME="mito-data-agent"
+CONDA_ENV_NAME="mito-data-studio"
 CACHE_DIR="$REPO_ROOT/.dev-cache"
 FRONTEND_DEPS_MARKER="$CACHE_DIR/frontend-deps.sha256"
 AUTO_INSTALL=0

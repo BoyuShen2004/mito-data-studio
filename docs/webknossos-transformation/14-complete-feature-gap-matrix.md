@@ -1,6 +1,6 @@
 # 14 — Complete Feature Gap Matrix
 
-| Domain | WEBKNOSSOS behavior | WEBKNOSSOS implementation | mito-data-agent behavior | mito-data-agent implementation | Gap | Recommended action |
+| Domain | WEBKNOSSOS behavior | WEBKNOSSOS implementation | mito-data-studio behavior | mito-data-studio implementation | Gap | Recommended action |
 |---|---|---|---|---|---|---|
 | Organizations | Multi-tenant org boundary | `Organization` models/controllers | Institution string/FK weak | `accounts.Institution` | Large | Introduce Org≈Institution hardening or new Organization |
 | Teams | Dataset+task scoping | Teams + membership | Project membership informal | `is_project_member` helpers | Large | Add Team model |

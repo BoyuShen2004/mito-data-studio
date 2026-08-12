@@ -5,10 +5,10 @@ set -euo pipefail
 # Playwright targets the already isolated gunicorn service on 127.0.0.1:18189.
 duration_seconds=${MITO_STAGING_SOAK_SECONDS:-300}
 warmup_seconds=${MITO_STAGING_SOAK_WARMUP_SECONDS:-60}
-staging_root=${MITO_STAGING_ROOT:-/home/weidf/shenb/mito-data-agent-staging-v1.1.0}
+staging_root=${MITO_STAGING_ROOT:-/home/weidf/shenb/mito-data-studio-staging-v1.1.0}
 staging_bind=${MITO_STAGING_BIND:-127.0.0.1:18192}
 staging_url=${MITO_STAGING_URL:-https://127.0.0.1:18194}
-staging_service=${MITO_STAGING_SERVICE:-mito-data-agent-staging-v1.1.0.service}
+staging_service=${MITO_STAGING_SERVICE:-mito-data-studio-staging-v1.1.0.service}
 staging_user=${MITO_STAGING_USER:-mito-staging-v11}
 staging_home=${MITO_STAGING_HOME:-/home/mito-staging-v11}
 evidence_dir=${MITO_SOAK_EVIDENCE_DIR:?set MITO_SOAK_EVIDENCE_DIR outside the repository}

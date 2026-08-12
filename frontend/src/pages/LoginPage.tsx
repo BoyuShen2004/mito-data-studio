@@ -91,7 +91,7 @@ export default function LoginPage() {
       <aside className="login-brand">
         <div className="login-vspacer" aria-hidden="true" />
         <div className="login-brand-inner">
-          <div className="brand-mark">🧬 Mito Data Agent</div>
+          <div className="brand-mark">🧬 Mito Data Studio</div>
           <div className="brand-hero">
             <h1>
               EM annotation,
@@ -125,7 +125,7 @@ export default function LoginPage() {
       <main className="login-form-panel">
         <div className="login-vspacer" aria-hidden="true" />
         <div className="login-card">
-          <div className="login-mobile-brand">🧬 Mito Data Agent</div>
+          <div className="login-mobile-brand">🧬 Mito Data Studio</div>
           <h2>Welcome back</h2>
           <p className="subtitle">Sign in to your workspace</p>
 

@@ -27,7 +27,7 @@ The research pack is **sound enough to build on**. No architectural recommendati
 | `webknossos-libs` HEAD | `0419d102` | `0419d102710e428f245cf2d520b7a0ee33e1d4a5`, clean, `origin/master` | OK |
 | `webknossos` pkg license | AGPL-3.0 | `webknossos/LICENSE` = AGPL | OK |
 | `cluster_tools` license | MIT | `cluster_tools/LICENSE` = MIT | OK |
-| mito-data-agent license | none found | no `LICENSE`/`NOTICE` at repo root | **OK — confirmed gap** |
+| mito-data-studio license | none found | no `LICENSE`/`NOTICE` at repo root | **OK — confirmed gap** |
 | WK modules | app, datastore, tracingstore, fossildb | all present + `webknossos-jni`, `webknossos-slick-codegen` | OK |
 
 All nine WK source paths cited in doc `01` exist at the cloned HEAD.
@@ -82,7 +82,7 @@ E14's algorithm description is **accurate line-for-line** — the interpolation 
 
 ---
 
-## 4. mito-data-agent claims verified
+## 4. mito-data-studio claims verified
 
 | Claim | Verified |
 |---|---|

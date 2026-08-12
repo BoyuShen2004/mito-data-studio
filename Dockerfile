@@ -1,4 +1,4 @@
-# Mito Data Agent — production image.
+# Mito Data Studio — production image.
 #
 # One container serves everything: gunicorn runs the Django API and WhiteNoise
 # serves the compiled SPA from the same process, so there is no nginx sidecar

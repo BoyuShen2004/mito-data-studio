@@ -104,8 +104,8 @@ them. They do not enter application bundles or deployment configuration.
 | E | `docs/webknossos-transformation/09-webknossos-datastore-architecture.md` |
 | E | `docs/webknossos-transformation/10-webknossos-performance-and-stability.md` |
 | E | `docs/webknossos-transformation/11-webknossos-ai-integration.md` |
-| E | `docs/webknossos-transformation/12-mito-data-agent-codebase-audit.md` |
-| E | `docs/webknossos-transformation/13-mito-data-agent-workflow-audit.md` |
+| E | `docs/webknossos-transformation/12-mito-data-studio-codebase-audit.md` |
+| E | `docs/webknossos-transformation/13-mito-data-studio-workflow-audit.md` |
 | E | `docs/webknossos-transformation/14-complete-feature-gap-matrix.md` |
 | E | `docs/webknossos-transformation/15-target-product-definition.md` |
 | E | `docs/webknossos-transformation/16-target-domain-model.md` |

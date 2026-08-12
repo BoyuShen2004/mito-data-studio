@@ -1,8 +1,8 @@
 # Codex Prompt — Manager roster, viewer UX, durability, concurrency, hard-case notes, smooth scrubbing
 
 > **How to use:** Paste this entire document into Codex as the task brief.
-> Work tree: `/home/weidf/shenb/mito-data-agent`
-> Reference (same feature surface, do not fork logic): `/home/weidf/shenb/mito-data-agent-production-v1.1.1`
+> Work tree: `/home/weidf/shenb/mito-data-studio`
+> Reference (same feature surface, do not fork logic): `/home/weidf/shenb/mito-data-studio-production-v1.1.1`
 >
 > Re-verify every cited path before editing. Do not push, deploy, restart prod,
 > or mutate live annotation volumes unless explicitly asked.
@@ -11,7 +11,7 @@
 
 ## Mission
 
-Implement **ten** product fixes in `mito-data-agent` so managers and annotators
+Implement **ten** product fixes in `mito-data-studio` so managers and annotators
 stop hitting roster divergence, empty “Jump to region”, watershed failures /
 confusing Seeds UI, Region-only save gaps, missing Labels context actions,
 lost verified state, missing canvas “Show 3D”, shortcut / multi-user
@@ -404,8 +404,8 @@ ITK-SNAP / napari-style continuous paging — not “butter then hitch”.
 
 ## Engineering constraints
 
-- Primary edit tree: `/home/weidf/shenb/mito-data-agent`
-- `mito-data-agent-production-v1.1.1` is the deployed twin for behavior
+- Primary edit tree: `/home/weidf/shenb/mito-data-studio`
+- `mito-data-studio-production-v1.1.1` is the deployed twin for behavior
   reference; feature code is effectively the same (mainly styles/runtime
   differ). Implement in the main tree; do not maintain divergent forks.
 - Match existing patterns, naming, and test style.

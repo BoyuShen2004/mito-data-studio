@@ -10,12 +10,12 @@
 | WEBKNOSSOS datastore | `webknossos-datastore/LICENSE` | AGPL-3.0 | AGPL-3.0 |
 | `webknossos` Python package | `/home/weidf/shenb/webknossos-libs/webknossos/LICENSE` | AGPL-3.0 | AGPL-3.0 |
 | `cluster_tools` | `/home/weidf/shenb/webknossos-libs/cluster_tools/LICENSE` | MIT | MIT |
-| mito-data-agent | no LICENSE file found at audit | **Unknown / unset** | — |
-| EfficientSAM / SAM2 vendored | `mito-data-agent/vendor/` | Per upstream model licenses | must record |
+| mito-data-studio | no LICENSE file found at audit | **Unknown / unset** | — |
+| EfficientSAM / SAM2 vendored | `mito-data-studio/vendor/` | Per upstream model licenses | must record |
 
 ## AGPL implications (engineering requirements)
 
-If mito-data-agent **copies, modifies, or links** AGPL-covered WEBKNOSSOS code (main app, datastore, or `webknossos` Python package) into a network-accessible service:
+If mito-data-studio **copies, modifies, or links** AGPL-covered WEBKNOSSOS code (main app, datastore, or `webknossos` Python package) into a network-accessible service:
 
 1. Preserve copyright and license notices.
 2. Mark modified files.
@@ -29,7 +29,7 @@ MIT `cluster_tools` may be reused with attribution under MIT terms.
 
 | Approach | When to use |
 |---|---|
-| **AGPL whole-product** | If substantial WK frontend/backend/datastore code is adapted into mito-data-agent and served as a network app — simplest legally coherent path: dual-publish or AGPL the resulting platform and provide source offer |
+| **AGPL whole-product** | If substantial WK frontend/backend/datastore code is adapted into mito-data-studio and served as a network app — simplest legally coherent path: dual-publish or AGPL the resulting platform and provide source offer |
 | **Process isolation** | Run WK datastore / tracingstore as separate AGPL services; mito talks via HTTP — still disclose if modified; client may still be AGPL if linking `webknossos` Python |
 | **Independent reimplementation** | Reproduce *behavior* from docs + observed algorithms without copying code — still cite inspiration; avoid line-level ports of AGPL files unless willing to AGPL |
 | **Permissive islands** | Prefer MIT `cluster_tools`, TensorStore, Zarr, scikit-image for storage/compute where AGPL is undesirable |
@@ -50,10 +50,10 @@ For every reused artifact:
 | Notices preserved | yes/no |
 | Source disclosure notes | … |
 
-## mito-data-agent license gap
+## mito-data-studio license gap
 
 Before production deployment, Claude Code must:
 
-1. Confirm intended license for mito-data-agent with the user.
+1. Confirm intended license for mito-data-studio with the user.
 2. If AGPL components are incorporated, align the product license or document multi-license boundaries.
 3. Generate `NOTICE`, `LICENSE`, and attribution files under `docs/webknossos-transformation/attribution/` (or repo root).

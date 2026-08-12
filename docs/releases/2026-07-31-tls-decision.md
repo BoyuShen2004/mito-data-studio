@@ -2,7 +2,7 @@
 
 The intended public chain is:
 
-`mito-data-agent.seg.bio -> Cloudflare edge -> remotely managed cloudflared -> loopback gunicorn`
+`mito-data-studio.seg.bio -> Cloudflare edge -> remotely managed cloudflared -> loopback gunicorn`
 
 Nginx is installed on the host but is not in this application's route. The
 tunnel origin is loopback-only. Cloudflare overwrites `X-Forwarded-Proto` with

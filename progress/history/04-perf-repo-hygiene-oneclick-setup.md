@@ -100,7 +100,7 @@ micro-refactors. Keep features modular (same View / Annotate / share codebase).
 
 ### Intent
 
-Someone opening `github.com/.../mito-data-agent` should understand in one
+Someone opening `github.com/.../mito-data-studio` should understand in one
 screen: what it is, how to install, where code lives. No duplicate “how to
 run” stories, no dead install files, no mystery folders.
 
@@ -147,10 +147,10 @@ run” stories, no dead install files, no mystery folders.
 ### Target story (must work)
 
 ```bash
-git clone <repo> && cd mito-data-agent
+git clone <repo> && cd mito-data-studio
 git lfs install && git lfs pull
 conda env create -f environment.yml
-conda activate mito-data-agent
+conda activate mito-data-studio
 ./dev-setup.sh
 ./dev-launch.sh
 # → http://localhost:5173  (or documented host/port)

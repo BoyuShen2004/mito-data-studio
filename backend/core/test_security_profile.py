@@ -8,8 +8,8 @@ from django.middleware.security import SecurityMiddleware
 
 PRODUCTION_TLS = {
     "DEBUG": False,
-    "ALLOWED_HOSTS": ["mito-data-agent.seg.bio"],
-    "CSRF_TRUSTED_ORIGINS": ["https://mito-data-agent.seg.bio"],
+    "ALLOWED_HOSTS": ["mito-data-studio.seg.bio"],
+    "CSRF_TRUSTED_ORIGINS": ["https://mito-data-studio.seg.bio"],
     "SECRET_KEY": "release-profile-test-only-not-a-real-secret-0123456789abcdef",
     "SECURE_PROXY_SSL_HEADER": ("HTTP_X_FORWARDED_PROTO", "https"),
     "SECURE_SSL_REDIRECT": True,
@@ -33,12 +33,12 @@ class ProductionTlsProfileTests(SimpleTestCase):
     def test_cloudflare_https_header_is_trusted_without_forwarded_host(self):
         request = RequestFactory().get(
             "/login",
-            HTTP_HOST="mito-data-agent.seg.bio",
+            HTTP_HOST="mito-data-studio.seg.bio",
             HTTP_X_FORWARDED_PROTO="https",
             HTTP_X_FORWARDED_HOST="attacker.invalid",
         )
         self.assertTrue(request.is_secure())
-        self.assertEqual(request.get_host(), "mito-data-agent.seg.bio")
+        self.assertEqual(request.get_host(), "mito-data-studio.seg.bio")
         response = SecurityMiddleware(lambda _request: HttpResponse("ok"))(request)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Strict-Transport-Security"], "max-age=300")
@@ -46,12 +46,12 @@ class ProductionTlsProfileTests(SimpleTestCase):
     def test_plain_http_redirects_once_to_the_canonical_https_host(self):
         request = RequestFactory().get(
             "/login",
-            HTTP_HOST="mito-data-agent.seg.bio",
+            HTTP_HOST="mito-data-studio.seg.bio",
             HTTP_X_FORWARDED_PROTO="http",
         )
         response = SecurityMiddleware(lambda _request: HttpResponse("ok"))(request)
         self.assertEqual(response.status_code, 301)
-        self.assertEqual(response["Location"], "https://mito-data-agent.seg.bio/login")
+        self.assertEqual(response["Location"], "https://mito-data-studio.seg.bio/login")
 
     def test_cookie_and_hsts_scope_is_intentionally_conservative(self):
         from django.conf import settings

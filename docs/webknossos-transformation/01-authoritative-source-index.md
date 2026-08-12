@@ -46,7 +46,7 @@ Prefer these sources over blogs/marketing summaries.
 | Chunk cache | `webknossos-datastore/.../ChunkCacheService.scala` |
 | Dev stack notes | `CLAUDE.md` (TS/React/antd/Redux/Saga/Three.js; Scala Play) |
 
-## Local mito-data-agent evidence
+## Local mito-data-studio evidence
 
 | Domain | Path |
 |---|---|

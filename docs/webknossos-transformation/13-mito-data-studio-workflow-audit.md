@@ -1,4 +1,4 @@
-# 13 — mito-data-agent Workflow Audit
+# 13 — mito-data-studio Workflow Audit
 
 ## A. Project → assign → annotate → review
 

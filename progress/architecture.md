@@ -2,7 +2,7 @@
 
 ## The big picture
 
-Mito Data Agent has **one backend** and **two front doors**:
+Mito Data Studio has **one backend** and **two front doors**:
 
 ```
                  ┌──────────────────────────────┐

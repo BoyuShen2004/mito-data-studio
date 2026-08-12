@@ -9,10 +9,10 @@ data local.
 
 | Item | Current value |
 | --- | --- |
-| Checkout | `/home/weidf/shenb/mito-data-agent-production-v1.1.1` |
+| Checkout | `/home/weidf/shenb/mito-data-studio-production-v1.1.5` |
 | Service user | `mito-production-v11` |
-| Web unit | `mito-data-agent-v1.1.1.service` |
-| Pyramid dispatcher | `mito-data-agent-v1.1.1-dispatcher.service` |
+| Web unit | `mito-data-studio-v1.1.5.service` |
+| Pyramid dispatcher | `mito-data-studio-v1.1.5-dispatcher.service` |
 | Gunicorn bind | `127.0.0.1:18191` |
 | Python environment | `<checkout>/venv` |
 | Writable data root | `<checkout>/var/data` |
@@ -26,22 +26,22 @@ run directories.
 ## Inspect and operate
 
 ```bash
-sudo systemctl status mito-data-agent-v1.1.1.service
-sudo systemctl status mito-data-agent-v1.1.1-dispatcher.service
-sudo journalctl -u mito-data-agent-v1.1.1.service -n 100 --no-pager
+sudo systemctl status mito-data-studio-v1.1.5.service
+sudo systemctl status mito-data-studio-v1.1.5-dispatcher.service
+sudo journalctl -u mito-data-studio-v1.1.5.service -n 100 --no-pager
 ```
 
 Use a graceful reload after source/static changes:
 
 ```bash
-sudo systemctl reload mito-data-agent-v1.1.1.service
+sudo systemctl reload mito-data-studio-v1.1.5.service
 ```
 
 Use restart—not reload—after an environment or systemd-unit change because a
 gunicorn HUP does not reread `EnvironmentFile`:
 
 ```bash
-sudo systemctl restart mito-data-agent-v1.1.1.service
+sudo systemctl restart mito-data-studio-v1.1.5.service
 ```
 
 Do not reload or restart unrelated units on other ports.
@@ -61,7 +61,7 @@ Canonical development is the product source of truth. Before promotion:
 If Python dependencies or migrations changed:
 
 ```bash
-cd /home/weidf/shenb/mito-data-agent-production-v1.1.1
+cd /home/weidf/shenb/mito-data-studio-production-v1.1.5
 venv/bin/pip install -r requirements-release.txt
 cd backend
 ../venv/bin/python manage.py migrate --noinput
@@ -74,7 +74,7 @@ the production database as an update shortcut.
 If the frontend changed, build the profile that matches the production backend:
 
 ```bash
-cd /home/weidf/shenb/mito-data-agent-production-v1.1.1
+cd /home/weidf/shenb/mito-data-studio-production-v1.1.5
 npm run build:production --prefix frontend
 ```
 
@@ -94,7 +94,7 @@ direct loopback request; otherwise the production HTTPS policy can redirect:
 
 ```bash
 curl -fsS -H 'X-Forwarded-Proto: https' \
-  -H 'Host: mito-data-agent.seg.bio' \
+  -H 'Host: mito-data-studio.seg.bio' \
   http://127.0.0.1:18191/healthz
 ```
 
@@ -102,7 +102,7 @@ For a promotion or routing change, compare the authenticated public deployment
 identity with the checkout's identity:
 
 ```bash
-cd /home/weidf/shenb/mito-data-agent-production-v1.1.1/backend
+cd /home/weidf/shenb/mito-data-studio-production-v1.1.5/backend
 ../venv/bin/python manage.py deployment_identity
 ```
 
@@ -122,15 +122,15 @@ registration stays responsive. View and Annotate fall back to original source
 files until a pyramid validates successfully.
 
 ```bash
-sudo systemctl restart mito-data-agent-v1.1.1-dispatcher.service
-sudo journalctl -u mito-data-agent-v1.1.1-dispatcher.service -n 100 --no-pager
+sudo systemctl restart mito-data-studio-v1.1.5-dispatcher.service
+sudo journalctl -u mito-data-studio-v1.1.5-dispatcher.service -n 100 --no-pager
 ```
 
 For region masks registered before region pyramids existed, use the idempotent
 backfill command—first as a dry run:
 
 ```bash
-cd /home/weidf/shenb/mito-data-agent-production-v1.1.1/backend
+cd /home/weidf/shenb/mito-data-studio-production-v1.1.5/backend
 ../venv/bin/python manage.py backfill_region_pyramids --dry-run
 ../venv/bin/python manage.py backfill_region_pyramids
 ```

@@ -2,12 +2,12 @@
 
 ## Context
 
-Production site: https://mito-data-agent.seg.bio  
+Production site: https://mito-data-studio.seg.bio
 Code roots on this host:
 
-- Dev / source of truth: `/home/weidf/shenb/mito-data-agent` (git `main`, clean)
-- Live deploy dir: `/home/weidf/shenb/mito-data-agent-production-v1.1.1`  
-  (systemd `mito-data-agent-v1.1.1.service` → gunicorn `127.0.0.1:18191`)
+- Dev / source of truth: `/home/weidf/shenb/mito-data-studio` (git `main`, clean)
+- Live deploy dir: `/home/weidf/shenb/mito-data-studio-production-v1.1.1`
+  (systemd `mito-data-studio-v1.1.1.service` → gunicorn `127.0.0.1:18191`)
 
 Annotators hit a browser `alert()`:
 
@@ -31,7 +31,7 @@ Investigate whether this is:
    layer and re-apply of still-pending local edits).
 
 Then implement the smallest safe fix in the **dev tree**
-(`/home/weidf/shenb/mito-data-agent`), with tests.
+(`/home/weidf/shenb/mito-data-studio`), with tests.
 
 ## Hard constraints
 

@@ -5226,8 +5226,16 @@ export default function AnnotationCanvas({
   }, []);
 
   const toggleSolo = useCallback((id: number) => {
-    setSoloId((prev) => (prev === id ? null : id));
-  }, []);
+    const entering = soloId !== id;
+    setSoloId(entering ? id : null);
+    // Solo behaves like "only this label is in 3D": if it was not pinned,
+    // load it once; Labels3DPanel then frames its existing mesh without a
+    // rebuild on later Solo changes.
+    if (entering && !pinned3D.has(id)) {
+      setPinned3D((prev) => new Set(prev).add(id));
+      setLabels3DRefreshKey((value) => value + 1);
+    }
+  }, [pinned3D, soloId]);
 
   const resetVisibility = useCallback(() => {
     setHiddenIds(new Set());
@@ -6406,6 +6414,7 @@ export default function AnnotationCanvas({
           labelIds={label3DIds}
           refreshKey={labels3DRefreshKey}
           hiddenIds={hidden3DIds}
+          focusLabelId={soloId}
           swapped={swapped}
           onToggleSwap={() => setSwapped((v) => !v)}
           fetchMesh={api.fetchLabels3DMesh}

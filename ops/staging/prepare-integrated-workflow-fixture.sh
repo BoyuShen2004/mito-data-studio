@@ -4,7 +4,7 @@ set -euo pipefail
 # Add an isolated, clearly named workflow fixture to the restored-production
 # staging database. This never copies or mutates source/reference bytes and it
 # refuses to run without the staging identity pins.
-staging_root=${MITO_STAGING_ROOT:-/home/weidf/shenb/mito-data-agent-staging-v1.1.0}
+staging_root=${MITO_STAGING_ROOT:-/home/weidf/shenb/mito-data-studio-staging-v1.1.0}
 staging_user=${MITO_STAGING_USER:-mito-staging-v11}
 staging_home=${MITO_STAGING_HOME:-/home/mito-staging-v11}
 soak_credentials=${MITO_SOAK_CREDENTIALS_FILE:-$staging_root/run/.env.staging-soak-users}
@@ -19,7 +19,7 @@ sudo test ! -e "$workflow_credentials"
 test "$(sudo awk -F= '$1 == "MITO_EXPECTED_DB_NAME" {print $2}' "$staging_root/.env")" = \
   "mito_staging_v1_1_0"
 test "$(sudo awk -F= '$1 == "MITO_EXPECTED_DATA_ROOT" {print $2}' "$staging_root/.env")" = \
-  "/home/weidf/shenb/mito-data-agent-staging-data-v1.1.0"
+  "/home/weidf/shenb/mito-data-studio-staging-data-v1.1.0"
 
 sudo -u "$staging_user" env HOME="$staging_home" \
   STAGING_ROOT="$staging_root" \

@@ -3,7 +3,7 @@
 Validated application/config commit: `f8a7d3f22c51308b0ab19cdca661910d705d2c6b`.
 Subsequent branch-tip changes contain this evidence only. Parent branch:
 `webknossos-transformation`. Local release branch:
-`release/mito-data-agent-2026-07-31-rc1`. The annotated tag is deliberately
+`release/mito-data-studio-2026-07-31-rc1`. The annotated tag is deliberately
 not created: the two-hour/memory gate and real chunk-renderer latency gate are
 not green.
 
@@ -18,10 +18,10 @@ data, database backups and real images/masks are excluded.
 
 ## Isolated staging identity
 
-- checkout: `/home/weidf/shenb/mito-data-agent-staging-20260731`
+- checkout: `/home/weidf/shenb/mito-data-studio-staging-20260731`
 - bind: `127.0.0.1:18189`
 - PostgreSQL: dedicated PG16 container/database `mito-staging-postgres-20260731` / `mito_staging`
-- data root: `/home/weidf/shenb/mito-data-agent-staging-20260731/data`
+- data root: `/home/weidf/shenb/mito-data-studio-staging-20260731/data`
 - runtime user: `mito-staging`; dedicated Python 3.11.14 venv and frontend build
 - restored rows after three staging-only test users: users 9, projects 1,
   datasets 3, volumes 3, tasks 3, task instances 3, submissions 1, reviews 1,

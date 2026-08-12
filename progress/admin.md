@@ -10,7 +10,7 @@ while the React SPA continues to serve **annotators** and **requesters**.
 The admin is served at `/admin/` by a custom site,
 `core.admin_site.ManagerAdminSite` (installed via
 `core.admin_apps.ManagerAdminConfig` in `INSTALLED_APPS`, replacing the default
-`django.contrib.admin` site). It is branded **“Mito Data Agent Manager”**.
+`django.contrib.admin` site). It is branded **“Mito Data Studio Manager”**.
 
 ## Roles and access
 

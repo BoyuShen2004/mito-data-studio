@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-checkout=${1:-/home/weidf/shenb/mito-data-agent-staging-v1.1.0}
+checkout=${1:-/home/weidf/shenb/mito-data-studio-staging-v1.1.0}
 credentials="$checkout/run/.env.staging-soak-users"
 if [[ -e "$credentials" ]]; then
   echo "Refusing to overwrite existing staging soak credentials." >&2

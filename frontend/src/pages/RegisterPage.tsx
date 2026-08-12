@@ -44,7 +44,7 @@ export default function RegisterPage() {
   return (
     <div className="login-page">
       <aside className="login-brand">
-        <div className="brand-mark">🧬 Mito Data Agent</div>
+        <div className="brand-mark">🧬 Mito Data Studio</div>
         <div className="brand-hero">
           <h1>Create your account</h1>
           <p>
@@ -57,7 +57,7 @@ export default function RegisterPage() {
 
       <main className="login-form-panel">
         <div className="login-card">
-          <div className="login-mobile-brand">🧬 Mito Data Agent</div>
+          <div className="login-mobile-brand">🧬 Mito Data Studio</div>
           <BackButton fallback="/login" />
           <h2>Sign up</h2>
           <p className="subtitle">Choose the type of account to create</p>

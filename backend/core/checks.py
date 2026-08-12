@@ -101,8 +101,8 @@ def check_expected_identity(app_configs, **kwargs):
 
     A deployment pins what it believes it is::
 
-        MITO_EXPECTED_CHECKOUT=/home/weidf/shenb/mito-data-agent-deploy
-        MITO_EXPECTED_DATA_ROOT=/home/weidf/shenb/mito-data-agent-deploy/data
+        MITO_EXPECTED_CHECKOUT=/home/weidf/shenb/mito-data-studio-deploy
+        MITO_EXPECTED_DATA_ROOT=/home/weidf/shenb/mito-data-studio-deploy/data
         MITO_EXPECTED_DB_NAME=mito_deploy
         MITO_EXPECTED_BIND=127.0.0.1:18188
         MITO_EXPECTED_FINGERPRINT=abc123def456

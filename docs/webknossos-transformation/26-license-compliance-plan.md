@@ -10,7 +10,7 @@
 ## If AGPL code is incorporated into the served product
 
 - Provide Corresponding Source offer (AGPL §13) for network users.
-- Align mito-data-agent distribution license or isolate AGPL processes with documented boundaries.
+- Align mito-data-studio distribution license or isolate AGPL processes with documented boundaries.
 - Do not mix incompatible proprietary dependencies into AGPL-covered modules without review.
 
 ## Permissive-safe building blocks
@@ -21,7 +21,7 @@
 
 ## Checklist before production
 
-- [ ] LICENSE chosen for mito-data-agent
+- [ ] LICENSE chosen for mito-data-studio
 - [ ] NOTICE generated
 - [ ] REGISTER complete for all WK-derived files
 - [ ] Vendor model licenses recorded (EfficientSAM, SAM2)

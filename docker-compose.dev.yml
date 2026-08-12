@@ -1,4 +1,4 @@
-# Local development services for mito-data-agent.
+# Local development services for mito-data-studio.
 #
 # Scope: **development only.** This file never describes production. It stands
 # up the PostgreSQL that development and the concurrency tests run against —

@@ -1,9 +1,9 @@
 # Codex Prompt — Seeds chrome, label/canvas context menus, 3D bulk undo, then production deploy
 
 > **How to use:** Paste this whole file into Codex, or run the CLI one-liner at the bottom.
-> Work tree: `/home/weidf/shenb/mito-data-agent`
-> Production twin: `/home/weidf/shenb/mito-data-agent-production-v1.1.1`
-> Deploy runbook: `/home/weidf/shenb/mito-data-agent/DEPLOYMENT.md`
+> Work tree: `/home/weidf/shenb/mito-data-studio`
+> Production twin: `/home/weidf/shenb/mito-data-studio-production-v1.1.1`
+> Deploy runbook: `/home/weidf/shenb/mito-data-studio/DEPLOYMENT.md`
 >
 > Re-verify cited paths before editing. After UI/code work lands and tests pass,
 > **you are authorized to promote to production** (rsync-aligned source, migrate,
@@ -149,16 +149,16 @@ Add a short test for the clear/toggle control.
 
 User requirement: **昨晚/本轮修改后要重新部署成为 production、migrate 等。**
 
-Follow `/home/weidf/shenb/mito-data-agent/DEPLOYMENT.md` carefully:
+Follow `/home/weidf/shenb/mito-data-studio/DEPLOYMENT.md` carefully:
 
 1. **Backup** production DB / note backup path before migrate.
-2. Align application source from main tree →  
-   `/home/weidf/shenb/mito-data-agent-production-v1.1.1`  
+2. Align application source from main tree →
+   `/home/weidf/shenb/mito-data-studio-production-v1.1.1`
    (rsync or equivalent). **Exclude** `.env`, `venv/`, `var/`, `logs/`, `run/`,
    `node_modules/`, local DBs, `__pycache__`. Never delete runtime data dirs.
 3. If Python deps or migrations changed:
    ```bash
-   cd /home/weidf/shenb/mito-data-agent-production-v1.1.1
+   cd /home/weidf/shenb/mito-data-studio-production-v1.1.1
    venv/bin/pip install -r requirements-release.txt   # only if needed
    cd backend
    ../venv/bin/python manage.py migrate --noinput
@@ -166,12 +166,12 @@ Follow `/home/weidf/shenb/mito-data-agent/DEPLOYMENT.md` carefully:
    ```
 4. Frontend:
    ```bash
-   cd /home/weidf/shenb/mito-data-agent-production-v1.1.1
+   cd /home/weidf/shenb/mito-data-studio-production-v1.1.1
    npm run build:production --prefix frontend
    ```
 5. Reload web unit (graceful after source/static):
    ```bash
-   sudo systemctl reload mito-data-agent-v1.1.1.service
+   sudo systemctl reload mito-data-studio-v1.1.1.service
    ```
 6. Health checks (`/healthz`, `/readyz` on the production bind — see runbook /
    prior deploy notes; gunicorn is `127.0.0.1:18191`).
@@ -185,7 +185,7 @@ claiming deploy succeeded. Report exact commands still needed.
 
 ## Engineering constraints
 
-- Implement in `/home/weidf/shenb/mito-data-agent` first; production is the
+- Implement in `/home/weidf/shenb/mito-data-studio` first; production is the
   promote target, not a second feature fork.
 - Keep diffs focused on these UI items + deploy; no unrelated refactors.
 - Match existing styles; avoid purple AI-default chrome churn.
@@ -194,29 +194,29 @@ claiming deploy succeeded. Report exact commands still needed.
 
 ## Suggested order
 
-1. (1) Seeds chrome layout  
-2. (2) Labels menu trim  
-3. (3) Canvas 2×2 label actions  
-4. (4) Clear 3D / Hide 3D all  
-5. Tests  
-6. (5) Production promote + migrate + reload + smoke  
+1. (1) Seeds chrome layout
+2. (2) Labels menu trim
+3. (3) Canvas 2×2 label actions
+4. (4) Clear 3D / Hide 3D all
+5. Tests
+6. (5) Production promote + migrate + reload + smoke
 
 ## Deliverables
 
-1. Code + tests for (1)–(4).  
-2. Production deploy completed **or** blocked with the exact remaining commands.  
+1. Code + tests for (1)–(4).
+2. Production deploy completed **or** blocked with the exact remaining commands.
 3. Short summary: what changed, backup path, migrate applied?, reload OK?,
    healthz/readyz, manual smoke results for Seeds / Labels menu / canvas menu /
    Clear 3D.
 
 ## Manual QA
 
-- [ ] Seeds: buttons fixed in place; disabled with 0 seeds; enabled after drop  
-- [ ] Status text appears to the **right** of Run Watershed and does not shove buttons  
-- [ ] Labels right-click: only Verify + Unverify  
-- [ ] Canvas right-click on mito: 2×2 Verify / Unverify / Show|Hide 3D / Solo|Unsolo  
-- [ ] 3D all then Clear 3D (or toggle Hide) clears the 3D pins  
-- [ ] Production site shows the above after hard refresh  
+- [ ] Seeds: buttons fixed in place; disabled with 0 seeds; enabled after drop
+- [ ] Status text appears to the **right** of Run Watershed and does not shove buttons
+- [ ] Labels right-click: only Verify + Unverify
+- [ ] Canvas right-click on mito: 2×2 Verify / Unverify / Show|Hide 3D / Solo|Unsolo
+- [ ] 3D all then Clear 3D (or toggle Hide) clears the 3D pins
+- [ ] Production site shows the above after hard refresh
 
 ---
 
@@ -230,7 +230,7 @@ deploy report.
 ## CLI one-liner
 
 ```bash
-codex exec -C /home/weidf/shenb/mito-data-agent -s danger-full-access \
+codex exec -C /home/weidf/shenb/mito-data-studio -s danger-full-access \
   "Read and fully execute docs/codex-prompts/2026-08-11-seeds-menus-3d-deploy.md as the complete task brief (UI items 1–4, then production promote/migrate/reload per DEPLOYMENT.md). Do not push git remotes unless asked."
 ```
 
@@ -238,6 +238,6 @@ If you prefer not to give full sandbox bypass, use `-s workspace-write` and
 explicitly approve systemctl/rsync when prompted:
 
 ```bash
-codex exec -C /home/weidf/shenb/mito-data-agent -s workspace-write \
+codex exec -C /home/weidf/shenb/mito-data-studio -s workspace-write \
   "Read and fully execute docs/codex-prompts/2026-08-11-seeds-menus-3d-deploy.md (items 1–4 + production deploy). Ask before any command that needs sudo/systemctl if blocked."
 ```

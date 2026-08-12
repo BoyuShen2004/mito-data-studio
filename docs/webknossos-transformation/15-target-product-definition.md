@@ -2,7 +2,7 @@
 
 ## One-sentence goal
 
-Build a **production-grade mitochondria annotation, inference, QC, and crowdsourcing platform** whose **engineering maturity** matches WEBKNOSSOS, while preserving mito-data-agent’s domain workflows and familiar proofreading UI.
+Build a **production-grade mitochondria annotation, inference, QC, and crowdsourcing platform** whose **engineering maturity** matches WEBKNOSSOS, while preserving mito-data-studio’s domain workflows and familiar proofreading UI.
 
 ## End-to-end target workflow
 

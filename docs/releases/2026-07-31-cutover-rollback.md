@@ -8,14 +8,14 @@ Never reuse the mutated staging DB/data root as production.
 ## Preconditions
 
 ```bash
-export RC_COMMIT=$(git -C /home/weidf/shenb/mito-data-agent \
-  rev-parse release/mito-data-agent-2026-07-31-rc2^{commit})
+export RC_COMMIT=$(git -C /home/weidf/shenb/mito-data-studio \
+  rev-parse release/mito-data-studio-2026-07-31-rc2^{commit})
 export CUTOVER_TS=$(date -u +%Y%m%dT%H%M%SZ)
 export CUTOVER_ROOT=/home/weidf/shenb/mito-cutover-$CUTOVER_TS
-export NEW_CHECKOUT=/home/weidf/shenb/mito-data-agent-release-$CUTOVER_TS
-export NEW_DATA_ROOT=/home/weidf/shenb/mito-data-agent-production-data-$CUTOVER_TS
+export NEW_CHECKOUT=/home/weidf/shenb/mito-data-studio-release-$CUTOVER_TS
+export NEW_DATA_ROOT=/home/weidf/shenb/mito-data-studio-production-data-$CUTOVER_TS
 install -d -m 0700 "$CUTOVER_ROOT"
-test "$(git -C /home/weidf/shenb/mito-data-agent rev-parse "$RC_COMMIT^{commit}")" = "$RC_COMMIT"
+test "$(git -C /home/weidf/shenb/mito-data-studio rev-parse "$RC_COMMIT^{commit}")" = "$RC_COMMIT"
 test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18188/login)" = 200
 ```
 
@@ -30,7 +30,7 @@ Load the protected live `.env` only into the shell; never print it. Use the
 PG16 client in `mito-dev-postgres`, matching the server major version.
 
 ```bash
-set -a; source /home/weidf/shenb/mito-data-agent-deploy/.env; set +a
+set -a; source /home/weidf/shenb/mito-data-studio-deploy/.env; set +a
 docker exec -e PGPASSWORD="$MITO_DB_PASSWORD" mito-dev-postgres \
   pg_dump -U "$MITO_DB_USER" -d "$MITO_DB_NAME" -Fc \
   > "$CUTOVER_ROOT/production-final.pgdump"
@@ -52,7 +52,7 @@ after restore. Keep backups mode 0600 and outside every repository.
 ## Build the clean production release privately
 
 ```bash
-git clone --no-local /home/weidf/shenb/mito-data-agent "$NEW_CHECKOUT"
+git clone --no-local /home/weidf/shenb/mito-data-studio "$NEW_CHECKOUT"
 git -C "$NEW_CHECKOUT" switch --detach "$RC_COMMIT"
 python3.11 -m venv "$NEW_CHECKOUT/venv"
 "$NEW_CHECKOUT/venv/bin/pip" install --require-hashes \

@@ -1,14 +1,14 @@
-# CLAUDE CODE MASTER PROMPT — Rebuild mito-data-agent to WEBKNOSSOS-Level Quality
+# CLAUDE CODE MASTER PROMPT — Rebuild mito-data-studio to WEBKNOSSOS-Level Quality
 
 > **This document is the executable project instruction for Claude Code.**
-> It was produced by Cursor after source-level research of WEBKNOSSOS and mito-data-agent.
+> It was produced by Cursor after source-level research of WEBKNOSSOS and mito-data-studio.
 > Claude Code must re-verify every cited path against a local clone before editing production code.
 
 ---
 
 ## A. Mission
 
-Transform `/home/weidf/shenb/mito-data-agent` into a **production-grade** mitochondria-focused annotation, inference, QC, and crowdsourcing platform whose **engineering maturity matches WEBKNOSSOS**.
+Transform `/home/weidf/shenb/mito-data-studio` into a **production-grade** mitochondria-focused annotation, inference, QC, and crowdsourcing platform whose **engineering maturity matches WEBKNOSSOS**.
 
 ### Quality north star
 
@@ -30,9 +30,9 @@ The user will comply with WEBKNOSSOS licenses. You must still document licenses,
 
 | Resource | Path / URL |
 |---|---|
-| App to change | `/home/weidf/shenb/mito-data-agent` |
+| App to change | `/home/weidf/shenb/mito-data-studio` |
 | Local WK Python libs | `/home/weidf/shenb/webknossos-libs` (official `webknossos-libs`, **not** the main app) |
-| Research pack | `/home/weidf/shenb/mito-data-agent/docs/webknossos-transformation/` |
+| Research pack | `/home/weidf/shenb/mito-data-studio/docs/webknossos-transformation/` |
 | Main WK clone target | `/home/weidf/shenb/external-research/webknossos` |
 | Upstream main | https://github.com/scalableminds/webknossos (AGPL-3.0) |
 | Upstream libs | https://github.com/scalableminds/webknossos-libs |
@@ -381,7 +381,7 @@ All boxes in research pack §K / Master Prompt section K (concurrency-safe claim
 ## M. Immediate Phase 0 commands
 
 ```bash
-cd /home/weidf/shenb/mito-data-agent
+cd /home/weidf/shenb/mito-data-studio
 git status -sb
 mkdir -p /home/weidf/shenb/external-research
 test -d /home/weidf/shenb/external-research/webknossos || \
@@ -411,4 +411,4 @@ Then produce `benchmarks/BASELINE.md` and **stop for user architecture approval*
 
 ---
 
-**END.** Quality bar: WEBKNOSSOS-level maturity for mito-data-agent — execute phase by phase behind gates.
+**END.** Quality bar: WEBKNOSSOS-level maturity for mito-data-studio — execute phase by phase behind gates.

@@ -1,7 +1,7 @@
 # BASELINE — Phase 0 measurements before any redesign
 
 **Date:** 2026-07-27
-**Repo:** `/home/weidf/shenb/mito-data-agent` @ `83b547c` (+82 uncommitted WIP paths)
+**Repo:** `/home/weidf/shenb/mito-data-studio` @ `83b547c` (+82 uncommitted WIP paths)
 **Mode:** read-only measurement. No production code, data, DB, or config modified.
 
 Everything below is a **measured number**, not an estimate. Targets in
@@ -17,7 +17,7 @@ provisional and should be re-ratified now that real numbers exist.
 | OS / kernel | Linux 5.4.0-216-generic |
 | CPU / RAM | 24 cores / 125 GB (94 GB in page cache at measurement) |
 | GPU | 4× NVIDIA RTX 2080 Ti (11 GB each), driver 570.207 |
-| Python | 3.11.15 (conda env `mito-data-agent`) |
+| Python | 3.11.15 (conda env `mito-data-studio`) |
 | Django | 5.1.15 |
 | Database | **SQLite** `backend/db.sqlite3`, 304 KB, no `OPTIONS` (no WAL, no busy timeout) |
 | `MITO_DATA_ROOT` | `./data` (84 KB — dev tree is effectively empty) |

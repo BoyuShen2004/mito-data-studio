@@ -14,7 +14,7 @@ _LANDING_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mito Data Agent API</title>
+  <title>Mito Data Studio API</title>
   <style>
     body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
            max-width: 640px; margin: 8vh auto; padding: 0 1.25rem; color: #1c2430; }
@@ -28,7 +28,7 @@ _LANDING_HTML = """<!doctype html>
   </style>
 </head>
 <body>
-  <h1>🧬 Mito Data Agent API</h1>
+  <h1>🧬 Mito Data Studio API</h1>
   <p class="muted">The backend is running. This server only provides the JSON
   API and admin &mdash; it is not the user interface.</p>
   <div class="note">

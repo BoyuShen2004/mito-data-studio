@@ -1,4 +1,4 @@
-# Mito Data Agent — project overview
+# Mito Data Studio — project overview
 
 A web app for managing mitochondria (EM) annotation work end to end: register
 image volumes → split into tasks → assign to annotators → annotate (in-browser
@@ -180,7 +180,7 @@ more defensive code.
   (hash-cached in `.dev-cache/`), runs Django `check` + `migrate`. Warns
   (doesn't fail, doesn't auto-detect/route around) if the conda env isn't
   active, if CUDA is unavailable to torch, or if `.env` still has the viewer
-  providers set to `placeholder` — run `conda activate mito-data-agent`
+  providers set to `placeholder` — run `conda activate mito-data-studio`
   yourself first. Run this once, or after pulling changes that touch
   dependencies/migrations. `--smoke` additionally proves the install works on
   this machine (loads onnxruntime + a real vendor weight, imports torch,

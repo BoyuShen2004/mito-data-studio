@@ -1,8 +1,8 @@
 # Removal of volume → multi-task frame splitting — audit
 
 **Date:** 2026-08-05
-**Trees:** `/home/weidf/shenb/mito-data-agent` (development, primary),
-`/home/weidf/shenb/mito-data-agent-production-v1.1.1` (production, aligned +
+**Trees:** `/home/weidf/shenb/mito-data-studio` (development, primary),
+`/home/weidf/shenb/mito-data-studio-production-v1.1.1` (production, aligned +
 redeployed)
 **Not pushed.** Both trees hold the change as working-tree edits only.
 
@@ -177,8 +177,8 @@ applied in production.
 
 ## 7. Deployment
 
-**Production (`mito-data-agent-production-v1.1.1`, systemd
-`mito-data-agent-v1.1.1.service`, gunicorn on 127.0.0.1:18191)**
+**Production (`mito-data-studio-production-v1.1.1`, systemd
+`mito-data-studio-v1.1.1.service`, gunicorn on 127.0.0.1:18191)**
 
 1. Database backed up through the container (host `pg_dump` v12 vs server v16):
    `mito-backups/mito_production_v11-pre-split-removal-20260805-230509.dump`,
@@ -192,10 +192,10 @@ applied in production.
 3. `manage.py migrate volumes` → `0010_alter_volume_status` applied.
 4. `manage.py collectstatic --noinput` → 0 changed, 154 unmodified.
 5. `npm run build:production` → `index-DLiNsN_k.js`.
-6. `systemctl reload mito-data-agent-v1.1.1.service` (graceful HUP).
+6. `systemctl reload mito-data-studio-v1.1.1.service` (graceful HUP).
 7. Health: `/admin/login/` 200, `/` 200, served bundle hash matches the fresh
    build, `POST /api/volumes/<id>/split/` → 404. Public
-   `https://mito-data-agent.seg.bio/` → 200 serving the same bundle, and its
+   `https://mito-data-studio.seg.bio/` → 200 serving the same bundle, and its
    `/split/` → 404. `grep -ci traceback logs/error.log` → **0**; the only new
    log line is the expected `Not Found: /api/volumes/1/split/` from the probe.
    Both prod units still `active`.
@@ -207,9 +207,9 @@ applied in production.
 
 `.env` was never read, printed, or modified; no feature flags changed.
 
-**Development (`mito-data-agent`)**
+**Development (`mito-data-studio`)**
 
-- Docker image rebuilt from `Dockerfile` (`mito-data-agent:local`, core deps).
+- Docker image rebuilt from `Dockerfile` (`mito-data-studio:local`, core deps).
   The frontend compiles inside the image; its bundle has zero split residue,
   `split_volume.py` is absent from the image, and migration `0010` is present.
 - Container smoke-run on a throwaway port (127.0.0.1:18299) against a scratch
@@ -242,7 +242,7 @@ added `volumes/migrations/0010_alter_volume_status.py`; deleted
 `components/VolumeMeta.tsx`, `types/volume.ts`, `styles.css`.
 
 **Docs:** `.env.example`,
-`docs/webknossos-transformation/13-mito-data-agent-workflow-audit.md` (both
+`docs/webknossos-transformation/13-mito-data-studio-workflow-audit.md` (both
 trees); development-only `progress/`: `development.md`, `api.md`, `codemap.md`,
 `admin.md`, `backend/volumes/MODULE.md`, `backend/core/MODULE.md`,
 `backend/projects/MODULE.md`, `frontend/api/MODULE.md`,

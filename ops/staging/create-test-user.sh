@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-checkout=${1:-/home/weidf/shenb/mito-data-agent-staging-20260731}
+checkout=${1:-/home/weidf/shenb/mito-data-studio-staging-20260731}
 credentials="$checkout/run/.env.staging-test-user"
 if [[ -e "$credentials" ]]; then
   echo "Refusing to overwrite existing staging test credentials." >&2

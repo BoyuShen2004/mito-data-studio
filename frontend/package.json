@@ -1,7 +1,7 @@
 {
-  "name": "mito-data-agent-frontend",
+  "name": "mito-data-studio-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.5",
   "type": "module",
   "scripts": {
     "dev": "vite",

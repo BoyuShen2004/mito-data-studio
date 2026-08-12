@@ -697,7 +697,7 @@ function LabelViewButtons({
         title={
           solo
             ? "Un-solo"
-            : "Solo — show only this label on the canvas (and, of the labels pinned to 3D, only this one)"
+            : "Solo — show only this label and center it in 3D"
         }
         onClick={() => onToggleSolo(id)}
         style={{ padding: "1px 6px", opacity: solo ? 1 : 0.6 }}

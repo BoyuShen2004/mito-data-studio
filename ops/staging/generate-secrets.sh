@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Generate staging-only credentials without printing them.  This script is
 # deliberately fail-closed: an existing environment is never overwritten.
-checkout=${1:-/home/weidf/shenb/mito-data-agent-staging-20260731}
+checkout=${1:-/home/weidf/shenb/mito-data-studio-staging-20260731}
 postgres_env="$checkout/ops/staging/.env.postgres"
 django_env="$checkout/.env"
 

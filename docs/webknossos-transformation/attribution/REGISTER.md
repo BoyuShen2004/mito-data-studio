@@ -52,7 +52,7 @@ These informed design; no source was copied.
 |---|---|
 | `vendor/efficient_sam` — pin upstream commit, add LICENSE | **closed 2026-08-01** — exact bytes matched labelmeai/efficient-sam tag `onnx-models-20231225`, commit `6aebcba09318c4dfe2f9560f7a3f8c42d8b01657`; Apache-2.0 copied beside the weights. |
 | `vendor/sam2` — pin upstream commit, add LICENSE | **closed 2026-08-01** — all vendored source/config files match facebookresearch/sam2 commit `2b90b9f5ceec907a1c18123530e92e794ad901a4`; official checkpoint bytes verified; Apache-2.0 copied beside the tree. |
-| Choose a LICENSE for mito-data-agent itself | **closed conservatively 2026-08-01** — root `LICENSE` grants no permission for first-party code and defers third-party material to its own terms. |
+| Choose a LICENSE for mito-data-studio itself | **closed conservatively 2026-08-01** — root `LICENSE` grants no permission for first-party code and defers third-party material to its own terms. |
 | Generate full dependency licence manifest before distribution | not started |
 
 The 2026-07-28 correction remains part of the audit history: the earlier

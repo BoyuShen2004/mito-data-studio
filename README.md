@@ -1,6 +1,6 @@
-# Mito Data Agent
+# Mito Data Studio
 
-Mito Data Agent is a web application for registering microscopy volumes,
+Mito Data Studio is a web application for registering microscopy volumes,
 assigning mitochondria annotation work, editing instance labels, and reviewing
 results. It provides requester, manager, and annotator workflows in one Django
 and React application.
@@ -11,8 +11,8 @@ Docker Compose is the primary path for a fresh clone. It runs the application
 and PostgreSQL; Python, Node, and conda are not required on the host.
 
 ```bash
-git clone https://github.com/BoyuShen2004/mito-data-agent.git
-cd mito-data-agent
+git clone https://github.com/BoyuShen2004/mito-data-studio.git
+cd mito-data-studio
 cp .env.docker.example .env.docker
 ```
 

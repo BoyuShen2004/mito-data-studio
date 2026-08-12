@@ -23,6 +23,17 @@ const WORLD_SPAN = 100;
  */
 const AUTO_MIN_Z_FRAC = 0.25;
 
+/** Bounds for camera framing. A Solo target deliberately ignores every other
+ * loaded mesh, including ones that are merely hidden rather than unloaded. */
+export function framingBox(group: THREE.Group, labelId?: number | null): THREE.Box3 | null {
+  const target = labelId != null
+    ? group.children.find((child) => Number(child.name) === labelId)
+    : group;
+  if (!target) return null;
+  const box = new THREE.Box3().setFromObject(target);
+  return box.isEmpty() ? null : box;
+}
+
 function effectiveVoxelZ(
   data: Labels3DMesh,
 ): { vz: number; vy: number; vx: number; boosted: boolean } {
@@ -54,6 +65,7 @@ export default function Labels3DPanel({
   labelIds,
   refreshKey,
   hiddenIds,
+  focusLabelId,
   swapped,
   onToggleSwap,
   fetchMesh = authedFetchLabels3DMesh,
@@ -64,6 +76,8 @@ export default function Labels3DPanel({
   refreshKey: number;
   /** Pinned labels to keep loaded but not draw (2D hide / Hide Verified). */
   hiddenIds?: Set<number>;
+  /** Solo target to frame without rebuilding. Null keeps the current camera. */
+  focusLabelId?: number | null;
   swapped?: boolean;
   onToggleSwap?: () => void;
   /** Injected so the public share page fetches via the token endpoint. */
@@ -71,7 +85,11 @@ export default function Labels3DPanel({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const groupRef = useRef<THREE.Group | null>(null);
-  const frameGroupRef = useRef<() => void>(() => undefined);
+  const frameGroupRef = useRef<(labelId?: number | null) => void>(() => undefined);
+  const focusLabelIdRef = useRef(focusLabelId);
+  focusLabelIdRef.current = focusLabelId;
+  const hiddenIdsRef = useRef(hiddenIds);
+  hiddenIdsRef.current = hiddenIds;
   const [phase, setPhase] = useState<"idle" | "fetching" | "building" | "empty" | "error">("empty");
   const [errorText, setErrorText] = useState<string | null>(null);
   const [stats, setStats] = useState<{ labels: number; triangles: number; truncated: number } | null>(
@@ -116,10 +134,10 @@ export default function Labels3DPanel({
     scene.add(group);
     groupRef.current = group;
 
-    /** Point the camera at whatever is currently loaded. */
-    frameGroupRef.current = () => {
-      const box = new THREE.Box3().setFromObject(group);
-      if (box.isEmpty()) return;
+    /** Point the camera at one label, or at everything currently loaded. */
+    frameGroupRef.current = (labelId) => {
+      const box = framingBox(group, labelId);
+      if (!box) return;
       const center = box.getCenter(new THREE.Vector3());
       const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1);
       const dist = radius / Math.sin((camera.fov * Math.PI) / 360);
@@ -257,6 +275,7 @@ export default function Labels3DPanel({
         });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.name = String(m.id);
+        mesh.visible = !hiddenIdsRef.current?.has(m.id);
         group.add(mesh);
         triangles += m.indices.length / 3;
         if (i % 4 === 3) await yieldFrame();
@@ -282,7 +301,7 @@ export default function Labels3DPanel({
       if (cancelled) return;
       setStats({ ...built, truncated: meshData.truncated });
       setPhase("idle");
-      frameGroupRef.current();
+      frameGroupRef.current(focusLabelIdRef.current);
     };
     void build();
     return () => {
@@ -299,6 +318,15 @@ export default function Labels3DPanel({
       child.visible = !hiddenIds?.has(Number(child.name));
     }
   }, [hiddenIds, stats]);
+
+  // Entering or changing Solo is a camera action as well as a visibility
+  // action. Frame the already-loaded mesh directly: no refetch or remesh.
+  // Clearing Solo intentionally keeps the current camera to avoid a jarring
+  // jump back to the multi-label overview.
+  useEffect(() => {
+    if (focusLabelId == null || focusLabelId < 1) return;
+    frameGroupRef.current(focusLabelId);
+  }, [focusLabelId, stats]);
 
   const statusText =
     phase === "fetching"

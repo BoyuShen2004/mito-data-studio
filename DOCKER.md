@@ -1,6 +1,6 @@
 # Deploying with Docker
 
-A container deployment of Mito Data Agent, meant for someone who has just
+A container deployment of Mito Data Studio, meant for someone who has just
 cloned the repository and wants a running instance without reproducing the
 conda/CUDA development environment.
 
@@ -41,8 +41,8 @@ Optional, and only for the AI-assisted tools:
 ## Quick start
 
 ```bash
-git clone https://github.com/BoyuShen2004/mito-data-agent.git
-cd mito-data-agent
+git clone https://github.com/BoyuShen2004/mito-data-studio.git
+cd mito-data-studio
 
 cp .env.docker.example .env.docker
 # Now edit .env.docker — see "Required settings" below.

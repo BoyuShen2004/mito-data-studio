@@ -17,8 +17,8 @@ from .admin_common import changelist_url
 
 
 class ManagerAdminSite(AdminSite):
-    site_header = "Mito Data Agent Manager"
-    site_title = "Mito Data Agent Manager"
+    site_header = "Mito Data Studio Manager"
+    site_title = "Mito Data Studio Manager"
     index_title = "Manager operations"
     index_template = "admin/manager_index.html"
 

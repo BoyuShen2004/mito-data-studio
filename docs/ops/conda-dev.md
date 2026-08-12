@@ -15,12 +15,12 @@ the condensed ordered commands, see the
 ## Fresh environment
 
 ```bash
-git clone https://github.com/BoyuShen2004/mito-data-agent.git
-cd mito-data-agent
+git clone https://github.com/BoyuShen2004/mito-data-studio.git
+cd mito-data-studio
 git lfs install
 git lfs pull
 conda env create -f environment.yml
-conda activate mito-data-agent
+conda activate mito-data-studio
 ./dev-setup.sh
 ./dev-launch.sh
 ```

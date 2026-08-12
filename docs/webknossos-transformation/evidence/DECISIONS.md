@@ -5,7 +5,7 @@ Each entry records what was decided, when, and what it changes downstream.
 
 ---
 
-## D1 — mito-data-agent will **not** incorporate AGPL WEBKNOSSOS code
+## D1 — mito-data-studio will **not** incorporate AGPL WEBKNOSSOS code
 
 **Date:** 2026-07-27
 **Decided by:** user, at the post-Phase-0 architecture gate
@@ -15,7 +15,7 @@ no longer in force.
 
 ### Decision
 
-Keep AGPL out of mito-data-agent. WEBKNOSSOS behaviour is reproduced by
+Keep AGPL out of mito-data-studio. WEBKNOSSOS behaviour is reproduced by
 **independent reimplementation** from documentation and published methods.
 Permissive components (MIT / Apache / BSD) may be used directly.
 
@@ -63,7 +63,7 @@ instruction, and it governs.
   The description in `07` was verified accurate during the audit, so this is
   workable.
 - Phase 12 (datastore) has no fallback to a proven implementation.
-- mito-data-agent still needs its own LICENSE file chosen before distribution
+- mito-data-studio still needs its own LICENSE file chosen before distribution
   (`26` checklist item 1) — **this decision does not by itself pick one.** It
   only establishes that the licence need not be AGPL-compatible.
 
@@ -98,7 +98,7 @@ an actionable error instead of guessing.
 
 **Date:** 2026-07-27
 **Decided by:** user, at the architecture-approval gate
-**Status:** active — **supersedes [D1](#d1--mito-data-agent-will-not-incorporate-agpl-webknossos-code)**
+**Status:** active — **supersedes [D1](#d1--mito-data-studio-will-not-incorporate-agpl-webknossos-code)**
 
 ### Decision
 
@@ -155,7 +155,7 @@ Test 5 failing is a **stop**, not a judgement call.
 
 ### Repository-wide consequence (not yet triggered)
 
-mito-data-agent has **no LICENSE file** (audit §1). Committing AGPL-derived
+mito-data-studio has **no LICENSE file** (audit §1). Committing AGPL-derived
 source into the served product would oblige the combined work to be offered
 under AGPL-compatible terms with a §13 source offer for network users. **No
 AGPL code has been copied as of this entry**, so nothing is triggered yet. The

@@ -1,4 +1,4 @@
-name: mito-data-agent-staging-20260731
+name: mito-data-studio-staging-20260731
 
 services:
   postgres:

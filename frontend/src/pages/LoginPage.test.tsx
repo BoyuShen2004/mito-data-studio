@@ -34,7 +34,7 @@ describe("development account login helper", () => {
       { username: "alice", role: "annotator", password: "demo-password" },
       { username: "requester1", role: "requester", password: "demo-password" },
     ]);
-    harness.getRelease.mockReset().mockResolvedValue("mito-data-agent-v1.1.1");
+    harness.getRelease.mockReset().mockResolvedValue("mito-data-studio-v1.1.1");
     harness.getResetStatus.mockReset().mockResolvedValue({
       enabled: true,
       confirmation: "CLEAR ALL DEVELOPMENT DATA",

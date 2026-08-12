@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-checkout=${1:-/home/weidf/shenb/mito-data-agent-staging-20260731}
+checkout=${1:-/home/weidf/shenb/mito-data-studio-staging-20260731}
 uv_bin=${UV_BIN:-/home/weidf/.local/bin/uv}
 python_bin=${PYTHON_311:-/home/weidf/.local/share/uv/python/cpython-3.11-linux-x86_64-gnu/bin/python3.11}
 

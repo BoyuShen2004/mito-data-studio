@@ -1,11 +1,11 @@
-# One-shot conda env for Mito Data Agent (backend + frontend Node + AI/Track).
+# One-shot conda env for Mito Data Studio (backend + frontend Node + AI/Track).
 #
-#   git clone <repo> && cd mito-data-agent
+#   git clone <repo> && cd mito-data-studio
 #   git lfs install && git lfs pull
 #   conda env create -f environment.yml
-#   conda activate mito-data-agent
+#   conda activate mito-data-studio
 #   ./dev-setup.sh && ./dev-launch.sh
-# Mature env: conda activate mito-data-agent && ./dev-setup.sh
+# Mature env: conda activate mito-data-studio && ./dev-setup.sh
 #   (setup does not pip/conda-install unless you pass --install-deps)
 #
 # Change pytorch-cuda=X.Y if your driver needs a different CUDA toolkit
@@ -15,7 +15,7 @@
 # - mkl 2025 breaks `import torch` (iJIT_NotifyEvent)
 # - mkl 2024.2 from conda-forge conflicts with pytorch-cuda (llvm-openmp)
 # Channel order matters: pytorch/nvidia before defaults before conda-forge.
-name: mito-data-agent
+name: mito-data-studio
 channels:
   - pytorch
   - nvidia

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# dev-launch.sh — start Mito Data Agent (Django + Vite).
+# dev-launch.sh — start Mito Data Studio (Django + Vite).
 #
 #   ./dev-launch.sh
 #
@@ -18,7 +18,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-CONDA_ENV_NAME="mito-data-agent"
+CONDA_ENV_NAME="mito-data-studio"
 
 REMOTE_DEV=0
 if [[ -n "${VSCODE_IPC_HOOK_CLI:-}" || -n "${SSH_CONNECTION:-}" ]]; then
@@ -258,7 +258,7 @@ elif [[ -z "$LOGIN_HOST" && -n "${SLURM_JOB_ID:-}" ]]; then
   warn "On a SLURM compute node but couldn't determine the login node. Set LOGIN_NODE=<host> if needed."
 fi
 
-printf '\n%s\n' "${BOLD}${GREEN}Mito Data Agent running${RESET}"
+printf '\n%s\n' "${BOLD}${GREEN}Mito Data Studio running${RESET}"
 printf '  open:  %s%s%s\n' "$BOLD" "$APP_URL" "$RESET"
 printf '  login: manager / demo12345\n'
 printf '  Ctrl+C to stop\n\n'

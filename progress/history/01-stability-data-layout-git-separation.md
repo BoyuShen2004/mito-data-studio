@@ -17,12 +17,12 @@ editing the existing path helpers (`label_paths.py`, `embed_cache.py`,
 ## User ask (verbatim intent)
 
 1. **Hardening** — take a deep look; fix bugs like the corrupt working-label
-   TIFF / `image data are not memory-mappable` crash so mito-data-agent can
+   TIFF / `image data are not memory-mappable` crash so mito-data-studio can
    run a long Annotate session without falling over. Fix *similar* instability
    classes, not only that one traceback.
 2. **Git push = software only** — accounts (including mock/seed accounts),
    projects, registered volumes, and everything under
-   `/projects/weilab/shenb/mito-data-agent/data` must **never** be pushed to
+   `/projects/weilab/shenb/mito-data-studio/data` must **never** be pushed to
    GitHub. Software and live data must be easy to keep apart.
 3. **On-disk layout next to the volume** — when the app auto-creates folders
    under `MITO_DATA_ROOT` (`./data`), stop using a global
@@ -148,7 +148,7 @@ accounts in the **local DB only** — that is correct; do not commit the DB.
      `*.sqlite3`, `.env`, media/staticfiles, embeddings if ever outside
      data, `*.tif` / `*.npy` under the repo if someone mis-copies them.
    - Prefer documenting `MITO_DATA_ROOT` **outside** the repo
-     (e.g. `../mito-data-agent-data` or a lab path) in `.env.example` +
+     (e.g. `../mito-data-studio-data` or a lab path) in `.env.example` +
      `development.md`, so even a mistaken `git add -A` is less dangerous.
    - Add a short **pre-push / CI sanity check** (script or hook instructions
      in `development.md`): fail if staged/tracked paths include `data/`,

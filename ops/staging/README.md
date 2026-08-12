@@ -7,10 +7,10 @@ Runtime chain:
 
 ```text
 http://127.0.0.1:18189
-  -> systemd unit mito-data-agent-staging-20260731
-  -> /home/weidf/shenb/mito-data-agent-staging-20260731
+  -> systemd unit mito-data-studio-staging-20260731
+  -> /home/weidf/shenb/mito-data-studio-staging-20260731
   -> PostgreSQL 16 container on 127.0.0.1:5434 / mito_staging
-  -> /home/weidf/shenb/mito-data-agent-staging-20260731/data
+  -> /home/weidf/shenb/mito-data-studio-staging-20260731/data
 ```
 
 The service runs as the dedicated `mito-staging` OS user. systemd makes the

@@ -1,6 +1,6 @@
 # Concepts and data model
 
-Mito Data Agent organizes work as a small hierarchy:
+Mito Data Studio organizes work as a small hierarchy:
 
 ```text
 Project

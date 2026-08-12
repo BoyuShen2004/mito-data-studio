@@ -24,12 +24,12 @@ For each important conclusion: URL / repo / path / symbol / support type.
 | E18 | Formats Zarr/WKW/N5/NG | DOC/CODE | webknossos + libs | README; `DataFormat` enum | — |
 | E19 | Hosted AI analysis not default OSS | DOC | docs | `automation/ai_segmentation.md` | info box webknossos.org only |
 | E20 | MitoNet mitochondria model on hosted WK | DOC | docs | ai_segmentation | Mitochondria Detection |
-| E21 | mito uses Django+SQLite+Canvas2D+TIFF slices | CODE | mito-data-agent | `settings.py`, `AnnotationCanvas.tsx`, `slice_io.py` | — |
-| E22 | mito task = single assignee AnnotationTask | CODE | mito-data-agent | `annotation/models.py` | `AnnotationTask.assigned_to` |
-| E23 | mito review/lock loop mature | CODE | mito-data-agent | `annotation/services.py` | `approve_submission`, `annotation_locked` |
-| E24 | ProcessingJob unused by domain; on_job_finished placeholder | CODE | mito-data-agent | `processing/services.py` | — |
-| E25 | EfficientSAM/SAM2 vendored and live | CODE | mito-data-agent | `vendor/`, cellable_port AI | — |
-| E26 | No Docker/Cloudflare in mito tree | CODE | mito-data-agent | repo search | — |
+| E21 | mito uses Django+SQLite+Canvas2D+TIFF slices | CODE | mito-data-studio | `settings.py`, `AnnotationCanvas.tsx`, `slice_io.py` | — |
+| E22 | mito task = single assignee AnnotationTask | CODE | mito-data-studio | `annotation/models.py` | `AnnotationTask.assigned_to` |
+| E23 | mito review/lock loop mature | CODE | mito-data-studio | `annotation/services.py` | `approve_submission`, `annotation_locked` |
+| E24 | ProcessingJob unused by domain; on_job_finished placeholder | CODE | mito-data-studio | `processing/services.py` | — |
+| E25 | EfficientSAM/SAM2 vendored and live | CODE | mito-data-studio | `vendor/`, cellable_port AI | — |
+| E26 | No Docker/Cloudflare in mito tree | CODE | mito-data-studio | repo search | — |
 | E27 | WK release inspected 26.08.0 | DOC | GitHub releases | api.github.com/.../releases/latest | 2026-07-23 |
 | E28 | webknossos-libs HEAD 0419d102 / tag v3.5.6 | CODE | local git | — | — |
 | E29 | Sharing via links + permissions | DOC | webknossos | `docs/sharing/index.md` | — |

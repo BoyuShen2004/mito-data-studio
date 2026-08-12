@@ -1,4 +1,4 @@
-"""URL configuration for the Mito Data Agent project.
+"""URL configuration for the Mito Data Studio project.
 
 The React SPA (under ``/api/``) serves annotators and requesters. Managers run
 their full daily workflow through the Manager Admin at ``/admin/`` (see

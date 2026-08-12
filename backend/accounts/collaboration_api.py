@@ -68,7 +68,7 @@ def _team_organization(request, project=None):
     explicit_id = request.data.get("organization_id")
     if explicit_id:
         return get_object_or_404(Institution, pk=explicit_id)
-    organization, _ = Institution.objects.get_or_create(name="Mito Data Agent")
+    organization, _ = Institution.objects.get_or_create(name="Mito Data Studio")
     return organization
 
 

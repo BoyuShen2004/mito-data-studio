@@ -12,7 +12,7 @@
   contains the starting status, binary patch, untracked inventory and 78
   copied WIP files (no `.env` or secrets).
 - Phase 13 was developed on isolated branch `phase13-pullqueue` in
-  `/home/weidf/shenb/mito-data-agent-phase13-20260731T040240Z`.
+  `/home/weidf/shenb/mito-data-studio-phase13-20260731T040240Z`.
 - No Phase 13 implementation file overlapped the documented dirty paths.
 - The authoritative development working-tree status hash remained
   `4ddb7f1f0d560918c9f1b3a80443fd07e8149415698720442ed394a5edaa254b`
@@ -52,7 +52,7 @@ is additive `build_identity` metadata required for correct client invalidation.
 | `git diff --check` | pass |
 
 Fresh detached checkout
-`/home/weidf/shenb/mito-data-agent-phase13-verify-20260731T043743Z` at
+`/home/weidf/shenb/mito-data-studio-phase13-verify-20260731T043743Z` at
 `3535ad8309ac14684271cdca3a6f51eb026e28f6` independently passed Django
 checks, migration drift checks, the 128-test real-Zarr Phase 11/12 suite,
 TypeScript, all 125 frontend tests and the production build. Its only

@@ -70,7 +70,7 @@ and data root. See [This-host deployment](../../DEPLOYMENT.md).
 
 | | Development | Production |
 | --- | --- | --- |
-| Process | `dev-launch.sh` or Docker Compose | `mito-data-agent-v1.1.1.service` (+ dispatcher) |
+| Process | `dev-launch.sh` or Docker Compose | `mito-data-studio-v1.1.1.service` (+ dispatcher) |
 | Server | Vite `:5173` + Django `:8000` | gunicorn on `127.0.0.1:18191` |
 | Database | `mito_dev` on `:5433` | production PostgreSQL |
 | Data root | local `./data` | the production `MITO_DATA_ROOT` |

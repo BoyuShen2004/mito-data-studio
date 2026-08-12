@@ -2,7 +2,7 @@
 
 Production was cut over on 2026-07-31 from the retained deployment on port
 18188 to the clean, tagged v1.0.0 release on port 18190. The release is the
-annotated tag `mito-data-agent-v1.0.0`, commit
+annotated tag `mito-data-studio-v1.0.0`, commit
 `a9865fd829c768ef7a6e68613cec08c6e96827af`. Git history and tags remain local.
 The public route became active at 2026-07-31 21:48:22 EDT and passed its
 mandatory observation gate at 2026-07-31 22:22:21 EDT.
@@ -10,13 +10,13 @@ mandatory observation gate at 2026-07-31 22:22:21 EDT.
 ## Active identity
 
 ```text
-https://mito-data-agent.seg.bio
+https://mito-data-studio.seg.bio
   -> cloudflared-demo-seg-bio.service
   -> http://127.0.0.1:18190
-  -> mito-data-agent-v1.0.0.service
-  -> /home/weidf/shenb/mito-data-agent-production-v1.0.0
+  -> mito-data-studio-v1.0.0.service
+  -> /home/weidf/shenb/mito-data-studio-production-v1.0.0
   -> PostgreSQL database mito_production_v1_0_0
-  -> /home/weidf/shenb/mito-data-agent-production-data-v1.0.0
+  -> /home/weidf/shenb/mito-data-studio-production-data-v1.0.0
 ```
 
 The dedicated service account is `mito-production`. The service is confined
@@ -40,19 +40,19 @@ complete retained filesystem rollback set.
 
 ```bash
 # Health and identity
-curl -fsS https://mito-data-agent.seg.bio/health/
-sudo systemctl status mito-data-agent-v1.0.0.service
+curl -fsS https://mito-data-studio.seg.bio/health/
+sudo systemctl status mito-data-studio-v1.0.0.service
 
 # Logs
-sudo journalctl -u mito-data-agent-v1.0.0.service --since today
-sudo tail -f /home/weidf/shenb/mito-data-agent-production-v1.0.0/logs/error.log
-sudo tail -f /home/weidf/shenb/mito-data-agent-production-v1.0.0/logs/access.log
+sudo journalctl -u mito-data-studio-v1.0.0.service --since today
+sudo tail -f /home/weidf/shenb/mito-data-studio-production-v1.0.0/logs/error.log
+sudo tail -f /home/weidf/shenb/mito-data-studio-production-v1.0.0/logs/access.log
 
 # Controlled lifecycle
-sudo systemctl start mito-data-agent-v1.0.0.service
-sudo systemctl reload mito-data-agent-v1.0.0.service
-sudo systemctl restart mito-data-agent-v1.0.0.service
-sudo systemctl stop mito-data-agent-v1.0.0.service
+sudo systemctl start mito-data-studio-v1.0.0.service
+sudo systemctl reload mito-data-studio-v1.0.0.service
+sudo systemctl restart mito-data-studio-v1.0.0.service
+sudo systemctl stop mito-data-studio-v1.0.0.service
 ```
 
 Before any reload or restart, verify that no Save/autosave request or database
@@ -69,7 +69,7 @@ backup outside all checkouts:
 export BACKUP_ROOT=/home/weidf/mito-production-backup-$(date -u +%Y%m%dT%H%M%SZ)
 install -d -m 0700 "$BACKUP_ROOT"
 set -a
-source /home/weidf/shenb/mito-data-agent-production-v1.0.0/.env
+source /home/weidf/shenb/mito-data-studio-production-v1.0.0/.env
 set +a
 docker exec -e PGPASSWORD="$MITO_DB_PASSWORD" mito-dev-postgres \
   pg_dump -U "$MITO_DB_USER" -d "$MITO_DB_NAME" -Fc \

@@ -28,7 +28,7 @@ export default function Navbar() {
 
   return (
     <nav className="navbar">
-      <span className="brand">🧬 Mito Data Agent</span>
+      <span className="brand">🧬 Mito Data Studio</span>
       {isManager ? (
         <>
           <NavLink to="/manager" className="nav-link" end title="Cross-project overview">

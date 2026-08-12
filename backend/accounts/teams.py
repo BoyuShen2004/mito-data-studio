@@ -144,7 +144,7 @@ def ensure_project_assignee_eligible(project, user, *, actor=None):
         if organization is None:
             organization = getattr(getattr(actor, "profile", None), "institution", None)
         if organization is None:
-            organization, _ = Institution.objects.get_or_create(name="Mito Data Agent")
+            organization, _ = Institution.objects.get_or_create(name="Mito Data Studio")
         team = default_team_for(organization)
         set_project_working_team(project, team, actor=actor)
     membership = add_team_member(team, user, actor=actor)
