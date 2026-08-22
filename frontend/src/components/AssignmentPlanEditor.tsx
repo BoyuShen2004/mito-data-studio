@@ -14,6 +14,7 @@ import type {
   PlanEntryTask,
 } from "../types/task";
 import StatusBadge from "./StatusBadge";
+import { AnnotationTimeCell } from "./TaskDetailsCards";
 import RegionCoverage from "./RegionCoverage";
 import TeamEditor from "./teams/TeamEditor";
 import { formatShape, formatVoxelSize } from "./VolumeMeta";
@@ -537,6 +538,17 @@ export default function AssignmentPlanEditor({
                                 onChange={(value) => patch(id, { instructions: value })}
                               />
                             </label>
+                            {/* A narrow column immediately right of
+                                Instructions. Read-only and deliberately tiny:
+                                it answers "how long has this taken?" at a
+                                glance without competing with the controls a
+                                manager came here to use. `-` means the volume
+                                predates time tracking — not that it took no
+                                time. */}
+                            <div className="plan-detail-static plan-detail-time">
+                              <span>Time</span>
+                              <AnnotationTimeCell time={t.annotation_time} />
+                            </div>
                             <div className="plan-detail-static">
                               <span>Annotations</span>
                               <div className="plan-annotation-actions">

@@ -24,6 +24,13 @@ from accounts.api import (
     RegisterView,
 )
 from accounts.collaboration_api import CollaborationAdminView
+from annotation.timing_api import (
+    AnnotatorTimeReportView,
+    TaskTimingHeartbeatView,
+    TaskTimingStartView,
+    TaskTimingStatusView,
+    TaskTimingStopView,
+)
 from annotation.api import (
     AssignmentPlanApplyView,
     AssignmentPlanPreviewView,
@@ -194,6 +201,11 @@ urlpatterns = [
     path("api/people/overview/", PeopleOverviewView.as_view(), name="api-people-overview"),
     path("api/people/me/", MyProfileView.as_view(), name="api-people-me"),
     path(
+        "api/people/<str:username>/time/",
+        AnnotatorTimeReportView.as_view(),
+        name="api-person-time",
+    ),
+    path(
         "api/people/<str:username>/",
         PersonDetailView.as_view(),
         name="api-person-detail",
@@ -351,6 +363,29 @@ urlpatterns = [
         "api/tasks/<int:pk>/track/batch/",
         TaskTrackBatchView.as_view(),
         name="api-task-track-batch",
+    ),
+    # --- Automatic annotation time tracking --------------------------------
+    # Deliberately lightweight: none of these reads or writes a label volume,
+    # because the editor calls the heartbeat every 30 seconds.
+    path(
+        "api/tasks/<int:pk>/timing/",
+        TaskTimingStatusView.as_view(),
+        name="api-task-timing-status",
+    ),
+    path(
+        "api/tasks/<int:pk>/timing/start/",
+        TaskTimingStartView.as_view(),
+        name="api-task-timing-start",
+    ),
+    path(
+        "api/tasks/<int:pk>/timing/heartbeat/",
+        TaskTimingHeartbeatView.as_view(),
+        name="api-task-timing-heartbeat",
+    ),
+    path(
+        "api/tasks/<int:pk>/timing/stop/",
+        TaskTimingStopView.as_view(),
+        name="api-task-timing-stop",
     ),
     path(
         "api/tasks/<int:pk>/track/review/",

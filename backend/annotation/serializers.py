@@ -55,6 +55,11 @@ class AnnotationTaskSerializer(serializers.ModelSerializer):
     can_submit = serializers.SerializerMethodField()
     can_annotate = serializers.SerializerMethodField()
     review_history = serializers.SerializerMethodField()
+    # Cumulative measured annotation time. One object rather than a bare number
+    # because "we did not measure this" and "this took no time" are different
+    # answers and must not collapse into the same rendering — see
+    # ``annotation.timing.task_time``.
+    annotation_time = serializers.SerializerMethodField()
 
     def get_dataset_metadata(self, obj) -> dict:
         dataset = getattr(obj.volume, "dataset", None) if obj.volume_id else None
@@ -82,6 +87,42 @@ class AnnotationTaskSerializer(serializers.ModelSerializer):
 
         user = self._user()
         return bool(user and can_annotate_task(user, obj))
+
+    #: Rendering a list must cost one timing query, not one per row.
+    _UNKNOWN_TIME = {
+        "tracked": False, "seconds": None, "display": "-", "eligibility": "",
+    }
+
+    def _annotation_time_map(self) -> dict[int, dict]:
+        """Fold every task in this render into one timing query, once.
+
+        Cached on the *parent* list serializer so all rows share it. Without
+        this the Details/plan/task-list surfaces would each issue a query per
+        task — see ``annotation.timing.task_time_map``.
+        """
+        from . import timing
+
+        holder = self.parent if self.parent is not None else self
+        cached = getattr(holder, "_annotation_time_cache", None)
+        if cached is not None:
+            return cached
+        instances = getattr(holder, "instance", None)
+        if instances is None or isinstance(instances, AnnotationTask):
+            instances = [instances] if instances is not None else []
+        built = timing.safely(timing.task_time_map, instances) or {}
+        holder._annotation_time_cache = built
+        return built
+
+    def get_annotation_time(self, obj) -> dict:
+        from . import timing
+
+        # Never allowed to break a task read: a task list that 500s because the
+        # timing tables are unhappy is a far worse outcome than one missing a
+        # duration. Falls back to the honest "unknown".
+        mapped = self._annotation_time_map().get(obj.id)
+        if mapped is not None:
+            return mapped
+        return timing.safely(timing.task_time, obj) or dict(self._UNKNOWN_TIME)
 
     def get_review_history(self, obj) -> list[dict]:
         return [
@@ -135,6 +176,7 @@ class AnnotationTaskSerializer(serializers.ModelSerializer):
             "label_type",
             "assigned_to",
             "assigned_to_username",
+            "annotation_time",
             "z_start",
             "z_end",
             "y_start",
@@ -278,6 +320,34 @@ class AssignmentPlanTaskSerializer(serializers.ModelSerializer):
     assigned_to_username = serializers.CharField(
         source="assigned_to.username", read_only=True, default=""
     )
+    # Compact cumulative annotation time for the plan editor's Time column.
+    # Batched exactly like the task serializer's — one query for the whole plan,
+    # not one per volume.
+    annotation_time = serializers.SerializerMethodField()
+
+    def _annotation_time_map(self) -> dict[int, dict]:
+        from . import timing
+
+        holder = self.parent if self.parent is not None else self
+        cached = getattr(holder, "_annotation_time_cache", None)
+        if cached is not None:
+            return cached
+        instances = getattr(holder, "instance", None)
+        if instances is None or isinstance(instances, AnnotationTask):
+            instances = [instances] if instances is not None else []
+        built = timing.safely(timing.task_time_map, instances) or {}
+        holder._annotation_time_cache = built
+        return built
+
+    def get_annotation_time(self, obj) -> dict:
+        from . import timing
+
+        mapped = self._annotation_time_map().get(obj.id)
+        if mapped is not None:
+            return mapped
+        return timing.safely(timing.task_time, obj) or {
+            "tracked": False, "seconds": None, "display": "-", "eligibility": "",
+        }
 
     class Meta:
         model = AnnotationTask
@@ -288,7 +358,7 @@ class AssignmentPlanTaskSerializer(serializers.ModelSerializer):
             "has_region_mask", "region_mask_coverage", "label_type",
             "assigned_to", "assigned_to_username", "z_start", "z_end",
             "task_type", "status", "priority", "difficulty", "instructions",
-            "deadline", "annotation_locked",
+            "deadline", "annotation_locked", "annotation_time",
         ]
 
 

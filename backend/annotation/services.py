@@ -416,6 +416,26 @@ def assign_task_to_annotator(
     """
     with transaction.atomic():
         locked = AnnotationTask.objects.select_for_update().get(pk=task.pk)
+        previous_assignee = locked.assigned_to
+        next_assignee_id = getattr(annotator, "pk", None)
+        if previous_assignee is not None and previous_assignee.pk != next_assignee_id:
+            transferred = annotator is not None
+            AssignmentWithdrawal.objects.create(
+                task=locked,
+                annotator=previous_assignee,
+                transferred_to=annotator if transferred else None,
+                team_name="",
+                outcome=(
+                    AssignmentWithdrawal.Outcome.TRANSFERRED
+                    if transferred
+                    else AssignmentWithdrawal.Outcome.WITHDRAWN
+                ),
+                reason=(
+                    "Transferred to another annotator"
+                    if transferred
+                    else "Assignment withdrawn by manager"
+                ),
+            )
         if annotator is None:
             locked.assigned_to = None
             locked.status = TaskStatus.UNASSIGNED
@@ -427,6 +447,19 @@ def assign_task_to_annotator(
             if locked.status not in ACTIVE_TASK_STATUSES:
                 locked.status = TaskStatus.ASSIGNED
         locked.save(update_fields=["assigned_to", "status", "assigned_at"])
+        if previous_assignee is not None and previous_assignee.pk != next_assignee_id:
+            # The previous annotator no longer owns this task, so their open
+            # session must stop accruing against it. Their *existing* intervals
+            # stay theirs — history is never re-attributed to whoever holds the
+            # task now. Never allowed to fail the reassignment.
+            from . import timing as _timing
+
+            _timing.safely(
+                _timing.stop_task_timing,
+                locked,
+                actor=previous_assignee,
+                reason=_timing.WorkInterval.CloseReason.SUPERSEDED,
+            )
     task.refresh_from_db()
     return task
 
@@ -473,6 +506,7 @@ def withdraw_project_assignments(
                 annotator=task.assigned_to,
                 team_name=team_name,
                 reason=reason,
+                outcome=AssignmentWithdrawal.Outcome.WITHDRAWN,
             )
             _retire_submissions(task, reason="Assignment withdrawn.")
             task.assigned_to = None
@@ -783,6 +817,22 @@ def submit_inapp_annotation(
         )
         run_basic_qc(submission)
         _mark_submitted(task)
+        # Close the annotator's open timing interval as part of handing the
+        # work over, so the seconds spent up to Submit are banked at Submit
+        # rather than whenever the browser next gets around to saying so.
+        #
+        # The cumulative total is *not* reset: reopening the task and
+        # submitting again simply adds new intervals to it. Wrapped in
+        # ``safely`` because a timing failure must never fail a submit — the
+        # annotator's work is already snapshotted above.
+        from . import timing as _timing
+
+        _timing.safely(
+            _timing.stop_task_timing,
+            task,
+            actor=annotator,
+            reason=_timing.WorkInterval.CloseReason.SUBMITTED,
+        )
     return submission
 
 
@@ -1406,19 +1456,100 @@ def registered_label_location(volume) -> str:
 
 
 TRACKING_PROMPTS_KEY = "tracking_prompts"
-TRACKING_PROMPTS_VERSION = 1
+#: v1 stored only a derived ``z_range``; v2 stores the user's explicit,
+#: inclusive ``start_z``/``end_z`` and keeps ``z_range`` as a read-only mirror
+#: for older clients. v1 records are migrated on read (see
+#: :func:`_normalize_prompt_range`), so nothing has to be rewritten up front.
+TRACKING_PROMPTS_VERSION = 2
 TRACKING_PENDING_KEY = "tracking_pending_review"
+TRACKING_PROMPT_STATUSES = {"draft", "ready", "running", "pending", "done", "error"}
 
 
-def _tracking_seed_range(subclasses: list[dict]) -> list[int]:
-    """Authoritative parent range from committed child seed planes only."""
-    zs = [
-        int(seed["z"])
-        for child in subclasses
-        for seed in child.get("seeds", [])
-        if "z" in seed
-    ]
-    return [min(zs), max(zs)] if zs else [0, 0]
+def _tracking_seed_zs(subclasses: list[dict]) -> list[int]:
+    """Committed child seed planes, ascending."""
+    return sorted(
+        {
+            int(seed["z"])
+            for child in subclasses or []
+            for seed in child.get("seeds", [])
+            if "z" in seed
+        }
+    )
+
+
+def _normalize_prompt_range(prompt: dict) -> dict:
+    """Return ``prompt`` with explicit ``start_z``/``end_z`` filled in.
+
+    Backward compatibility for saved queues, in order of preference:
+
+    1. an explicit ``start_z``/``end_z`` pair — kept exactly as stored;
+    2. a v1 ``z_range`` — adopted as the initial explicit range;
+    3. the committed seed minimum/maximum — adopted as the initial explicit
+       range when there are seeds. This is the *only* place seed bounds ever
+       become a range: applying them to a prompt that already has one is
+       exactly the behaviour this schema replaces;
+    4. otherwise ``None``/``None``, i.e. the annotator must choose before
+       Propagate is enabled.
+
+    Once a range is represented in the new schema it is preserved verbatim.
+    """
+    normalized = dict(prompt)
+    start_z, end_z = normalized.get("start_z"), normalized.get("end_z")
+    if start_z is None or end_z is None:
+        legacy = normalized.get("z_range")
+        if (
+            isinstance(legacy, (list, tuple))
+            and len(legacy) == 2
+            and legacy[0] is not None
+            and legacy[1] is not None
+        ):
+            start_z, end_z = int(legacy[0]), int(legacy[1])
+        else:
+            zs = _tracking_seed_zs(list(normalized.get("subclasses", [])))
+            start_z, end_z = (min(zs), max(zs)) if zs else (None, None)
+    normalized["start_z"] = None if start_z is None else int(start_z)
+    normalized["end_z"] = None if end_z is None else int(end_z)
+    # ``z_range`` stays as a mirror so a client that predates the new fields
+    # still sees a coherent range. It is never the source of truth once
+    # ``start_z``/``end_z`` are set.
+    normalized["z_range"] = (
+        [normalized["start_z"], normalized["end_z"]]
+        if normalized["start_z"] is not None and normalized["end_z"] is not None
+        else [0, 0]
+    )
+    return normalized
+
+
+def tracking_volume_z_size(volume) -> int | None:
+    """Z depth of ``volume`` when the registered shape records one."""
+    shape_z = getattr(volume, "shape_z", None)
+    return int(shape_z) if shape_z else None
+
+
+def _validate_prompt_range(prompt: dict, volume_z_size: int | None) -> None:
+    """Bounds/ordering check for a stored prompt range (inclusive).
+
+    Seed containment is *not* checked here: narrowing the range below an
+    existing seed must stay possible to type, or the annotator would be locked
+    out of fixing either half. It is enforced authoritatively at propagation
+    time instead (``tracking.services.assert_seeds_within_range``).
+    """
+    start_z, end_z = prompt.get("start_z"), prompt.get("end_z")
+    if start_z is None and end_z is None:
+        return
+    if start_z is None or end_z is None:
+        raise ValueError("Start and End layers must both be set, or both be empty.")
+    if start_z < 0:
+        raise ValueError(f"Start layer {start_z} is below the first layer (0).")
+    if end_z < start_z:
+        raise ValueError(
+            f"End layer {end_z} must not be before Start layer {start_z}; "
+            "the range is inclusive."
+        )
+    if volume_z_size is not None and end_z >= volume_z_size:
+        raise ValueError(
+            f"End layer {end_z} is past the last layer ({volume_z_size - 1})."
+        )
 
 
 def tracking_pending_review(task: AnnotationTask) -> dict | None:
@@ -1432,13 +1563,20 @@ def tracking_pending_review(task: AnnotationTask) -> dict | None:
 
 
 def list_tracking_prompts(task: AnnotationTask) -> list[dict]:
-    """Return the durable Track draft queue for this task's volume."""
+    """Return the durable Track draft queue for this task's volume.
+
+    Records saved before the explicit-range schema are migrated **on read** by
+    :func:`_normalize_prompt_range`, so an old queue loads with a usable
+    derived Start/End and nothing has to be rewritten in place.
+    """
     payload = (task.volume.metadata or {}).get(TRACKING_PROMPTS_KEY, {})
     if isinstance(payload, list):  # tolerate a short-lived pre-version schema
-        return payload
-    if not isinstance(payload, dict):
+        items = payload
+    elif isinstance(payload, dict):
+        items = list(payload.get("items", []))
+    else:
         return []
-    return list(payload.get("items", []))
+    return [_normalize_prompt_range(item) for item in items]
 
 
 def _store_tracking_prompts(volume, prompts: list[dict]) -> None:
@@ -1452,23 +1590,35 @@ def _store_tracking_prompts(volume, prompts: list[dict]) -> None:
     volume.save(update_fields=["metadata"])
 
 
+def _coerce_prompt_bound(value, field: str):
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a whole layer number.") from exc
+
+
 def upsert_tracking_prompt(task: AnnotationTask, prompt: dict) -> dict:
-    """Create/update one RLE-backed draft without touching label pixels."""
+    """Create/update one RLE-backed draft without touching label pixels.
+
+    The propagation range is the annotator's: an explicit ``start_z``/``end_z``
+    in the payload is stored verbatim and is **never** recomputed from the seed
+    layers. A payload that omits both keeps whatever the stored record already
+    had; only a prompt that has never had a range falls back to the seed
+    minimum/maximum as an initial suggestion.
+    """
     parent_id = int(prompt.get("parent_id", 0))
     if parent_id < 1:
         raise ValueError("parent_id must be a positive label id")
     subclasses = list(prompt.get("subclasses", []))
-    normalized = {
-        "parent_id": parent_id,
-        "subclasses": subclasses,
-        "z_range": _tracking_seed_range(subclasses),
-        "status": str(prompt.get("status", "draft")),
-        "note": str(prompt.get("note", "")),
-    }
-    if len(normalized["z_range"]) != 2:
-        raise ValueError("z_range must contain [from, to]")
-    if normalized["status"] not in {"draft", "ready", "running", "pending", "done", "error"}:
+    status = str(prompt.get("status", "draft"))
+    if status not in TRACKING_PROMPT_STATUSES:
         raise ValueError("Invalid tracking prompt status")
+    supplied_start = "start_z" in prompt or "end_z" in prompt
+    start_z = _coerce_prompt_bound(prompt.get("start_z"), "Start layer")
+    end_z = _coerce_prompt_bound(prompt.get("end_z"), "End layer")
+
     # The queue is volume-scoped, matching the working label copy. Lock the
     # row so two tabs cannot silently discard one another's parent prompts.
     volume_model = task.volume.__class__
@@ -1478,6 +1628,23 @@ def upsert_tracking_prompt(task: AnnotationTask, prompt: dict) -> dict:
         if tracking_pending_review(task):
             raise ValueError("Confirm or Reject the pending Track preview before editing prompts.")
         prompts = list_tracking_prompts(task)
+        existing = next(
+            (p for p in prompts if int(p.get("parent_id", 0)) == parent_id), None
+        )
+        if not supplied_start and existing is not None:
+            # A seed-only write (a brush stroke saving its mask) must not
+            # disturb the range the annotator chose.
+            start_z, end_z = existing.get("start_z"), existing.get("end_z")
+        normalized = _normalize_prompt_range({
+            "parent_id": parent_id,
+            "subclasses": subclasses,
+            "start_z": start_z,
+            "end_z": end_z,
+            "z_range": prompt.get("z_range") if not supplied_start else None,
+            "status": status,
+            "note": str(prompt.get("note", "")),
+        })
+        _validate_prompt_range(normalized, tracking_volume_z_size(volume))
         prompts = [p for p in prompts if int(p.get("parent_id", 0)) != parent_id]
         prompts.append(normalized)
         _store_tracking_prompts(volume, prompts)
@@ -1511,21 +1678,26 @@ def replace_tracking_prompts(task: AnnotationTask, prompts: list[dict]) -> list[
         seen.add(parent_id)
         subclasses = list(prompt.get("subclasses", []))
         status = str(prompt.get("status", "draft"))
-        if status not in {"draft", "ready", "running", "pending", "done", "error"}:
+        if status not in TRACKING_PROMPT_STATUSES:
             raise ValueError("Invalid tracking prompt status")
-        normalized.append({
+        normalized.append(_normalize_prompt_range({
             "parent_id": parent_id,
             "subclasses": subclasses,
-            "z_range": _tracking_seed_range(subclasses),
+            "start_z": _coerce_prompt_bound(prompt.get("start_z"), "Start layer"),
+            "end_z": _coerce_prompt_bound(prompt.get("end_z"), "End layer"),
+            "z_range": prompt.get("z_range"),
             "status": status,
             "note": str(prompt.get("note", "")),
-        })
+        }))
     volume_model = task.volume.__class__
     with transaction.atomic():
         volume = volume_model.objects.select_for_update().get(pk=task.volume_id)
         task.volume = volume
         if tracking_pending_review(task):
             raise ValueError("Confirm or Reject the pending Track preview before editing prompts.")
+        volume_z_size = tracking_volume_z_size(volume)
+        for item in normalized:
+            _validate_prompt_range(item, volume_z_size)
         _store_tracking_prompts(volume, normalized)
     return normalized
 
@@ -1657,7 +1829,11 @@ def track_task_batch(
     import numpy as np
 
     from .tracking.registry import get_tracking_provider
-    from .tracking.services import run_branch_tracking
+    from .tracking.services import (
+        assert_seeds_within_range,
+        run_branch_tracking,
+        validate_z_range,
+    )
     from .visualization.slice_io import _open_volume, resolve_path
 
     logger = logging.getLogger("mito.track.timing")
@@ -1712,12 +1888,19 @@ def track_task_batch(
         results = []
         for position, group in enumerate(groups, start=1):
             parent_started = time.perf_counter()
-            z_range = tuple(
-                int(v)
-                for v in group.get("z_range", (task.z_start, task.z_end - 1))
+            raw_range = group.get("z_range")
+            if raw_range is None:
+                raise ValueError(
+                    f"Parent {group.get('parent_id')} has no Start/End layers. "
+                    "Set both before propagating; the range is inclusive."
+                )
+            try:
+                z_range = validate_z_range(raw_range, int(image.shape[0]))
+            except ValueError as exc:
+                raise ValueError(f"Parent {group.get('parent_id')}: {exc}") from exc
+            assert_seeds_within_range(
+                group.get("branch_seeds") or {}, z_range[0], z_range[1]
             )
-            if len(z_range) != 2:
-                raise ValueError("z_range must contain [from, to]")
             result = run_branch_tracking(
                 image=image,
                 volume_mask=working,
@@ -1800,6 +1983,54 @@ def track_task_batch(
     }
 
 
+def _shift_track_audit_to_volume_z(result: dict, offset: int) -> dict:
+    """Rebase one ``run_branch_tracking`` result from slab-local to volume z.
+
+    ``plan_track_task_batch`` deliberately propagates inside a bounded slab, so
+    every z the tracking layer produced — the explicit range, seed layers,
+    inferred-branch components, merge events, terminations and warnings — is
+    slab-local. They all have to be shifted together; missing one leaves the
+    Track preview quoting layer numbers the annotator cannot navigate to.
+    """
+    offset = int(offset)
+    if not offset:
+        return result
+
+    def shift(value):
+        return None if value is None else int(value) + offset
+
+    audit = result.get("group")
+    if not audit:
+        return result
+    audit["seed_z"] = shift(audit.get("seed_z"))
+    audit["start_z"] = shift(audit.get("start_z"))
+    audit["end_z"] = shift(audit.get("end_z"))
+    audit["seed_zs"] = [int(z) + offset for z in audit.get("seed_zs", [])]
+    for branch in audit.get("inferred_branches", []):
+        branch["seed_zs"] = [int(z) + offset for z in branch.get("seed_zs", [])]
+        for component in branch.get("components", []):
+            component["z"] = shift(component.get("z"))
+    for event in audit.get("merge_events", []):
+        event["contact_z"] = shift(event.get("contact_z"))
+        metrics = event.get("metrics") or {}
+        if metrics.get("confirmed_z") is not None:
+            metrics["confirmed_z"] = shift(metrics["confirmed_z"])
+        later = metrics.get("later_prompts") or {}
+        for key, zs in later.items():
+            later[key] = [int(z) + offset for z in zs]
+    audit["terminated_at"] = {
+        str(k): int(v) + offset for k, v in (audit.get("terminated_at") or {}).items()
+    }
+    for dropped in audit.get("dropped_components", []):
+        dropped["z"] = shift(dropped.get("z"))
+    for warning in audit.get("warnings", []):
+        for key in ("z", "contact_z"):
+            if warning.get(key) is not None:
+                warning[key] = shift(warning[key])
+    result["warnings"] = list(audit.get("warnings", []))
+    return result
+
+
 def plan_track_task_batch(
     task: AnnotationTask,
     groups: list[dict],
@@ -1818,7 +2049,11 @@ def plan_track_task_batch(
     import numpy as np
 
     from .tracking.registry import get_tracking_provider
-    from .tracking.services import run_branch_tracking
+    from .tracking.services import (
+        assert_seeds_within_range,
+        run_branch_tracking,
+        validate_z_range,
+    )
     from .tools.overwrite import DEFAULT_OVERWRITE_MODE, is_valid_mode
     from .visualization.slice_io import _open_volume, resolve_path
 
@@ -1839,20 +2074,28 @@ def plan_track_task_batch(
         raise ValueError("Each parent_id may appear only once per batch")
     _assert_labels_unverified(volume, parent_ids)
 
+    # The propagation range is explicit and inclusive, and it is the user's:
+    # it is validated here rather than derived from the seed layers, and the
+    # frontend's identical checks are a convenience, not the authority.
+    image_source = _open_volume(resolve_path(volume.image_location))
+    volume_z_size = int(image_source.shape[0])
     ranges = []
     for group in groups:
-        z_range = tuple(int(value) for value in group.get("z_range", (0, 0)))
-        if len(z_range) != 2:
-            raise ValueError("z_range must contain [from, to]")
-        ranges.append(tuple(sorted(z_range)))
+        raw = group.get("z_range")
+        if raw is None or (isinstance(raw, (list, tuple)) and len(raw) != 2):
+            raise ValueError(
+                f"Parent {group.get('parent_id')} has no Start/End layers. "
+                "Set both before propagating; the range is inclusive."
+            )
+        try:
+            ranges.append(validate_z_range(raw, volume_z_size))
+        except ValueError as exc:
+            raise ValueError(f"Parent {group.get('parent_id')}: {exc}") from exc
+        assert_seeds_within_range(
+            group.get("branch_seeds") or {}, ranges[-1][0], ranges[-1][1]
+        )
     slab_lo = min(lo for lo, _hi in ranges)
     slab_hi = max(hi for _lo, hi in ranges)
-
-    image_source = _open_volume(resolve_path(volume.image_location))
-    if slab_lo < 0 or slab_hi >= int(image_source.shape[0]):
-        raise ValueError(
-            f"Track range {(slab_lo, slab_hi)} is outside 0..{int(image_source.shape[0]) - 1}"
-        )
     slab_voxels = (
         (slab_hi - slab_lo + 1)
         * int(image_source.shape[1])
@@ -1907,10 +2150,9 @@ def plan_track_task_batch(
                 raise ValueError(
                     f"Parent {group['parent_id']} has no non-empty subclass seeds"
                 )
-            audit = result["group"]
-            if audit.get("seed_z") is not None:
-                audit["seed_z"] = int(audit["seed_z"]) + slab_lo
-            audit["seed_zs"] = [int(z) + slab_lo for z in audit.get("seed_zs", [])]
+            # Everything below ran in slab-local z; the client and the audit
+            # trail speak whole-volume z.
+            _shift_track_audit_to_volume_z(result, slab_lo)
             results.append(result)
         bbox = (slab_lo, slab_hi + 1, 0, reader.shape[1], 0, reader.shape[2])
         slices = _planned_crop_slices(reader, "z", bbox, working)
@@ -1923,6 +2165,14 @@ def plan_track_task_batch(
         "axis": "z",
         "overwrite_mode": overwrite_mode,
         "slices": slices,
+        # Flattened for the Track preview: which parent each structured
+        # ambiguity belongs to, without the client re-walking every group.
+        "warnings": [
+            {**warning, "parent_id": int(result["group"]["group_id"])}
+            for result in results
+            if result.get("group")
+            for warning in result["group"].get("warnings", [])
+        ],
     }
 
 
@@ -2105,10 +2355,14 @@ def _adopt_legacy_working_copy(volume) -> None:
         if legacy_meta.exists() and not new_meta.exists():
             new_meta.parent.mkdir(parents=True, exist_ok=True)
             legacy_meta.replace(new_meta)
-    except OSError:
-        # Best-effort: if the rename fails (permissions/NFS), fall through to
-        # a normal fresh working copy rather than taking the editor down.
-        return
+    except OSError as exc:
+        # Never turn a failed migration into a fresh draft.  The legacy file
+        # is known to contain user work, so silently falling through would
+        # strand it and seed another file that looks like a reset.
+        raise OSError(
+            "Existing annotation data could not be moved to its current "
+            "location. No replacement working copy was created."
+        ) from exc
 
 
 def _seed_working_label(volume, owned_path, shape, source_location: str) -> None:
@@ -2149,33 +2403,34 @@ def _seed_working_label(volume, owned_path, shape, source_location: str) -> None
                     if is_hdf5_path(src)
                     else open_nifti_volume(src)
                 )
-            except Exception:
-                # Same policy as the TIFF branch below — an unreadable
-                # registered label means "start empty", never an error out
-                # of the editor's entry point.
-                stream = None
+            except Exception as exc:
+                raise ValueError(
+                    f"Registered label source {src} is unreadable; refusing "
+                    "to create an empty working copy."
+                ) from exc
             if stream is not None and tuple(stream.shape) != tuple(shape):
-                stream = None
+                raise ValueError(
+                    f"Registered label shape {tuple(stream.shape)} does not "
+                    f"match image shape {tuple(shape)}; refusing to create an "
+                    "empty working copy."
+                )
         elif src.exists() and src != owned_path:
             import tifffile
 
             try:
                 arr = np.asarray(tifffile.imread(str(src)))
-            except Exception:
-                # The official label may be registered *by reference* to a
-                # file this app does not own — an externally produced
-                # prediction, a truncated transfer, a path that exists but
-                # is not a readable TIFF. Never quarantine or rewrite it
-                # (it is someone else's data); an unreadable seed just
-                # means "start this working copy empty", the same policy
-                # ``_load_or_init_label`` already applies.
-                #
-                # Without this, the first read *or* save on such a volume
-                # raises out of the editor's entry point and the annotator
-                # cannot work on it at all — not even from scratch.
-                arr = None
-            if arr is not None and arr.shape == tuple(shape):
-                seed = arr.astype(np.uint16)
+            except Exception as exc:
+                raise ValueError(
+                    f"Registered label source {src} is unreadable; refusing "
+                    "to create an empty working copy."
+                ) from exc
+            if arr.shape != tuple(shape):
+                raise ValueError(
+                    f"Registered label shape {tuple(arr.shape)} does not match "
+                    f"image shape {tuple(shape)}; refusing to create an empty "
+                    "working copy."
+                )
+            seed = arr.astype(np.uint16)
 
     from .visualization import slice_io
 
@@ -3698,7 +3953,9 @@ def get_labels_summary(volume, *, readonly: bool = False) -> dict:
     from .cellable_port.label_state import LabelState
     from .cellable_port.labels_3d import label_summary
 
-    path = _visible_label_path(volume) if readonly else _working_label_path_for_read(volume)
+    # Summary/Refresh is a read operation.  It must never seed, migrate,
+    # repair, quarantine, or otherwise mutate the working draft.
+    path = _visible_label_path(volume)
     if path is None:
         return {"labels": [], "stats": {"total": 0, "proposed": 0, "edited": 0, "verified": 0}}
     summary = label_summary(path)
@@ -3746,7 +4003,7 @@ def reset_working_labels_to_registered(task: AnnotationTask) -> dict:
     Returns a small report rather than the mask: the caller reloads through the
     ordinary read paths.
     """
-    import os
+    import time
 
     from core.data_root import assert_owned
 
@@ -3800,18 +4057,43 @@ def reset_working_labels_to_registered(task: AnnotationTask) -> dict:
     slice_io.drop_file(working_path)
     forget_summary(working_path)
     forget_region_label_ids(working_path)
+    reset_stamp = time.time_ns()
+    raster_backup = None
     if working_path.exists():
-        working_path.unlink()
+        raster_backup = working_path.with_suffix(
+            working_path.suffix + f".pre-reset.{reset_stamp}.bak"
+        )
+        working_path.replace(raster_backup)
 
-    sidecar = resolve_path(working_label_metadata_rel_path(volume))
+    sidecar_rel = working_label_metadata_rel_path(volume)
+    sidecar = resolve_path(sidecar_rel)
     assert_owned(sidecar, what="label metadata sidecar")
+    lifecycle_backups = []
     for lifecycle_path in (sidecar, sidecar.with_name(f"{sidecar.name}.bak")):
         assert_owned(lifecycle_path, what="label metadata sidecar")
         if lifecycle_path.exists():
-            os.remove(lifecycle_path)
+            backup_path = lifecycle_path.with_name(
+                f"{lifecycle_path.name}.pre-reset.{reset_stamp}.bak"
+            )
+            lifecycle_path.replace(backup_path)
+            lifecycle_backups.append(backup_path)
 
     working_path.parent.mkdir(parents=True, exist_ok=True)
-    _seed_working_label(volume, working_path, shape, source)
+    try:
+        _seed_working_label(volume, working_path, shape, source)
+    except Exception:
+        # A reset that cannot seed its replacement must leave the previous
+        # draft live, not merely recoverable under a backup filename.
+        if working_path.exists():
+            working_path.unlink()
+        if raster_backup is not None and raster_backup.exists():
+            raster_backup.replace(working_path)
+        for backup_path in lifecycle_backups:
+            marker = f".pre-reset.{reset_stamp}.bak"
+            original = backup_path.with_name(backup_path.name.replace(marker, ""))
+            if backup_path.exists():
+                backup_path.replace(original)
+        raise
     slice_io.invalidate_read_caches(working_path)
     forget_summary(working_path)
     forget_region_label_ids(working_path)
@@ -3821,6 +4103,19 @@ def reset_working_labels_to_registered(task: AnnotationTask) -> dict:
         "volume": volume.pk,
         "restored_from": source,
         "seeded_empty": not source,
+        # API/audit references use data-root-relative paths; never disclose
+        # the host's absolute filesystem layout to an annotator.
+        "raster_backup": (
+            f"{working_rel}.pre-reset.{reset_stamp}.bak" if raster_backup else ""
+        ),
+        "lifecycle_backups": [
+            (
+                f"{sidecar_rel}.pre-reset.{reset_stamp}.bak"
+                if path.name.startswith(sidecar.name + ".pre-reset")
+                else f"{sidecar_rel}.bak.pre-reset.{reset_stamp}.bak"
+            )
+            for path in lifecycle_backups
+        ],
     }
 
 
@@ -3840,7 +4135,8 @@ def get_region_label_ids(volume, *, readonly: bool = False) -> dict:
 
     if not volume.region_mask_location:
         return {"has_region": False, "ids": []}
-    path = _visible_label_path(volume) if readonly else _working_label_path_for_read(volume)
+    # Region membership is part of Labels Refresh and is equally read-only.
+    path = _visible_label_path(volume)
     if path is None:
         return {"has_region": True, "ids": []}
     ids = region_touching_label_ids(path, resolve_path(volume.region_mask_location))

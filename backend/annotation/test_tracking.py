@@ -395,7 +395,17 @@ class RoleGatingApiTests(TestCase):
         queue = client.get(f"/api/tasks/{self.task.id}/track/prompts/")
         self.assertEqual(queue.status_code, 200, queue.content)
         self.assertEqual(len(queue.json()["items"]), 12)
-        self.assertTrue(all(item["z_range"] == [2, 3] for item in queue.json()["items"]))
+        # The explicit inclusive range the payload asked for survives the round
+        # trip; it is *not* replaced by the [2, 3] seed minimum/maximum.
+        self.assertTrue(
+            all(item["z_range"] == [0, 5] for item in queue.json()["items"])
+        )
+        self.assertTrue(
+            all(
+                (item["start_z"], item["end_z"]) == (0, 5)
+                for item in queue.json()["items"]
+            )
+        )
 
         response = client.post(
             f"/api/tasks/{self.task.id}/track/batch/",
@@ -554,22 +564,273 @@ class RoleGatingApiTests(TestCase):
         )
         self.assertEqual(label_slice.json()["runs"], runs)
 
-    def test_prompt_queue_replace_is_atomic_and_recomputes_seed_range(self):
+    def test_prompt_queue_replace_is_atomic_and_preserves_explicit_range(self):
         client = self._client(self.annotator)
+        # An out-of-bounds End is rejected outright rather than quietly clamped
+        # or replaced by the seed maximum.
         payload = self._prompt_payload(17)
-        payload["z_range"] = [0, 99]
+        payload["start_z"], payload["end_z"] = 0, 99
+        rejected = client.post(
+            f"/api/tasks/{self.task.id}/track/prompts/",
+            {"items": [payload]},
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 400, rejected.content)
+        self.assertIn("past the last layer", rejected.json()["detail"])
+        self.volume.refresh_from_db()
+        self.assertNotIn("tracking_prompts", self.volume.metadata or {})
+
+        payload["start_z"], payload["end_z"] = 1, 5
         replaced = client.post(
             f"/api/tasks/{self.task.id}/track/prompts/",
             {"items": [payload]},
             format="json",
         )
         self.assertEqual(replaced.status_code, 200, replaced.content)
-        self.assertEqual(replaced.json()["items"][0]["z_range"], [2, 3])
+        self.assertEqual(replaced.json()["items"][0]["start_z"], 1)
+        self.assertEqual(replaced.json()["items"][0]["end_z"], 5)
+        self.assertEqual(replaced.json()["items"][0]["z_range"], [1, 5])
         self.volume.refresh_from_db()
         self.assertEqual(
             self.volume.metadata["tracking_prompts"]["items"][0]["subclasses"],
             payload["subclasses"],
         )
+
+    # --- Explicit Start/End propagation range (inclusive) -----------------
+
+    def test_propagation_requires_both_start_and_end(self):
+        """The backend is the authority: a rangeless prompt cannot propagate."""
+        client = self._client(self.annotator)
+        payload = self._prompt_payload(17)
+        payload.pop("z_range")
+        payload["start_z"] = payload["end_z"] = None
+        self.assertEqual(
+            client.put(
+                f"/api/tasks/{self.task.id}/track/prompts/", payload, format="json"
+            ).status_code,
+            200,
+        )
+        # The queue stored it without a range (its seeds only *suggest* one on
+        # first read, and this record was explicitly saved rangeless).
+        stored = client.get(f"/api/tasks/{self.task.id}/track/prompts/").json()["items"][0]
+        self.assertEqual(stored["start_z"], 2)
+        self.assertEqual(stored["end_z"], 3)
+
+        # A group posted directly with no range at all is rejected outright.
+        propagated = client.post(
+            f"/api/tasks/{self.task.id}/track/batch/",
+            {"groups": [{
+                "parent_id": 17,
+                "subclasses": payload["subclasses"],
+            }]},
+            format="json",
+        )
+        self.assertEqual(propagated.status_code, 400, propagated.content)
+        self.assertIn("Start/End", propagated.json()["detail"])
+        self.assertFalse(
+            slice_io.resolve_path(working_label_rel_path(self.volume)).exists()
+        )
+
+    def test_propagation_rejects_a_reversed_or_out_of_bounds_range(self):
+        client = self._client(self.annotator)
+        for start_z, end_z, expected in (
+            (4, 1, "must not be before Start layer"),
+            (0, 99, "past the last layer"),
+            (-3, 4, "below the first layer"),
+        ):
+            group = {
+                "parent_id": 17,
+                "subclasses": self._prompt_payload(17)["subclasses"],
+                "start_z": start_z,
+                "end_z": end_z,
+            }
+            response = client.post(
+                f"/api/tasks/{self.task.id}/track/batch/",
+                {"groups": [group]},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400, response.content)
+            self.assertIn(expected, response.json()["detail"])
+
+    def test_propagation_rejects_a_seed_outside_the_selected_range(self):
+        client = self._client(self.annotator)
+        group = {
+            "parent_id": 17,
+            # Seeds sit on layers 2 and 3; the range excludes layer 3.
+            "subclasses": self._prompt_payload(17)["subclasses"],
+            "start_z": 0,
+            "end_z": 2,
+        }
+        response = client.post(
+            f"/api/tasks/{self.task.id}/track/batch/",
+            {"groups": [group]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("fall outside", response.json()["detail"])
+        self.assertIn("inclusive", response.json()["detail"])
+
+    def test_explicit_range_is_propagated_not_the_seed_bounds(self):
+        """One seed layer, a deliberately wider range: every layer is planned."""
+        client = self._client(self.annotator)
+        group = {
+            "parent_id": 17,
+            "subclasses": [{
+                "index": 1,
+                "seeds": [{"z": 2, "rle": [[0, 3], [10, 3], [20, 3]], "shape": [10, 10]}],
+            }],
+            "start_z": 0,
+            "end_z": 5,
+        }
+        response = client.post(
+            f"/api/tasks/{self.task.id}/track/batch/",
+            {"groups": [group]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        planned = response.json()
+        self.assertEqual(
+            sorted(item["index"] for item in planned["slices"]), [0, 1, 2, 3, 4, 5]
+        )
+        audit = planned["results"][0]["group"]
+        self.assertEqual((audit["start_z"], audit["end_z"]), (0, 5))
+        self.assertEqual(audit["seed_zs"], [2])
+
+    def test_a_seed_only_write_never_moves_the_chosen_range(self):
+        """Saving a brush stroke must not drag Start/End back to the seeds."""
+        client = self._client(self.annotator)
+        payload = self._prompt_payload(17)
+        payload["start_z"], payload["end_z"] = 0, 5
+        self.assertEqual(
+            client.put(
+                f"/api/tasks/{self.task.id}/track/prompts/", payload, format="json"
+            ).status_code,
+            200,
+        )
+        seed_only = {
+            "parent_id": 17,
+            "subclasses": payload["subclasses"],
+            "status": "ready",
+        }
+        saved = client.put(
+            f"/api/tasks/{self.task.id}/track/prompts/", seed_only, format="json"
+        )
+        self.assertEqual(saved.status_code, 200, saved.content)
+        self.assertEqual((saved.json()["start_z"], saved.json()["end_z"]), (0, 5))
+
+    def test_legacy_prompt_records_load_with_a_derived_range(self):
+        """A v1 queue (``z_range`` only, or nothing) still opens and propagates."""
+        self.volume.metadata = {
+            "tracking_prompts": {
+                "version": 1,
+                "items": [
+                    {
+                        "parent_id": 17,
+                        "subclasses": self._prompt_payload(17)["subclasses"],
+                        "z_range": [1, 4],
+                        "status": "ready",
+                        "note": "",
+                    },
+                    {
+                        "parent_id": 18,
+                        "subclasses": self._prompt_payload(18)["subclasses"],
+                        "status": "ready",
+                        "note": "",
+                    },
+                ],
+            }
+        }
+        self.volume.save(update_fields=["metadata"])
+        client = self._client(self.annotator)
+        items = {
+            item["parent_id"]: item
+            for item in client.get(
+                f"/api/tasks/{self.task.id}/track/prompts/"
+            ).json()["items"]
+        }
+        # A stored v1 range is adopted as the initial explicit range...
+        self.assertEqual((items[17]["start_z"], items[17]["end_z"]), (1, 4))
+        # ...and one with no range at all falls back to its seed bounds.
+        self.assertEqual((items[18]["start_z"], items[18]["end_z"]), (2, 3))
+        propagated = client.post(
+            f"/api/tasks/{self.task.id}/track/batch/",
+            {"parent_ids": [17]},
+            format="json",
+        )
+        self.assertEqual(propagated.status_code, 200, propagated.content)
+        self.assertEqual(
+            sorted(item["index"] for item in propagated.json()["slices"]), [1, 2, 3, 4]
+        )
+
+    # --- Automatic child inference over the API ---------------------------
+
+    def test_two_disconnected_blobs_in_one_child_infer_two_branches(self):
+        """No manual child classes: the parent's own geometry is enough."""
+        client = self._client(self.annotator)
+        group = {
+            "parent_id": 17,
+            "subclasses": [{
+                "index": 1,
+                "seeds": [{
+                    "z": 2,
+                    # Two 2x2 blobs, four columns apart on a 10x10 plane.
+                    "rle": [[0, 2], [10, 2], [6, 2], [16, 2]],
+                    "shape": [10, 10],
+                }],
+            }],
+            "start_z": 0,
+            "end_z": 5,
+        }
+        response = client.post(
+            f"/api/tasks/{self.task.id}/track/batch/",
+            {"groups": [group]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        audit = response.json()["results"][0]["group"]
+        self.assertEqual(len(audit["inferred_branches"]), 2)
+        self.assertEqual(
+            [b["branch_key"] for b in audit["inferred_branches"]], [1, 2]
+        )
+        # Temporary branch ids are audit keys, never planned label values.
+        planned_ids = {
+            value
+            for item in response.json()["slices"]
+            for value, _count in item["runs"]
+        } - {0}
+        self.assertEqual(planned_ids, {17})
+
+    def test_a_failed_propagation_leaves_labels_and_the_queue_intact(self):
+        client = self._client(self.annotator)
+        payload = self._prompt_payload(17)
+        payload["start_z"], payload["end_z"] = 0, 5
+        self.assertEqual(
+            client.put(
+                f"/api/tasks/{self.task.id}/track/prompts/", payload, format="json"
+            ).status_code,
+            200,
+        )
+        with mock.patch(
+            "annotation.tracking.adapters.local.LocalTrackingProvider.propagate",
+            side_effect=RuntimeError("model exploded"),
+        ):
+            failed = client.post(
+                f"/api/tasks/{self.task.id}/track/batch/",
+                {"parent_ids": [17]},
+                format="json",
+            )
+        self.assertEqual(failed.status_code, 400, failed.content)
+        self.assertIn("model exploded", failed.json()["detail"])
+        # No label pixels anywhere...
+        self.assertFalse(
+            slice_io.resolve_path(working_label_rel_path(self.volume)).exists()
+        )
+        # ...and the queue kept the prompt, its seeds and its explicit range.
+        stored = client.get(f"/api/tasks/{self.task.id}/track/prompts/").json()["items"]
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["subclasses"], payload["subclasses"])
+        self.assertEqual((stored[0]["start_z"], stored[0]["end_z"]), (0, 5))
+        self.assertEqual(stored[0]["status"], "error")
 
     def test_requester_cannot_track(self):
         resp = self._client(self.requester).post(
@@ -837,6 +1098,7 @@ class LabelPathLayoutTests(TestCase):
         )
 
     def test_colliding_stems_disambiguate_by_id(self):
+        from annotation.label_paths import WORKING_MASK_BASENAME_METADATA_KEY
         from projects.models import Dataset, Project
         from volumes.models import Volume
 
@@ -852,6 +1114,15 @@ class LabelPathLayoutTests(TestCase):
         # Lowest id keeps the plain stem; the later one disambiguates with _v<id>.
         self.assertEqual(working_label_rel_path(a), "P/D/img_mask.tif")
         self.assertEqual(working_label_rel_path(b), f"P/D/img_v{b.id}_mask.tif")
+
+        # Once registration pins that selection, deleting/renaming a sibling
+        # must not redirect this volume to a different working draft.
+        pinned = f"img_v{b.id}_mask.tif"
+        b.metadata = {WORKING_MASK_BASENAME_METADATA_KEY: pinned}
+        b.save(update_fields=["metadata"])
+        a.delete()
+        b.refresh_from_db()
+        self.assertEqual(working_label_rel_path(b), f"P/D/{pinned}")
 
     def test_path_falls_back_to_no_dataset_bucket(self):
         from projects.models import Project

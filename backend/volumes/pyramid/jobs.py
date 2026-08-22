@@ -26,6 +26,7 @@ Separation kept explicit, per the standing rule:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from django.conf import settings
@@ -35,6 +36,8 @@ from django.utils import timezone
 from core.choices import ProcessingJobStatus, ProcessingJobType
 
 from . import service as pyramid_service
+
+logger = logging.getLogger(__name__)
 
 
 class PyramidJobError(RuntimeError):
@@ -237,6 +240,21 @@ def run_build(job) -> dict:
             samples_per_level=int(params.get("samples_per_level", 4)),
             seed=int(params.get("seed", 20260730)),
         )
+        # Coverage requires a complete scan of the ROI.  It used to happen in
+        # register_volume(), keeping the HTTP request open for minutes and
+        # causing Cloudflare 524s.  A region pyramid is already background
+        # work, so calculate this additive fact here after the derivative has
+        # been validated.  Coverage failure must not invalidate a good pyramid.
+        if layer == "region":
+            try:
+                from volumes.region_masks import refresh_region_mask_coverage
+
+                refresh_region_mask_coverage(volume)
+            except Exception:
+                logger.exception(
+                    "Could not calculate region-mask coverage for volume %s",
+                    volume_id,
+                )
     except Exception as exc:
         ProcessingJob.objects.filter(pk=job.pk).update(
             status=ProcessingJobStatus.FAILED,

@@ -10,7 +10,7 @@ module constant, sourced from ``settings.MITO_SAM2_ROOT`` by the caller,
 which by default now points at ``vendor/sam2/`` — a full copy of
 facebookresearch/sam2 (code + downloaded checkpoints) living under this
 repo's own root. See the root ``README.md`` for provenance and
-``progress/development.md``'s "Fork-aware SAM2 tracking on GPU nodes" section
+``docs/development.md``
 for the full setup story.
 
 Everything else (the video-propagation API surface, point/box/mask prompt

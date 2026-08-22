@@ -18,8 +18,11 @@ small. PNG encoding is a tiny built-in (no Pillow dependency).
 from __future__ import annotations
 
 import io
+import os
+import shutil
 import struct
 import threading
+import time
 import zlib
 from collections import OrderedDict
 from contextlib import contextmanager, nullcontext
@@ -79,6 +82,27 @@ except ImportError:  # pragma: no cover
     _fcntl = None
 
 
+def _open_advisory_lock(lock_path: Path, target_path: Path):
+    """Open a lock without letting a root-run maintenance command poison it.
+
+    Production workers run unprivileged, while operators sometimes run Django
+    diagnostics through ``sudo``. If root creates a restrictive sibling lock,
+    later web requests cannot open it. A root creator therefore hands the lock
+    to the working mask's owner/group (or its parent before first touch).
+    """
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o664)
+    try:
+        if os.geteuid() == 0:
+            owner_source = target_path if target_path.exists() else target_path.parent
+            stat = owner_source.stat()
+            os.fchown(fd, stat.st_uid, stat.st_gid)
+            os.fchmod(fd, 0o664)
+        return os.fdopen(fd, "a+b")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 @contextmanager
 def serialized_file_write(path: Path | str, *, shared: bool = False):
     """Serialize mutations of one working-volume artifact.
@@ -123,6 +147,7 @@ def serialized_file_write(path: Path | str, *, shared: bool = False):
             held[target] = (current - 1, mode)
         return
 
+    target_path = Path(target)
     lock_path = Path(f"{target}.write.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     # Writers serialize inside the process before competing across processes;
@@ -133,7 +158,7 @@ def serialized_file_write(path: Path | str, *, shared: bool = False):
             process_gate = _write_locks.setdefault(target, threading.RLock())
 
     with process_gate:
-        with lock_path.open("a+b") as handle:
+        with _open_advisory_lock(lock_path, target_path) as handle:
             if _fcntl is not None:
                 _fcntl.flock(
                     handle.fileno(),
@@ -380,17 +405,29 @@ def _quarantine_corrupt(path: Path) -> Path | None:
     """
     if not path.exists():
         return None
-    bak = path.with_suffix(path.suffix + ".corrupt.bak")
+
+
+def _preserve_recovery_backup(path: Path) -> Path:
+    """Keep the exact pre-conversion bytes before replacing a readable TIFF."""
+    bak = path.with_suffix(path.suffix + f".recovery.{time.time_ns()}.bak")
     try:
-        if bak.exists():
-            bak.unlink()
+        os.link(path, bak)
+    except OSError:
+        try:
+            shutil.copy2(path, bak)
+        except OSError as exc:
+            raise SliceIOError(
+                "Working label needs safe format conversion, but its original "
+                "bytes could not be backed up; no replacement was written."
+            ) from exc
+    return bak
+    stamp = time.time_ns()
+    bak = path.with_suffix(path.suffix + f".corrupt.{stamp}.bak")
+    try:
         path.replace(bak)
         return bak
     except OSError:
-        try:
-            path.unlink()
-        except OSError:
-            pass
+        # Failure to preserve evidence is not permission to delete it.
         return None
 
 
@@ -452,10 +489,10 @@ def read_label_array(path: Path) -> np.ndarray:
         with _cache_lock:
             _label_volume_cache.pop((str(path),), None)
             _label_max_cache.pop(str(path), None)
-        _quarantine_corrupt(path)
         raise SliceIOError(
-            "Working label file was unreadable/corrupt; it was set aside "
-            "(.corrupt.bak) and will be rebuilt on the next edit."
+            "Working label file is unreadable or corrupt. It was left "
+            "untouched and no replacement was created; restore or repair it "
+            "before continuing."
         ) from exc
 
 
@@ -503,7 +540,7 @@ def open_label_volume_writable(path: Path, shape: tuple[int, int, int]) -> np.me
                     f"label file shape {getattr(mm, 'shape', None)} incompatible "
                     f"with expected {tuple(shape)}"
                 )
-        except Exception:
+        except Exception as open_exc:
             # Corrupt / non-mappable / wrong shape — try to salvage voxels.
             need_recreate = True
             try:
@@ -512,14 +549,20 @@ def open_label_volume_writable(path: Path, shape: tuple[int, int, int]) -> np.me
                     seed = arr
             except Exception:
                 seed = None
+            if seed is None:
+                _drop_stale_label_handles(path)
+                _label_max_cache.pop(str(path), None)
+                raise SliceIOError(
+                    "Existing working label is unreadable or has the wrong "
+                    "shape. It was left untouched and no empty replacement "
+                    "was created."
+                ) from open_exc
             _drop_stale_label_handles(path)
             _label_max_cache.pop(str(path), None)
-            # Never silently destroy a broken working copy — move it aside so
-            # raw/header recovery or a filesystem snapshot restore is still
-            # possible (see _quarantine_corrupt).
-            _quarantine_corrupt(path)
 
     if need_recreate:
+        if path.exists():
+            _preserve_recovery_backup(path)
         mm = _create_label_memmap(path, shape, seed=seed)
     # else: mm already opened successfully above
 

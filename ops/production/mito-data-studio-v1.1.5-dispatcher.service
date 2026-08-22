@@ -7,7 +7,7 @@ Requires=docker.service
 Type=simple
 User=mito-production-v11
 Group=mito-production-v11
-WorkingDirectory=/home/weidf/shenb/mito-data-studio-production-v1.1.5/backend
+WorkingDirectory=/home/weidf/shenb/mito-data-studio-production-v1.1.5
 EnvironmentFile=/home/weidf/shenb/mito-data-studio-production-v1.1.5/.env
 ExecStart=/home/weidf/shenb/mito-data-studio-production-v1.1.5/venv/bin/python manage.py run_processing_dispatcher --interval 5 --max-new 2 --job-type build_pyramid
 Restart=always
@@ -22,7 +22,9 @@ ReadOnlyPaths=/home/weidf/shenb/mito-data-studio-validation-source-v1.1.0
 ReadWritePaths=/home/weidf/shenb/mito-data-studio-production-v1.1.5/var/data
 ReadWritePaths=/home/weidf/shenb/mito-data-studio-production-v1.1.5/logs
 ReadWritePaths=/home/weidf/shenb/mito-data-studio-production-v1.1.5/run
-UMask=0027
+# Match the web process so pyramid/cache artifacts never acquire narrower
+# permissions than uploaded and annotated data.
+UMask=0002
 
 [Install]
 WantedBy=multi-user.target

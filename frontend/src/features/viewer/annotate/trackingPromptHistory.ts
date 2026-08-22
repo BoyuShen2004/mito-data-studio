@@ -54,11 +54,12 @@ export function restoreTrackingPromptGeometry(
       return { ...child, seeds: cloneSeeds(savedChild.seeds) };
     });
     if (!restoredAny) return prompt;
-    const zs = subclasses.flatMap((child) => child.seeds.map((seed) => seed.z));
+    // Prompt Undo/Redo is scoped to seed geometry. The explicit Start/End range
+    // is a separate, deliberate choice and is deliberately left alone — undoing
+    // a brush stroke must not also move the propagation bounds.
     return {
       ...prompt,
       subclasses,
-      z_range: zs.length ? [Math.min(...zs), Math.max(...zs)] : [0, 0],
       status: subclasses.some((child) => child.seeds.length) ? "ready" : "draft",
     };
   });

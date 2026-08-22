@@ -182,3 +182,96 @@ describe("AssignmentPlanEditor team-first assignment", () => {
     expect(within(screen.getByLabelText("Assignee for mito-volume")).getByRole("option", { name: "outsider" })).toBeTruthy();
   });
 });
+
+describe("AssignmentPlanEditor annotation time column", () => {
+  const mount = () =>
+    render(
+      <AssignmentPlanEditor
+        projectId={7}
+        projectTitle="Mito Project"
+        workingTeamId={null}
+      />,
+    );
+
+  const openDetails = async () => {
+    await screen.findByLabelText("Working team");
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  };
+
+  const withTime = (annotation_time: unknown) => {
+    taskApi.listPlanRows.mockReset().mockResolvedValue({
+      created_tasks: 0,
+      skipped_volumes: 0,
+      entries: [{ ...row, annotation_time }],
+    });
+  };
+
+  beforeEach(() => {
+    taskApi.listPlanRows.mockReset().mockResolvedValue({
+      created_tasks: 0,
+      skipped_volumes: 0,
+      entries: [row],
+    });
+    collaborationApi.getCollaboration.mockReset().mockResolvedValue({
+      institutions: [],
+      users: [{ id: 10, username: "eligible-ann", role: "annotator" }],
+      teams: [
+        { id: 3, name: "Eligible Team", members: [{ user_id: 10, username: "eligible-ann" }] },
+      ],
+    });
+  });
+
+  it("puts a compact Time field immediately right of Instructions", async () => {
+    withTime({ tracked: true, seconds: 8040, display: "2h 14m" });
+    const { container } = mount();
+    await openDetails();
+
+    const grid = container.querySelector(".plan-detail-grid") as HTMLElement;
+    const labels = Array.from(grid.children).map(
+      (cell) => cell.querySelector("span")?.textContent,
+    );
+    expect(labels).toContain("Time");
+    // Directly after Instructions, and before the Annotations actions.
+    expect(labels.indexOf("Time")).toBe(labels.indexOf("Instructions") + 1);
+    expect(labels.indexOf("Time")).toBeLessThan(labels.indexOf("Annotations"));
+    expect(within(grid).getByText("2h 14m")).toBeTruthy();
+  });
+
+  it("keeps the Time column the narrowest in the row", () => {
+    // jsdom lays nothing out, so the width promise is asserted on the sheet:
+    // Time's track must be narrower than the Instructions track beside it.
+    const grid = css.match(/\.plan-detail-grid \{[^}]*\}/s)?.[0] ?? "";
+    const columns = grid.match(/grid-template-columns:([^;]*);/)?.[1] ?? "";
+    const tracks = columns.trim().split(/\)\s+/).map((t) => (t.endsWith(")") ? t : `${t})`));
+    expect(tracks).toHaveLength(6);
+    expect(tracks[3]).toContain("18rem"); // Instructions, the widest
+    expect(tracks[4]).toContain("4.5rem"); // Time, the narrowest
+  });
+
+  it("shows `-` for a legacy-exempt volume rather than a fabricated zero", async () => {
+    withTime({ tracked: false, seconds: null, display: "-" });
+    const { container } = mount();
+    await openDetails();
+    const cell = container.querySelector(".plan-detail-time .annotation-time")!;
+    expect(cell.textContent).toBe("-");
+    expect(cell.className).toContain("annotation-time-unknown");
+    expect(cell.getAttribute("title")).toMatch(/before time tracking/);
+  });
+
+  it("shows 0m for an eligible volume nobody has annotated yet", async () => {
+    withTime({ tracked: true, seconds: 0, display: "0m" });
+    const { container } = mount();
+    await openDetails();
+    const cell = container.querySelector(".plan-detail-time .annotation-time")!;
+    expect(cell.textContent).toBe("0m");
+    expect(cell.className).not.toContain("annotation-time-unknown");
+  });
+
+  it("is read-only — it adds no control to the plan form", async () => {
+    withTime({ tracked: true, seconds: 60, display: "1m" });
+    const { container } = mount();
+    await openDetails();
+    const time = container.querySelector(".plan-detail-time") as HTMLElement;
+    expect(time.querySelector("input, select, textarea, button")).toBeNull();
+  });
+});

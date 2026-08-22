@@ -5,8 +5,8 @@ mito-data-studio, with its original licence.
 
 **Status of this file:** authoritative and current as of 2026-08-01.
 Every entry must be added *before* the corresponding code is committed.
-The machine-readable companion is
-[`docs/webknossos-transformation/attribution/REGISTER.md`](docs/webknossos-transformation/attribution/REGISTER.md).
+The concise companion register is
+[`docs/attribution.md`](docs/attribution.md).
 
 The project root `LICENSE` grants no permission for first-party code. Third-party
 components remain governed by the licenses recorded here and shipped beside
@@ -71,7 +71,7 @@ Per decision **D3**, direct reuse is permitted where it delivers substantial
 engineering benefit *and* provenance is documented. Before any such code is
 committed, all of the following must already be true:
 
-1. An entry exists in this file **and** in `attribution/REGISTER.md`, naming
+1. An entry exists in this file **and** in `docs/attribution.md`, naming
    the upstream path and commit.
 2. Original copyright headers are preserved **verbatim** — never removed,
    never altered.
@@ -107,11 +107,9 @@ obtain their own review before distribution or public deployment.
 ## 3. Python and JavaScript dependencies
 
 Ordinary dependencies declared in `requirements-release.txt` and
-`frontend/package-lock.json` retain their own licences. The complete locked,
-installed inventory and the audit method are recorded in
-`docs/releases/v1.1.0-license-provenance.md`; run
-`ops/release/audit_dependency_licenses.py` from the release venv after
-`npm ci` to reproduce the machine-readable inventory. The v1.1.0 audit covers
+`frontend/package-lock.json` retain their own licences. Run
+`ops/release/audit_dependency_licenses.py` from the release environment after
+`npm ci` to reproduce the machine-readable inventory. The v1.1.0 audit covered
 55 Python distributions and 181 JavaScript packages and found no package with
 missing licence metadata or licence file.
 

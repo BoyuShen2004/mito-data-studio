@@ -3,7 +3,7 @@
 # One container serves everything: gunicorn runs the Django API and WhiteNoise
 # serves the compiled SPA from the same process, so there is no nginx sidecar
 # to configure. Put a TLS terminator in front of it in production (see
-# DOCKER.md); the container itself speaks plain HTTP on $PORT.
+# docs/docker.md); the container itself speaks plain HTTP on $PORT.
 #
 # Build profiles — pick with --build-arg MITO_DEPS=<core|ai-cpu|ai-gpu>:
 #
@@ -38,7 +38,7 @@ COPY frontend/ ./
 # enforces as a hard contract: it refuses to start without a metrics bearer
 # token, SAM2 + EfficientSAM weights of exact byte sizes, and specific CUDA
 # device assignments. The SPA build and the backend profile must always agree —
-# see the "Upgrade profiles" section of DOCKER.md.
+# see the "Upgrade profiles" section of docs/docker.md.
 ARG FRONTEND_BUILD_SCRIPT=build
 RUN npm run "${FRONTEND_BUILD_SCRIPT}"
 
@@ -82,13 +82,14 @@ RUN apt-get update \
 COPY --from=pydeps /opt/venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH=/app/backend \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=config.settings
 
 # Unprivileged, with a fixed uid/gid so bind-mounted host directories have a
 # predictable owner. Override at build time to match the host user that owns
-# your data directory (see DOCKER.md § "File ownership").
+# your data directory (see docs/docker.md § "File ownership").
 ARG APP_UID=1000
 ARG APP_GID=1000
 RUN groupadd --gid "${APP_GID}" app \
@@ -97,6 +98,7 @@ RUN groupadd --gid "${APP_GID}" app \
 WORKDIR /app
 
 COPY --chown=app:app backend/ ./backend/
+COPY --chown=app:app manage.py ./manage.py
 COPY --chown=app:app --from=frontend /build/frontend/dist ./frontend/dist
 COPY --chown=app:app ops/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

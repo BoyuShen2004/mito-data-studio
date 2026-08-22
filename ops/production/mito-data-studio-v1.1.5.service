@@ -7,9 +7,9 @@ Requires=docker.service
 Type=notify
 User=mito-production-v11
 Group=mito-production-v11
-WorkingDirectory=/home/weidf/shenb/mito-data-studio-production-v1.1.5/backend
+WorkingDirectory=/home/weidf/shenb/mito-data-studio-production-v1.1.5
 EnvironmentFile=/home/weidf/shenb/mito-data-studio-production-v1.1.5/.env
-ExecStart=/home/weidf/shenb/mito-data-studio-production-v1.1.5/venv/bin/python -m gunicorn config.wsgi:application --bind 127.0.0.1:18191 --workers 3 --threads 2 --timeout 300 --worker-tmp-dir /home/weidf/shenb/mito-data-studio-production-v1.1.5/run --no-control-socket --access-logfile /home/weidf/shenb/mito-data-studio-production-v1.1.5/logs/access.log --error-logfile /home/weidf/shenb/mito-data-studio-production-v1.1.5/logs/error.log --pid /home/weidf/shenb/mito-data-studio-production-v1.1.5/run/gunicorn.pid --capture-output
+ExecStart=/home/weidf/shenb/mito-data-studio-production-v1.1.5/venv/bin/python -m gunicorn --chdir /home/weidf/shenb/mito-data-studio-production-v1.1.5/backend config.wsgi:application --bind 127.0.0.1:18191 --workers 3 --threads 2 --timeout 300 --worker-tmp-dir /home/weidf/shenb/mito-data-studio-production-v1.1.5/run --no-control-socket --access-logfile /home/weidf/shenb/mito-data-studio-production-v1.1.5/logs/access.log --error-logfile /home/weidf/shenb/mito-data-studio-production-v1.1.5/logs/error.log --pid /home/weidf/shenb/mito-data-studio-production-v1.1.5/run/gunicorn.pid --capture-output
 ExecReload=/bin/kill -HUP $MAINPID
 KillSignal=SIGTERM
 TimeoutStopSec=330
@@ -26,7 +26,9 @@ ReadOnlyPaths=/home/weidf/shenb/mito-data-studio-validation-source-v1.1.0
 ReadWritePaths=/home/weidf/shenb/mito-data-studio-production-v1.1.5/var/data
 ReadWritePaths=/home/weidf/shenb/mito-data-studio-production-v1.1.5/logs
 ReadWritePaths=/home/weidf/shenb/mito-data-studio-production-v1.1.5/run
-UMask=0027
+# Data authorization lives in the application.  Host files remain readable,
+# while only the service owner/group can mutate them.
+UMask=0002
 
 [Install]
 WantedBy=multi-user.target

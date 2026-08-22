@@ -26,8 +26,16 @@ class LocalTrackingProvider(TrackingProvider):
             for seed_z, seed_mask in seed_slices.items():
                 mask = np.asarray(seed_mask, dtype=bool)
                 per_z[seed_z] = mask
-                # Carry the seed to neighbours while it still overlaps foreground.
-                self._carry(request.image, mask, seed_z, z_lo, seed_z - 1, -1, per_z)
+                # Carry the seed to neighbours while it still overlaps
+                # foreground — backward from the seed down to ``z_lo``, forward
+                # up to ``z_hi``. ``_carry`` walks ``start`` toward ``stop``, so
+                # the backward call starts at ``seed_z - 1``; passing ``z_lo``
+                # as the start made its loop condition false immediately and
+                # silently skipped backward propagation entirely. That was
+                # invisible while the range was derived from the seed bounds
+                # (``z_lo`` *was* the earliest seed), and became visible as soon
+                # as the annotator could choose a Start below their first seed.
+                self._carry(request.image, mask, seed_z, seed_z - 1, z_lo, -1, per_z)
                 self._carry(request.image, mask, seed_z, seed_z + 1, z_hi, +1, per_z)
             result.masks[branch_id] = per_z
         return result

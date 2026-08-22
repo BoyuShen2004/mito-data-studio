@@ -128,6 +128,19 @@ describe("AnnotationCanvas region features", () => {
     expect(labels[jump + 2]).toBe("Fit width");
   });
 
+  it("keeps the source image visible when the label layer fails", async () => {
+    api.getLabelIds.mockRejectedValueOnce(new Error("working-label lock denied"));
+    mount();
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Label layer unavailable: working-label lock denied",
+    );
+    await waitFor(() => {
+      const image = document.querySelector(".canvas-stage img") as HTMLImageElement;
+      expect(image?.getAttribute("src")).toBe("blob:/image/3/z/0");
+    });
+  });
+
   it("jumps the current axis to the nearest slice that has region", async () => {
     mount();
     const button = await screen.findByRole("button", { name: /jump to region/i });

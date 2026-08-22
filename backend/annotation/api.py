@@ -54,6 +54,7 @@ from .services import (
     reset_working_labels_to_registered,
     get_visualization_state,
     latest_submission_ids,
+    TRACKING_PROMPTS_VERSION,
     list_tracking_prompts,
     tracking_pending_review,
     list_assignment_plan_rows,
@@ -415,9 +416,12 @@ class MyCompletedTasksView(APIView):
             annotator=request.user
         ).select_related(
             "task", "task__volume", "task__volume__dataset", "task__project",
-            "annotator",
+            "annotator", "transferred_to",
         )
         for withdrawal in withdrawals:
+            transferred = (
+                withdrawal.outcome == AssignmentWithdrawal.Outcome.TRANSFERRED
+            )
             item = dict(
                 AnnotationTaskSerializer(
                     withdrawal.task, context={"request": request}
@@ -425,7 +429,7 @@ class MyCompletedTasksView(APIView):
             )
             item.update({
                 "history_key": f"withdrawal-{withdrawal.id}",
-                "status": "cancelled",
+                "status": "transferred" if transferred else "cancelled",
                 "assigned_to": withdrawal.annotator_id,
                 "assigned_to_username": (
                     withdrawal.annotator.get_username()
@@ -435,8 +439,14 @@ class MyCompletedTasksView(APIView):
                 "can_annotate": False,
                 "annotation_locked": False,
                 "assignment_withdrawn": True,
+                "assignment_transferred": transferred,
                 "withdrawal_reason": withdrawal.reason,
                 "withdrawal_team": withdrawal.team_name,
+                "transferred_to": withdrawal.transferred_to_id,
+                "transferred_to_username": (
+                    withdrawal.transferred_to.get_username()
+                    if withdrawal.transferred_to else ""
+                ),
                 "withdrawn_at": withdrawal.withdrawn_at,
             })
             data.append(item)
@@ -865,18 +875,39 @@ def _decode_seeds(raw):
 
 
 def _decode_tracking_group(raw):
-    """Turn one API queue/group record into explicit local subclass masks."""
+    """Turn one API queue/group record into explicit local subclass masks.
+
+    The propagation range comes from the record's explicit inclusive
+    ``start_z``/``end_z`` (falling back to a legacy ``z_range`` for queues saved
+    before that schema) and is **never** recomputed from the seed layers — the
+    service layer validates it, including that every seed lies inside it. A
+    record with neither is passed through with ``z_range=None`` so the service
+    raises the "Start and End layers are required" error rather than this
+    decoder inventing a range.
+    """
     subclasses = {}
     for subclass in raw.get("subclasses", []):
         local_index = int(subclass.get("index", 0))
         if local_index < 1 or local_index in subclasses:
             raise ValueError("Subclass indices must be unique positive integers")
         subclasses[local_index] = _decode_seeds(subclass.get("seeds"))
-    seed_zs = [z for seeds in subclasses.values() for z in seeds]
+    start_z, end_z = raw.get("start_z"), raw.get("end_z")
+    if start_z is None or end_z is None:
+        legacy = raw.get("z_range")
+        if isinstance(legacy, (list, tuple)) and len(legacy) == 2:
+            start_z, end_z = legacy[0], legacy[1]
+    try:
+        z_range = (
+            None
+            if start_z is None or end_z is None
+            else [int(start_z), int(end_z)]
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Start and End layers must be whole numbers.") from exc
     return {
         "parent_id": int(raw.get("parent_id", 0)),
         "branch_seeds": subclasses,
-        "z_range": [min(seed_zs), max(seed_zs)] if seed_zs else [0, 0],
+        "z_range": z_range,
     }
 
 
@@ -954,7 +985,7 @@ class TaskTrackingPromptsView(APIView):
         if denied:
             return denied
         return Response({
-            "version": 1,
+            "version": TRACKING_PROMPTS_VERSION,
             "items": list_tracking_prompts(task),
             "pending_review": tracking_pending_review(task),
         })
@@ -967,7 +998,11 @@ class TaskTrackingPromptsView(APIView):
             prompts = replace_tracking_prompts(task, list(request.data.get("items", [])))
         except (TypeError, ValueError) as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"version": 1, "items": prompts, "pending_review": None})
+        return Response({
+            "version": TRACKING_PROMPTS_VERSION,
+            "items": prompts,
+            "pending_review": None,
+        })
 
     def put(self, request, pk):
         task, denied = self._task(request, pk, mutate=True)
@@ -1607,6 +1642,20 @@ class TaskResetLabelsView(APIView):
             result = reset_working_labels_to_registered(task)
         except (ValueError, SliceIOError, OSError) as exc:
             return Response({"detail": str(exc)}, status=400)
+        from accounts.models import AuditEvent
+        from core.choices import AuditVerb
+
+        AuditEvent.objects.create(
+            actor=request.user,
+            verb=AuditVerb.TASK_LABELS_RESET,
+            target_type="annotation_task",
+            target_id=str(task.pk),
+            metadata={
+                "volume_id": task.volume_id,
+                "raster_backup": result.get("raster_backup", ""),
+                "lifecycle_backups": result.get("lifecycle_backups", []),
+            },
+        )
         return Response(result)
 
 

@@ -8,6 +8,7 @@ const COLORS: Record<string, string> = {
   rejected: "badge-red",
   revision_requested: "badge-amber",
   cancelled: "badge-red",
+  transferred: "badge-blue",
   // qc
   not_run: "badge-gray",
   passed: "badge-green",

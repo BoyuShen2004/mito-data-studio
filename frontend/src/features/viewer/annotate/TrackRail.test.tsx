@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { TrackingPrompt } from "../../../api/viewer";
+import type { TrackingPrompt, TrackResult } from "../../../api/viewer";
 import TrackRail from "./TrackRail";
 
 function renderRail(
@@ -13,6 +13,8 @@ function renderRail(
   progressSaved = false,
   tracking = false,
   reviewAction: "confirm" | "reject" | null = null,
+  layerCount = 20,
+  lastResults: TrackResult[] = [],
 ) {
   const onPromptTool = vi.fn();
   const onSaveProgress = vi.fn();
@@ -21,6 +23,7 @@ function renderRail(
   const onRemovePrompt = vi.fn();
   const onRemoveChild = vi.fn();
   const onReview = vi.fn();
+  const onRange = vi.fn();
   const view = render(<TrackRail
     hidden={false} disabled={false} activeId={50} activeColorCss="#fff"
     tracking={tracking} trackingParentIds={tracking ? [50, 51] : []}
@@ -31,6 +34,7 @@ function renderRail(
     pendingReview={pendingReview} promptUndoCount={promptUndoCount} promptRedoCount={promptRedoCount}
     reviewAction={reviewAction}
     overwriteMode="overwrite_empty"
+    layerCount={layerCount} lastResults={lastResults} onRange={onRange}
     onSelectPrompt={vi.fn()}
     onSelectChild={vi.fn()} onQueueActive={vi.fn()} onAddChild={vi.fn()}
     onPromptTool={onPromptTool} onSaveProgress={onSaveProgress} onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()}
@@ -40,7 +44,7 @@ function renderRail(
     onOverwriteMode={vi.fn()}
     onReview={onReview}
   />);
-  return { onPromptTool, onSaveProgress, onPromptUndo, onPromptRedo, onRemovePrompt, onRemoveChild, onReview, ...view };
+  return { onPromptTool, onSaveProgress, onPromptUndo, onPromptRedo, onRemovePrompt, onRemoveChild, onReview, onRange, ...view };
 }
 
 describe("TrackRail", () => {
@@ -48,6 +52,8 @@ describe("TrackRail", () => {
     const prompts = Array.from({ length: 25 }, (_, i): TrackingPrompt => ({
       parent_id: i + 1,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }));
@@ -62,6 +68,8 @@ describe("TrackRail", () => {
     const { onPromptTool } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }]);
@@ -76,6 +84,8 @@ describe("TrackRail", () => {
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }], "brush");
@@ -90,6 +100,8 @@ describe("TrackRail", () => {
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }]);
@@ -105,6 +117,8 @@ describe("TrackRail", () => {
     const { onPromptTool, onSaveProgress } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 3, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 3,
+      end_z: 3,
       z_range: [3, 3],
       status: "ready",
     }], "box");
@@ -119,6 +133,8 @@ describe("TrackRail", () => {
     const { onPromptTool } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 3, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 3,
+      end_z: 3,
       z_range: [3, 3],
       status: "ready",
     }], null, null, 0, 0, true);
@@ -131,6 +147,8 @@ describe("TrackRail", () => {
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 0,
       z_range: [0, 0],
       status: "draft",
     }]);
@@ -142,6 +160,8 @@ describe("TrackRail", () => {
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 3, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 3,
+      end_z: 3,
       z_range: [3, 3],
       status: "running",
     }], null, null, 0, 0, false, true);
@@ -156,6 +176,8 @@ describe("TrackRail", () => {
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 0,
       z_range: [0, 0],
       status: "draft",
     }], "point");
@@ -205,6 +227,8 @@ describe("TrackRail", () => {
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }], "box");
@@ -218,6 +242,8 @@ describe("TrackRail", () => {
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 0, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "ready",
     }]);
@@ -225,7 +251,10 @@ describe("TrackRail", () => {
     expect(actions.querySelectorAll("button")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Propagate selected" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Propagate all (1)" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Propagate selected" }).getAttribute("title")).toContain("every child-class seed");
+    // When it is enabled the tooltip describes the action; when it is blocked
+    // it says exactly what is missing instead (see the gating test below).
+    expect(screen.getByRole("button", { name: "Propagate selected" }).getAttribute("title"))
+      .toContain("across its Start–End range");
     expect(screen.queryByText(/One-click/)).toBeNull();
     expect(screen.queryByText(/Paint directly on the image/)).toBeNull();
   });
@@ -253,7 +282,8 @@ describe("TrackRail", () => {
       promptBrushSize={8} promptEraserSize={12} trackError={null} axisIsZ prompts={[]}
       selectedParentId={null} selectedChildIndex={null} pendingReview={null}
       reviewAction={null} promptUndoCount={0} promptRedoCount={0}
-      overwriteMode="overwrite_empty" onSelectPrompt={vi.fn()} onSelectChild={vi.fn()}
+      overwriteMode="overwrite_empty" layerCount={20} lastResults={[]} onRange={vi.fn()}
+      onSelectPrompt={vi.fn()} onSelectChild={vi.fn()}
       onQueueActive={vi.fn()} onAddChild={vi.fn()} onPromptTool={vi.fn()}
       onSaveProgress={vi.fn()} onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()}
       onClearSeed={vi.fn()} onRemoveChild={vi.fn()} onRemovePrompt={vi.fn()}
@@ -268,25 +298,178 @@ describe("TrackRail", () => {
     expect(onOverwriteMode).toHaveBeenCalledWith("overwrite_all");
   });
 
-  it("derives Start and End layer from all committed child seeds", () => {
+  it("shows the explicit Start/End as editable 1-based layer fields", () => {
+    // The API stores 0-based z; the viewer shows 1-based layers everywhere
+    // else, so 0..11 must read as layers 1 and 12 — not 0 and 11.
     renderRail([{
       parent_id: 50,
       subclasses: [
         { index: 1, seeds: [{ z: 8, shape: [2, 2], rle: [[0, 1]] }] },
-        { index: 2, seeds: [{ z: 3, shape: [2, 2], rle: [[1, 1]] }, { z: 12, shape: [2, 2], rle: [[2, 1]] }] },
+        { index: 2, seeds: [{ z: 3, shape: [2, 2], rle: [[1, 1]] }] },
       ],
-      z_range: [0, 99],
+      start_z: 0,
+      end_z: 11,
+      z_range: [0, 11],
       status: "ready",
     }]);
+    const start = screen.getByRole("textbox", { name: "Start layer" }) as HTMLInputElement;
+    const end = screen.getByRole("textbox", { name: "End layer" }) as HTMLInputElement;
+    expect(start.value).toBe("1");
+    expect(end.value).toBe("12");
+    // The seed layers (3 and 8) are deliberately not what the fields show.
+    expect(start.value).not.toBe("4");
+    expect(end.value).not.toBe("9");
+  });
+
+  it("shows a placeholder range when no parent is selected", () => {
+    // An editable "1" here would read as a range the annotator had chosen.
+    renderRail([]);
     const range = screen.getByRole("group", { name: "Selected parent propagation range" });
-    expect(range.textContent).toContain("Start layer 3");
-    expect(range.textContent).toContain("End layer 12");
+    expect(range.textContent).toContain("Start layer");
+    expect(range.textContent).toContain("—");
+    expect(screen.queryByRole("textbox", { name: "Start layer" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "End layer" })).toBeNull();
+  });
+
+  it("commits a typed layer number back as a 0-based z", () => {
+    const { onRange } = renderRail([{
+      parent_id: 50,
+      subclasses: [{ index: 1, seeds: [{ z: 3, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 3,
+      end_z: 3,
+      z_range: [3, 3],
+      status: "ready",
+    }]);
+    const end = screen.getByRole("textbox", { name: "End layer" });
+    fireEvent.change(end, { target: { value: "10" } });
+    fireEvent.blur(end);
+    expect(onRange).toHaveBeenCalledWith(50, 3, 9);
+  });
+
+  it("clamps a typed layer to the volume depth", () => {
+    const { onRange } = renderRail(
+      [{
+        parent_id: 50,
+        subclasses: [{ index: 1, seeds: [{ z: 3, shape: [2, 2], rle: [[0, 1]] }] }],
+        start_z: 3,
+        end_z: 3,
+        z_range: [3, 3],
+        status: "ready",
+      }],
+      null, null, 0, 0, false, false, null,
+      6, // a six-layer volume: layer 99 cannot exist
+    );
+    const end = screen.getByRole("textbox", { name: "End layer" });
+    fireEvent.change(end, { target: { value: "99" } });
+    fireEvent.blur(end);
+    expect(onRange).toHaveBeenCalledWith(50, 3, 5);
+  });
+
+  it("blocks Propagate until the range and prompts are valid", () => {
+    const base = {
+      parent_id: 50,
+      subclasses: [{
+        index: 1,
+        seeds: [{ z: 3, shape: [2, 2] as [number, number], rle: [[0, 1]] as [number, number][] }],
+      }],
+      status: "ready" as const,
+    };
+    const propagate = () =>
+      screen.getByRole("button", { name: "Propagate selected" }) as HTMLButtonElement;
+    const all = () => screen.getByRole("button", { name: /^Propagate all/ }) as HTMLButtonElement;
+
+    // No range chosen at all.
+    const missing = renderRail([{ ...base, start_z: null, end_z: null, z_range: [0, 0] }]);
+    expect(propagate().disabled).toBe(true);
+    expect(all().textContent).toBe("Propagate all (0)");
+    expect(screen.getByText(/Set both Start and End/)).toBeTruthy();
+    missing.unmount();
+
+    // Reversed range.
+    const reversed = renderRail([{ ...base, start_z: 8, end_z: 2, z_range: [8, 2] }]);
+    expect(propagate().disabled).toBe(true);
+    expect(screen.getByText(/must not be before Start layer/)).toBeTruthy();
+    reversed.unmount();
+
+    // A seed outside the chosen range, reported in layer numbers.
+    const outside = renderRail([{ ...base, start_z: 5, end_z: 8, z_range: [5, 8] }]);
+    expect(propagate().disabled).toBe(true);
+    expect(screen.getByText(/Seed layer 4 falls? outside 6–9/)).toBeTruthy();
+    outside.unmount();
+
+    // Seeds but no range vs. a range but no seeds — both blocked.
+    const seedless = renderRail([{
+      ...base, subclasses: [{ index: 1, seeds: [] }], start_z: 0, end_z: 9, z_range: [0, 9],
+    }]);
+    expect(propagate().disabled).toBe(true);
+    expect(screen.getByText(/Draw at least one child-class seed/)).toBeTruthy();
+    seedless.unmount();
+
+    // Valid: one seed inside a wider inclusive range.
+    renderRail([{ ...base, start_z: 0, end_z: 9, z_range: [0, 9] }]);
+    expect(propagate().disabled).toBe(false);
+    expect(all().disabled).toBe(false);
+    expect(all().textContent).toBe("Propagate all (1)");
+  });
+
+  it("summarises inferred children, merges and ambiguities before Confirm", () => {
+    renderRail(
+      [{
+        parent_id: 50,
+        subclasses: [{ index: 1, seeds: [{ z: 0, shape: [2, 2], rle: [[0, 1]] }] }],
+        start_z: 0, end_z: 5, z_range: [0, 5], status: "pending",
+      }],
+      null,
+      { parent_ids: [50], status: "pending_review" },
+      0, 0, false, false, null, 20,
+      [{
+        final_id: 50,
+        branch_ids: [50, 91, 92],
+        group: {
+          group_id: 50,
+          branch_ids: [50, 91, 92],
+          final_id: 50,
+          seed_z: 0,
+          seed_zs: [0],
+          start_z: 0,
+          end_z: 5,
+          inferred_branches: [
+            { branch_key: 1, subclass_index: 1, seed_zs: [0, 4] },
+            { branch_key: 2, subclass_index: 1, seed_zs: [0] },
+          ],
+          merge_events: [
+            { loser_branch: 2, survivor_branch: 1, contact_z: 3, reason: "smaller_branch" },
+          ],
+          terminated_at: { "2": 3 },
+          warnings: [{ code: "ambiguous_child_merge", message: "Children 1 and 2 are ambiguous." }],
+        },
+      }],
+    );
+    const summary = screen.getByRole("region", { name: "Track propagation summary" });
+    expect(summary.textContent).toContain("2 inferred children");
+    expect(summary.textContent).toContain("layers 1–6");
+    // Seed layers and the merge layer are shown 1-based, like everything else.
+    expect(summary.textContent).toContain("Child 1 seeded on layers 1, 5");
+    expect(summary.textContent).toContain("Child 2 seeded on layer 1");
+    expect(summary.textContent).toContain("ends at layer 4");
+    expect(summary.textContent).toContain("Child 2 merged into child 1 at layer 4");
+    expect(summary.textContent).toContain("Children 1 and 2 are ambiguous.");
+    // The annotator is never asked to manage the temporary branch ids.
+    expect(summary.textContent).not.toContain("91");
+    expect(summary.textContent).not.toContain("92");
+  });
+
+  it("shows no summary before the first propagation", () => {
+    renderRail([]);
+    expect(screen.queryByRole("region", { name: "Track propagation summary" })).toBeNull();
   });
 
   it("offers Confirm/Reject for a pending parent preview and blocks propagation", () => {
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 4, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 4,
+      end_z: 4,
       z_range: [4, 4],
       status: "pending",
     }], null, { parent_ids: [50], status: "pending_review" });
@@ -331,6 +514,8 @@ describe("TrackRail", () => {
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 4, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 4,
+      end_z: 4,
       z_range: [4, 4],
       status: "pending",
     }]);
@@ -342,6 +527,8 @@ describe("TrackRail", () => {
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }]);
@@ -356,6 +543,8 @@ describe("TrackRail", () => {
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }]);
@@ -373,6 +562,8 @@ describe("TrackRail", () => {
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }], "brush");
@@ -388,6 +579,8 @@ describe("TrackRail", () => {
     const { container, onRemovePrompt } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
       z_range: [0, 9],
       status: "draft",
     }]);
@@ -407,6 +600,8 @@ describe("TrackRail", () => {
     const { container, onRemoveChild } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 7, shape: [2, 2], rle: [[0, 1]] }] }],
+      start_z: 7,
+      end_z: 7,
       z_range: [7, 7],
       status: "ready",
     }]);
@@ -436,6 +631,7 @@ describe("TrackRail", () => {
       pendingReview={{ parent_ids: [50], status: "pending_review" }}
       promptUndoCount={0} promptRedoCount={0} reviewAction={null}
       overwriteMode="overwrite_empty"
+      layerCount={20} lastResults={[]} onRange={vi.fn()}
       onSelectPrompt={vi.fn()} onSelectChild={vi.fn()} onQueueActive={vi.fn()}
       onAddChild={vi.fn()} onPromptTool={vi.fn()} onSaveProgress={vi.fn()}
       onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()} onClearSeed={vi.fn()}

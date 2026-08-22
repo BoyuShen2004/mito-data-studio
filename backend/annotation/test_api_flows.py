@@ -10,7 +10,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import AnnotatorProfile, Institution, Team, TeamMembership, UserProfile
 from accounts.teams import grant_project_team
-from annotation.models import AnnotationTask
+from annotation.models import AnnotationTask, AssignmentWithdrawal
 from annotation.services import create_whole_volume_task
 from core.choices import UserRole
 from projects.models import Project
@@ -457,7 +457,7 @@ class DataRegistrationFlowTests(APITestCase):
         volume.save()
         task = create_whole_volume_task(volume)
         self.assertIsNone(task.assigned_to_id)
-        self._working_team(project)
+        team = self._working_team(project)
 
         # Manager assigns it to the annotator.
         self._auth(user=self.manager)
@@ -471,7 +471,37 @@ class DataRegistrationFlowTests(APITestCase):
         self.assertEqual(task.assigned_to_id, self.annotator.id)
         self.assertEqual(task.status, "assigned")
 
+        # A direct transfer keeps the canonical task/working volume and gives
+        # the former annotator an immutable Done-history row.
+        successor = User.objects.create_user("successor", password="x")
+        UserProfile.objects.update_or_create(
+            user=successor, defaults={"role": UserRole.ANNOTATOR}
+        )
+        AnnotatorProfile.objects.create(user=successor)
+        TeamMembership.objects.create(team=team, user=successor)
+        res = self.client.post(
+            reverse("api-task-assign", args=[task.id]),
+            {"annotator_id": successor.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        task.refresh_from_db()
+        self.assertEqual(task.assigned_to_id, successor.id)
+        transfer = AssignmentWithdrawal.objects.get(
+            task=task, annotator=self.annotator
+        )
+        self.assertEqual(transfer.outcome, "transferred")
+        self.assertEqual(transfer.transferred_to_id, successor.id)
+
+        self._auth(user=self.annotator)
+        history = self.client.get(reverse("api-my-completed-tasks"))
+        self.assertEqual(history.status_code, 200, history.data)
+        self.assertEqual(history.data[0]["status"], "transferred")
+        self.assertTrue(history.data[0]["assignment_transferred"])
+        self.assertEqual(history.data[0]["transferred_to_username"], "successor")
+
         # Reassigning to null unassigns the same task (no duplicate).
+        self._auth(user=self.manager)
         res = self.client.post(
             reverse("api-task-assign", args=[task.id]),
             {"annotator_id": None},

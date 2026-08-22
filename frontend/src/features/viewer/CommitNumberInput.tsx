@@ -9,6 +9,8 @@ interface Props {
   suffix?: string;
   className?: string;
   title?: string;
+  /** Accessible name, when the surrounding label text is not enough. */
+  ariaLabel?: string;
   /** Width hint for the text field. */
   widthCh?: number;
 }
@@ -26,6 +28,7 @@ export default function CommitNumberInput({
   suffix,
   className = "commit-num",
   title,
+  ariaLabel,
   widthCh = 4,
 }: Props) {
   const [draft, setDraft] = useState(String(value));
@@ -53,6 +56,7 @@ export default function CommitNumberInput({
         className={className}
         value={draft}
         title={title}
+        aria-label={ariaLabel}
         style={{ width: `${widthCh}ch` }}
         onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
         onBlur={commit}

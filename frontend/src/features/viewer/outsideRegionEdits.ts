@@ -19,7 +19,7 @@
  * It is sparse (a flat index plus the baseline value per pixel) rather than a
  * second full plane. A full `Int32Array` per pending slice is what turned an
  * unsaved-edit buffer into hundreds of megabytes and cost an annotator their
- * afternoon — see the data-loss incident in `DEPLOYMENT.md`. Outside strokes
+ * afternoon — see the data-safety rules in `docs/deployment.md`. Outside strokes
  * are small; this stays proportional to them.
  *
  * ## What the record is used for

@@ -118,6 +118,37 @@ export interface SeedInput {
   shape: [number, number];
 }
 
+/** One structured ambiguity the automatic tracking logic refused to guess at. */
+export interface TrackWarning {
+  code: "ambiguous_component_association" | "ambiguous_child_merge" | string;
+  message: string;
+  parent_id?: number;
+  z?: number;
+  contact_z?: number;
+  branches?: number[];
+  assigned_branch?: number;
+  rival_branches?: number[];
+  rival_components?: number[];
+  metrics?: Record<string, unknown>;
+}
+
+/** An ephemeral branch the backend inferred from one parent's prompt geometry. */
+export interface InferredBranch {
+  branch_key: number;
+  subclass_index: number;
+  seed_zs: number[];
+  components?: { z: number; component_index: number; area: number; centroid: [number, number] }[];
+}
+
+/** A confirmed child-into-child merge, in whole-volume z. */
+export interface TrackMergeEvent {
+  loser_branch: number;
+  survivor_branch: number;
+  contact_z: number;
+  reason: string;
+  metrics?: Record<string, unknown>;
+}
+
 export interface TrackResult {
   final_id: number;
   branch_ids: number[];
@@ -128,7 +159,18 @@ export interface TrackResult {
     seed_z: number | null;
     seed_zs?: number[];
     subclass_branch_ids?: Record<string, number>;
+    /** Explicit inclusive propagation bounds, as the user chose them. */
+    start_z?: number | null;
+    end_z?: number | null;
+    inferred_branches?: InferredBranch[];
+    branch_provider_ids?: Record<string, number>;
+    merge_events?: TrackMergeEvent[];
+    /** `branch_key -> last layer that branch contributes to`. */
+    terminated_at?: Record<string, number>;
+    warnings?: TrackWarning[];
+    dropped_components?: { z: number; area: number; reason: string }[];
   } | null;
+  warnings?: TrackWarning[];
 }
 
 export type TrackingPromptStatus = "draft" | "ready" | "running" | "pending" | "done" | "error";
@@ -141,6 +183,16 @@ export interface TrackingSubclass {
 export interface TrackingPrompt {
   parent_id: number;
   subclasses: TrackingSubclass[];
+  /**
+   * Explicit, **inclusive** propagation bounds in 0-based API z. The Track rail
+   * shows them as 1-based layer numbers, matching the viewer's z field. `null`
+   * means the annotator has not chosen one yet, which blocks Propagate.
+   *
+   * These are never derived from the seed layers. `z_range` below is a
+   * read-only mirror kept for queues saved before this schema.
+   */
+  start_z: number | null;
+  end_z: number | null;
   z_range: [number, number];
   status: TrackingPromptStatus;
   note?: string;
@@ -158,6 +210,8 @@ export interface TrackBatchResult {
   total: number;
   axis: Axis;
   slices: PlannedLabelSlice[];
+  /** Every group's warnings, flattened and tagged with their `parent_id`. */
+  warnings?: TrackWarning[];
 }
 
 export const trackTaskFork = (

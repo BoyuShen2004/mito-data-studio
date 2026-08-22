@@ -600,17 +600,17 @@ class WorkingLabelRecoveryTests(TestCase):
         self.addCleanup(cm.disable)
         return os.path.join(d, name)
 
-    def test_open_writable_rebuilds_corrupt_file_and_keeps_backup(self):
+    def test_open_writable_leaves_unreadable_file_untouched(self):
         from pathlib import Path
 
         path = Path(self._tmp("labels.tif"))
         with open(path, "wb") as f:
             f.write(b"II*\x00" + b"\x00" * 64)  # non-memmapable garbage
         slice_io.clear_caches()
-        mm = slice_io.open_label_volume_writable(path, (3, 8, 8))
-        self.assertEqual(tuple(mm.shape), (3, 8, 8))
-        self.assertEqual(int(np.asarray(mm).max()), 0)  # rebuilt empty
-        self.assertTrue(path.with_suffix(path.suffix + ".corrupt.bak").exists())
+        before = path.read_bytes()
+        with self.assertRaises(slice_io.SliceIOError):
+            slice_io.open_label_volume_writable(path, (3, 8, 8))
+        self.assertEqual(path.read_bytes(), before)
 
     def test_open_writable_reopens_after_external_atomic_replace(self):
         """A worker must not retain an mmap of the inode another worker replaced."""
@@ -644,16 +644,17 @@ class WorkingLabelRecoveryTests(TestCase):
         mm = slice_io.open_label_volume_writable(path, (3, 8, 8))
         self.assertEqual(int(np.asarray(mm).max()), 9)
 
-    def test_read_label_array_quarantines_unreadable_file(self):
+    def test_read_label_array_leaves_unreadable_file_untouched(self):
         from pathlib import Path
 
         path = Path(self._tmp("labels.tif"))
         with open(path, "wb") as f:
             f.write(b"not a tiff at all")
+        before = path.read_bytes()
         slice_io.clear_caches()
         with self.assertRaises(slice_io.SliceIOError):
             slice_io.read_label_array(path)
-        self.assertTrue(path.with_suffix(path.suffix + ".corrupt.bak").exists())
+        self.assertEqual(path.read_bytes(), before)
 
 
 class MigrateEmbeddingPrefixTests(TestCase):
@@ -981,35 +982,25 @@ class CellablePortApiTests(TestCase):
         with open(owned, "wb") as f:
             f.write(b"II*\x00" + b"\x00" * 64)  # TIFF magic then garbage
 
-    def test_labels_summary_recovers_from_corrupt_working_copy(self):
-        # A planted corrupt working mask must not surface as an uncaught 500;
-        # the recovery path rebuilds a clean empty copy, so summary is 200.
+    def test_labels_summary_refuses_to_replace_corrupt_working_copy(self):
+        # Refresh is read-only and a corrupt draft is evidence, not an empty
+        # template: return a controlled error and leave its bytes in place.
         self._corrupt_working_copy()
-        resp = self._client(self.manager).get(f"/api/tasks/{self.task.id}/labels-summary/")
-        self.assertIn(resp.status_code, (200, 400), resp.content)
-        self.assertNotEqual(resp.status_code, 500)
-        # The broken file was set aside, not deleted, so recovery/forensics stay possible.
         owned = os.path.join(_TMP, working_label_rel_path(self.volume))
-        self.assertTrue(os.path.exists(owned + ".corrupt.bak"))
+        before = open(owned, "rb").read()
+        resp = self._client(self.manager).get(f"/api/tasks/{self.task.id}/labels-summary/")
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(open(owned, "rb").read(), before)
 
-    def test_label_ids_get_recovers_from_corrupt_working_copy(self):
-        # The hot editor read path recovers transparently (rebuilds), returns 200.
+    def test_label_ids_get_refuses_to_replace_corrupt_working_copy(self):
         self._corrupt_working_copy()
+        owned = os.path.join(_TMP, working_label_rel_path(self.volume))
+        before = open(owned, "rb").read()
         resp = self._client(self.annotator).get(
             f"/api/tasks/{self.task.id}/label-ids/?axis=z&index=1"
         )
-        self.assertEqual(resp.status_code, 200, resp.content)
-        # And a subsequent paint still commits cleanly on the rebuilt file.
-        arr = np.zeros((32, 32), dtype=np.int32)
-        arr[0:4, 0:4] = 7
-        from annotation.visualization.slice_io import encode_label_rle
-
-        put = self._client(self.annotator).put(
-            f"/api/tasks/{self.task.id}/label-ids/",
-            {"axis": "z", "index": 1, "shape": [32, 32], "runs": encode_label_rle(arr)},
-            format="json",
-        )
-        self.assertEqual(put.status_code, 200, put.content)
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(open(owned, "rb").read(), before)
 
     def test_labels_3d_binary_response_has_expected_header(self):
         import struct

@@ -282,6 +282,14 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = int(
     os.getenv("MITO_MAX_FORM_FIELDS", "10000")
 )
 
+# Application-owned volume artifacts are shared infrastructure, not a second
+# authorization boundary.  Keep them readable on the host and writable by the
+# service group; project/team/assignment checks in the API decide who may
+# mutate them.  The production units use UMask=0002 and a setgid data root so
+# direct writers (TIFF/Zarr/cache code) inherit the same policy.
+FILE_UPLOAD_PERMISSIONS = 0o664
+FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o2775
+
 
 # --- Password validation ---------------------------------------------------
 
@@ -610,6 +618,38 @@ MITO_SESSION_MAX_HEARTBEAT_SECONDS = int(
 # A gap longer than this credits nothing at all and begins a new active span.
 MITO_SESSION_IDLE_TIMEOUT_SECONDS = int(
     os.getenv("MITO_SESSION_IDLE_TIMEOUT_SECONDS", "300")
+)
+
+# --- Automatic annotation time tracking ------------------------------------
+# One source of truth for the timing protocol. The client reads these from
+# ``GET /api/tasks/<id>/timing/`` rather than hardcoding its own copy, so the
+# heartbeat cadence and the server's idle/cap policy can never drift apart.
+#
+# How often an active editor heartbeats. Must stay comfortably below
+# MITO_SESSION_MAX_HEARTBEAT_SECONDS so an ordinary heartbeat is always
+# credited in full — a cadence above the cap would silently discard real work.
+MITO_TIME_TRACKING_HEARTBEAT_SECONDS = int(
+    os.getenv("MITO_TIME_TRACKING_HEARTBEAT_SECONDS", "30")
+)
+# How long a hidden tab or an idle user keeps counting before the client stops
+# heartbeating. A tab left hidden all day must not bank a day.
+MITO_TIME_TRACKING_HIDDEN_GRACE_SECONDS = int(
+    os.getenv("MITO_TIME_TRACKING_HIDDEN_GRACE_SECONDS", "60")
+)
+# No pointer, key, or wheel activity for this long pauses the timer. Any
+# ordinary annotation interaction resumes it immediately.
+MITO_TIME_TRACKING_IDLE_SECONDS = int(
+    os.getenv("MITO_TIME_TRACKING_IDLE_SECONDS", "120")
+)
+# What an abandoned session (crashed browser, lost network, closed laptop) is
+# credited *beyond* its last accepted heartbeat.
+#
+# Zero by default, deliberately. The alternative is crediting work nobody
+# observed; with a 30 s cadence the most this can under-count is one cadence,
+# which is noise next to an annotation session. Raise it only if you would
+# rather over-report than under-report.
+MITO_TIME_TRACKING_ABANDON_GRACE_SECONDS = int(
+    os.getenv("MITO_TIME_TRACKING_ABANDON_GRACE_SECONDS", "0")
 )
 
 MITO_SCHEDULER_WEIGHTS = {

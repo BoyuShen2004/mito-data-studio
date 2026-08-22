@@ -24,7 +24,8 @@ export type TaskStatus =
   | "approved"
   | "rejected"
   | "revision_requested"
-  | "cancelled";
+  | "cancelled"
+  | "transferred";
 
 export type AnnotationType =
   | "semantic_segmentation"

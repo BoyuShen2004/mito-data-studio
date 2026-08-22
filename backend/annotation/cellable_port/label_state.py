@@ -31,6 +31,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -260,19 +261,34 @@ class LabelMetadataStore:
             "saved_at": _now(),
         }
         directory = os.path.dirname(filepath) or "."
-        for destination in (filepath, f"{filepath}.bak"):
-            with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=directory, delete=False
-            ) as handle:
-                tmp = handle.name
-                json.dump(data, handle, indent=2)
-                handle.flush()
-                os.fsync(handle.fileno())
-            try:
-                os.replace(tmp, destination)
-            finally:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
+        os.makedirs(directory, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=directory, delete=False
+        ) as handle:
+            tmp = handle.name
+            json.dump(data, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        backup = f"{filepath}.bak"
+        try:
+            if os.path.exists(filepath):
+                # The backup is the *previous* committed state, not a second
+                # copy of the new state.  That makes accidental lifecycle
+                # regressions recoverable instead of duplicating the damage.
+                os.replace(filepath, backup)
+            os.replace(tmp, filepath)
+            if not os.path.exists(backup):
+                try:
+                    os.link(filepath, backup)
+                except OSError:
+                    shutil.copy2(filepath, backup)
+        except Exception:
+            if not os.path.exists(filepath) and os.path.exists(backup):
+                shutil.copy2(backup, filepath)
+            raise
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
 
     def load(self, filepath) -> bool:
         for candidate in (filepath, f"{filepath}.bak"):

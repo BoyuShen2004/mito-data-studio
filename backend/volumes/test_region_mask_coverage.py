@@ -78,7 +78,7 @@ class RegionMaskCoverageTests(TestCase):
         self.assertIsNone(data["region_mask_coverage"])
         self.assertIsNone(data["region_mask_empty"])
 
-    def test_registration_computes_and_persists_coverage(self):
+    def test_registration_does_not_scan_region_coverage_inline(self):
         tifffile.imwrite(self.root / "image.tif", np.zeros((2, 3, 4), dtype=np.uint8))
         mask = np.zeros((2, 3, 4), dtype=np.uint8)
         mask[:, :, :1] = 1
@@ -92,4 +92,4 @@ class RegionMaskCoverageTests(TestCase):
                 enqueue_pyramid=False,
             )
         volume.refresh_from_db()
-        self.assertAlmostEqual(volume.region_mask_coverage, 0.25)
+        self.assertIsNone(volume.region_mask_coverage)

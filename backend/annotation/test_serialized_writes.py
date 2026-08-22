@@ -14,6 +14,7 @@ decide whether a Gunicorn worker survives contention:
 import tempfile
 import threading
 from pathlib import Path
+from unittest import mock
 
 from django.test import SimpleTestCase
 
@@ -148,3 +149,18 @@ class SerializedFileWriteTests(SimpleTestCase):
                     pass
 
         self.assertTrue(self._run_guarded(nested), "shared-in-shared deadlocked")
+
+    def test_root_creator_hands_lock_to_target_owner(self):
+        self.target.touch()
+        target_stat = self.target.stat()
+        with (
+            mock.patch("annotation.visualization.slice_io.os.geteuid", return_value=0),
+            mock.patch("annotation.visualization.slice_io.os.fchown") as fchown,
+            mock.patch("annotation.visualization.slice_io.os.fchmod") as fchmod,
+        ):
+            with serialized_file_write(self.target, shared=True):
+                pass
+
+        fd = fchown.call_args.args[0]
+        fchown.assert_called_once_with(fd, target_stat.st_uid, target_stat.st_gid)
+        fchmod.assert_called_once_with(fd, 0o664)

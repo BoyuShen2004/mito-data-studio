@@ -31,6 +31,7 @@ import {
   type WatershedSeed,
   type TrackingPrompt,
   type TrackingPromptQueue,
+  type TrackResult,
   type OverwriteMode,
   type PendingToolSlice,
   type PlannedLabelSlice,
@@ -75,6 +76,7 @@ import LabelsPanel, { type LabelsScope } from "./LabelsPanel";
 import Labels3DPanel from "./Labels3DPanel";
 import AnnotateToolChrome from "./annotate/AnnotateToolChrome";
 import TrackRail, { type TrackingPromptTool } from "./annotate/TrackRail";
+import { canPropagatePrompt, trackRangeIssue } from "./annotate/trackRange";
 import {
   restoreTrackingPromptGeometry,
   snapshotTrackingPromptGeometry,
@@ -217,11 +219,6 @@ function compositeMaskColor(image: ImageData, mask: Uint8Array, color: [number, 
     }
     image.data[offset + 3] = Math.round(outputAlpha * 255);
   }
-}
-
-function trackingRange(subclasses: TrackingPrompt["subclasses"]): [number, number] {
-  const zs = subclasses.flatMap((child) => child.seeds.map((seed) => seed.z));
-  return zs.length ? [Math.min(...zs), Math.max(...zs)] : [0, 0];
 }
 
 /** Unique nonzero instance ids present in a flat id array, sorted ascending. */
@@ -699,6 +696,7 @@ export default function AnnotationCanvas({
   const regionFallbackRef = useRef(false);
   const [rendererNotice, setRendererNotice] = useState<string | null>(null);
   const [canvasRecoveryNotice, setCanvasRecoveryNotice] = useState<string | null>(null);
+  const [labelLoadError, setLabelLoadError] = useState<string | null>(null);
   const [chunkRendererRevision, setChunkRendererRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -812,6 +810,10 @@ export default function AnnotationCanvas({
    * were propagated through the publishing path) still arrive without it. */
   const [trackingPendingReview, setTrackingPendingReview] = useState<{ parent_ids: number[]; status: "pending_review"; local?: boolean } | null>(null);
   const [trackReviewAction, setTrackReviewAction] = useState<"confirm" | "reject" | null>(null);
+  /** Groups from the most recent propagation, for the rail's preview summary:
+   * inferred children, their seed layers, merge/termination events and any
+   * ambiguity warnings. Cleared once the review is resolved. */
+  const [lastTrackResults, setLastTrackResults] = useState<TrackResult[]>([]);
   const [trackUndoCount, setTrackUndoCount] = useState(0);
   const [trackRedoCount, setTrackRedoCount] = useState(0);
   const [trackPromptHistoryBusy, setTrackPromptHistoryBusy] = useState(false);
@@ -1118,12 +1120,19 @@ export default function AnnotationCanvas({
 
   const axisLen = axisLength(meta.data?.shape, axis);
 
+  const labelsSummaryRequestRef = useRef(0);
   const refreshLabelsSummary = useCallback(() => {
+    const request = ++labelsSummaryRequestRef.current;
     setLabelsSummaryLoading(true);
     setLabelsSummaryError(null);
     api.getLabelsSummary(taskId)
-      .then((res) => setLabelsSummaryRows(res.labels ?? []))
+      .then((res) => {
+        if (request === labelsSummaryRequestRef.current) {
+          setLabelsSummaryRows(res.labels ?? []);
+        }
+      })
       .catch((error) => {
+        if (request !== labelsSummaryRequestRef.current) return;
         // Keep the last known lifecycle state. Clearing it on a transient
         // request failure made verified labels appear to vanish and removed
         // their client-side edit protection until the next successful fetch.
@@ -1133,7 +1142,11 @@ export default function AnnotationCanvas({
             : "Could not refresh label verification state.",
         );
       })
-      .finally(() => setLabelsSummaryLoading(false));
+      .finally(() => {
+        if (request === labelsSummaryRequestRef.current) {
+          setLabelsSummaryLoading(false);
+        }
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
@@ -2010,14 +2023,38 @@ export default function AnnotationCanvas({
       if (opts?.forceServer) invalidateSliceLabelCache();
       setSliceLoading(true);
       try {
-        const [imgUrl, regionUrl, resp] = await Promise.all([
+        const [imgUrl, regionUrl] = await Promise.all([
           sliceImageUrl(i, signal),
           sliceRegionUrl(i, signal),
-          labelRunsFor(i, signal),
         ]);
         if (signal?.aborted) return;
         // Drop stale responses after z OR axis moved on — including the image,
         // which must never be swapped in for a slice/view the user already left.
+        if (i !== indexRef.current || loadAxis !== axisRef.current) return;
+        // The immutable image must remain visible even when the editable label
+        // layer is temporarily unavailable. Coupling all three requests in one
+        // Promise.all used to leave the black viewport background on screen
+        // whenever a label lock/read failed.
+        if (imgRef.current) imgRef.current.src = imgUrl;
+        setRegionMaskUrl(regionUrl);
+        let resp: LabelIdsResponse;
+        try {
+          resp = await labelRunsFor(i, signal);
+          setLabelLoadError(null);
+        } catch (error) {
+          if (signal?.aborted) return;
+          // Never leave a previous plane's ids armed beneath a fresh image.
+          // Showing the source is safe; annotating without a baseline is not.
+          idsRef.current = null;
+          idsIndexRef.current = null;
+          setLabelLoadError(
+            error instanceof Error
+              ? `Label layer unavailable: ${error.message}`
+              : "Label layer unavailable. Reload or contact an administrator.",
+          );
+          return;
+        }
+        if (signal?.aborted) return;
         if (i !== indexRef.current || loadAxis !== axisRef.current) return;
         if (resp.revision) workingLabelRevisionRef.current = resp.revision;
         // A stroke that finished after this fetch started owns the plane —
@@ -2031,8 +2068,6 @@ export default function AnnotationCanvas({
         ) {
           return;
         }
-        if (imgRef.current) imgRef.current.src = imgUrl;
-        setRegionMaskUrl(regionUrl);
         const [h, w] = resp.shape;
         shapeRef.current = [h, w];
         if (opts?.forceServer) {
@@ -2455,6 +2490,35 @@ export default function AnnotationCanvas({
       syncDirtyFromPending,
     ],
   );
+
+  // Raster edits otherwise live only in the tab until the annotator clicks
+  // Save.  Bound that loss window: flush ordinary edits every 30 seconds and
+  // once when the tab is backgrounded.  Region-only edits that would discard
+  // visible outside-ROI pixels stay pending for an explicit, confirmed Save.
+  useEffect(() => {
+    if (!editable) return;
+    const flushSafeDraft = () => {
+      if (pendingSlicesRef.current.size === 0 || saveInFlightRef.current) return;
+      if (roiOnlyRef.current) {
+        const hasUnsafeOutside = pendingSlicesRef.current.snapshots().some(
+          (snapshot) =>
+            !roiPlanSaveSlicesRef.current.has(snapshot.index)
+            && (outsideEditsRef.current.peek(snapshot.index)?.pendingCount(snapshot.ids) ?? 0) > 0,
+        );
+        if (hasUnsafeOutside) return;
+      }
+      void saveLabels("manual");
+    };
+    const timer = window.setInterval(flushSafeDraft, 30_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushSafeDraft();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [editable, saveLabels]);
 
   useEffect(() => {
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -4511,6 +4575,11 @@ export default function AnnotationCanvas({
     const prompt: TrackingPrompt = {
       parent_id: activeId,
       subclasses: [{ index: 1, seeds: [] }],
+      // Explicit and inclusive from the start: the layer on screen, which the
+      // annotator widens with the rail's Start/End fields. Never re-derived
+      // from the seeds afterwards.
+      start_z: index,
+      end_z: index,
       z_range: [index, index],
       status: "draft",
     };
@@ -4522,6 +4591,31 @@ export default function AnnotationCanvas({
       setTrackError(e instanceof Error ? e.message : "Could not queue parent class");
     }
   }, [activeId, index, persistTrackingPrompt, selectTrackingPrompt, trackingPrompts]);
+
+  /** Commit the annotator's explicit inclusive Start/End for one parent.
+   *
+   * Applied optimistically so the fields respond immediately, then persisted.
+   * A rejected range (the backend validates bounds authoritatively) rolls the
+   * optimistic value back rather than leaving the rail showing something the
+   * server does not have. */
+  const setTrackingPromptRange = useCallback(async (
+    parentId: number,
+    startZ: number | null,
+    endZ: number | null,
+  ) => {
+    const prompt = trackingPrompts.find((item) => item.parent_id === parentId);
+    if (!prompt) return;
+    if (prompt.start_z === startZ && prompt.end_z === endZ) return;
+    const next: TrackingPrompt = { ...prompt, start_z: startZ, end_z: endZ };
+    setTrackingPrompts((items) => items.map((item) => item.parent_id === parentId ? next : item));
+    try {
+      await persistTrackingPrompt(next);
+      setTrackError(null);
+    } catch (e) {
+      setTrackingPrompts((items) => items.map((item) => item.parent_id === parentId ? prompt : item));
+      setTrackError(e instanceof Error ? e.message : "Could not set the propagation range");
+    }
+  }, [persistTrackingPrompt, trackingPrompts]);
 
   const addTrackingSubclass = useCallback(async () => {
     const prompt = trackingPrompts.find((item) => item.parent_id === selectedTrackParent);
@@ -4540,7 +4634,7 @@ export default function AnnotationCanvas({
     if (!prompt) return;
     const subclasses = prompt.subclasses.filter((subclass) => subclass.index !== subclassIndex);
     try {
-      await persistTrackingPrompt({ ...prompt, subclasses, z_range: trackingRange(subclasses), status: subclasses.some((subclass) => subclass.seeds.length) ? "ready" : "draft" });
+      await persistTrackingPrompt({ ...prompt, subclasses, status: subclasses.some((subclass) => subclass.seeds.length) ? "ready" : "draft" });
       setSelectedTrackSubclass(subclasses[0]?.index ?? null);
     } catch (e) {
       setTrackError(e instanceof Error ? e.message : "Could not remove child class");
@@ -4561,14 +4655,26 @@ export default function AnnotationCanvas({
   }, [selectedTrackParent, taskId, trackingPrompts]);
 
   const propagateTrackingQueue = useCallback(async (selectedOnly: boolean) => {
-    const parentIds = trackingPrompts
-      .filter((prompt) => prompt.subclasses.some((subclass) => subclass.seeds.length))
-      .filter((prompt) => selectedOnly
-        ? prompt.parent_id === selectedTrackParent
-        : true)
+    const candidates = trackingPrompts.filter((prompt) => selectedOnly
+      ? prompt.parent_id === selectedTrackParent
+      : true);
+    // Same rules the backend enforces (`tracking.services.validate_z_range`);
+    // checking here just turns a 400 into an explanation next to the field.
+    const blocked = selectedOnly
+      ? trackRangeIssue(candidates[0] ?? null, axisLen)
+      : null;
+    if (blocked) {
+      setTrackError(blocked);
+      return;
+    }
+    const parentIds = candidates
+      .filter((prompt) => canPropagatePrompt(prompt, axisLen))
       .map((prompt) => prompt.parent_id);
     if (!parentIds.length) {
-      setTrackError("Draw at least one child-class seed before propagating.");
+      setTrackError(
+        "No queued parent is ready: each needs at least one child-class seed and "
+        + "a Start/End range that contains every seed layer.",
+      );
       return;
     }
     setTracking(true);
@@ -4596,6 +4702,9 @@ export default function AnnotationCanvas({
       if (!(await applyPendingToolPlan(result.axis, result.slices))) {
         throw new Error("Track result became stale before it could be applied.");
       }
+      // What the automatic branch inference and merge lifecycle decided, shown
+      // in the rail so Confirm is an informed choice.
+      setLastTrackResults(result.results ?? []);
       // The batch endpoint *plans* — it returns planes for the pending buffer
       // and never writes labels or a server-side pending review. The review
       // step is therefore ours to hold: mark the propagated parents pending so
@@ -4625,7 +4734,7 @@ export default function AnnotationCanvas({
       setTracking(false);
       setTrackingParentIds([]);
     }
-  }, [applyPendingToolPlan, pendingToolSlices, selectedTrackParent, syncTrackingQueue, taskId, trackOverwriteMode, trackingPrompts]);
+  }, [applyPendingToolPlan, axisLen, pendingToolSlices, selectedTrackParent, syncTrackingQueue, taskId, trackOverwriteMode, trackingPrompts]);
 
   const trackingPromptKey = useCallback(() => {
     const [h, w] = shapeRef.current;
@@ -4672,7 +4781,6 @@ export default function AnnotationCanvas({
       const next: TrackingPrompt = {
         ...prompt,
         subclasses,
-        z_range: trackingRange(subclasses),
         status: subclasses.some((child) => child.seeds.length) ? "ready" : "draft",
       };
       // Optimistic replacement makes the queue and seed markers respond
@@ -4912,6 +5020,10 @@ export default function AnnotationCanvas({
     setTrackReviewAction(action);
     setTrackError(null);
     changeTrackPromptTool(null);
+    // The summary describes a propagation that is about to stop being pending
+    // either way, so it retires with the review rather than lingering next to
+    // the next parent the annotator selects.
+    setLastTrackResults([]);
     try {
       if (trackingPendingReview.local) {
         await reviewLocalTrackPreview(action);
@@ -6267,9 +6379,12 @@ export default function AnnotationCanvas({
             promptUndoCount={trackUndoCount}
             promptRedoCount={trackRedoCount}
             overwriteMode={trackOverwriteMode}
+            layerCount={axisLen}
+            lastResults={lastTrackResults}
             selectedParentId={selectedTrackParent}
             selectedChildIndex={selectedTrackSubclass}
             onSelectPrompt={selectTrackingPrompt}
+            onRange={(parentId, startZ, endZ) => void setTrackingPromptRange(parentId, startZ, endZ)}
             onSelectChild={setSelectedTrackSubclass}
             onQueueActive={() => void queueActiveTrackingPrompt()}
             onAddChild={() => void addTrackingSubclass()}
@@ -6475,6 +6590,11 @@ export default function AnnotationCanvas({
             {(canvasRecoveryNotice || rendererNotice) && (
               <div className="canvas-renderer-notice" role="status">
                 {canvasRecoveryNotice || rendererNotice}
+              </div>
+            )}
+            {labelLoadError && (
+              <div className="canvas-renderer-notice error" role="alert">
+                {labelLoadError}
               </div>
             )}
             {swapped && (

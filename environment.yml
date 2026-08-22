@@ -4,14 +4,14 @@
 #   git lfs install && git lfs pull
 #   conda env create -f environment.yml
 #   conda activate mito-data-studio
-#   ./dev-setup.sh && ./dev-launch.sh
-# Mature env: conda activate mito-data-studio && ./dev-setup.sh
+#   make setup && make dev
+# Mature env: conda activate mito-data-studio && make setup
 #   (setup does not pip/conda-install unless you pass --install-deps)
 #
 # Change pytorch-cuda=X.Y if your driver needs a different CUDA toolkit
 # (https://pytorch.org/get-started/locally/). CPU-only: drop the pytorch-cuda line.
 #
-# Pin MKL <2024 (see README + progress/development.md#conda-env--pytorch--mkl):
+# Pin MKL <2024 to keep the CUDA PyTorch build compatible:
 # - mkl 2025 breaks `import torch` (iJIT_NotifyEvent)
 # - mkl 2024.2 from conda-forge conflicts with pytorch-cuda (llvm-openmp)
 # Channel order matters: pytorch/nvidia before defaults before conda-forge.

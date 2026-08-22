@@ -1,6 +1,7 @@
 import type { ReviewDecision, TaskStatus, TaskType } from "./index";
 
 import type { DatasetMetadata } from "./project";
+import type { AnnotationTimeSummary } from "../api/timing";
 
 export interface AnnotationTask {
   id: number;
@@ -56,6 +57,12 @@ export interface AnnotationTask {
   can_submit: boolean;
   /** Server-decided paint gate (edit access AND not locked). */
   can_annotate: boolean;
+  /** Cumulative measured annotation time.
+   *
+   *  `tracked: false` means the volume is legacy-exempt — its annotation began
+   *  before time tracking existed, so the real total is unknown and must render
+   *  as `-`, never as `0m`. `display` already carries the right string. */
+  annotation_time: AnnotationTimeSummary;
   /** How many times this task has been handed over for review. */
   submission_count: number;
   last_decision: "" | ReviewDecision;
@@ -70,8 +77,11 @@ export interface AnnotationTask {
   approved_at: string | null;
   history_key?: string;
   assignment_withdrawn?: boolean;
+  assignment_transferred?: boolean;
   withdrawal_reason?: string;
   withdrawal_team?: string;
+  transferred_to?: number | null;
+  transferred_to_username?: string;
   withdrawn_at?: string;
 }
 
@@ -88,7 +98,7 @@ export type AssignmentPlanTask = Pick<AnnotationTask,
   "id" | "project" | "volume" | "volume_name" | "label_type" |
   "assigned_to" | "assigned_to_username" | "z_start" | "z_end" |
   "task_type" | "status" | "priority" | "difficulty" | "instructions" |
-  "deadline" | "annotation_locked"
+  "deadline" | "annotation_locked" | "annotation_time"
 > & {
   file_format: string;
   shape_z: number | null;

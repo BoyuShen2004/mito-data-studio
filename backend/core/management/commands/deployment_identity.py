@@ -6,7 +6,7 @@
 Use during a cutover to prove that the process you are about to promote has
 the data root and database you expect — *before* moving the ingress onto it.
 Afterwards, compare this fingerprint against the one the public URL reports
-(``GET /api/deployment/identity/``); they must match. See DEPLOYMENT.md.
+(``GET /api/deployment/identity/``); they must match. See docs/deployment.md.
 """
 
 from __future__ import annotations

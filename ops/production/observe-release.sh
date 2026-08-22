@@ -43,8 +43,8 @@ while :; do
   fi
   pg=$(sudo -u "$service_user" bash -c '
     set -a; source "'$checkout'/.env"; set +a
-    cd "'$checkout'/backend"
-    ../venv/bin/python manage.py shell -c \
+    cd "'$checkout'"
+    venv/bin/python manage.py shell -c \
       "from django.db import connection; c=connection.cursor(); c.execute(\"select count(*) from pg_stat_activity where datname=current_database()\"); print(c.fetchone()[0])"
   ' | tail -1)
   health=$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' "$public_url/healthz" || printf '000 0')

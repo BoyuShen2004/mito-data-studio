@@ -7,6 +7,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import type { AnnotationTask } from "../types/task";
 import ViewerShell, { ViewerShellMessage } from "../components/ViewerShell";
+import { useAnnotationTimer } from "../features/viewer/useAnnotationTimer";
 import AnnotationCanvas, {
   type AxisControls,
 } from "../features/viewer/AnnotationCanvas";
@@ -270,14 +271,36 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
         </>
       }
     >
-      <AnnotationCanvas
-        taskId={task.id}
-        volumeId={task.volume}
-        zStart={task.z_start}
-        zEnd={task.z_end}
-        editable={Boolean(editable && mayPaint)}
-        onAxisControls={onAxisControls}
-      />
+      <>
+        {/* Automatic annotation timing. Mounted only for the *editable* route
+            and only when the server says this person may actually paint, so a
+            read-only viewer, a manager looking at someone's task, and the
+            Details page never start a clock. The component renders nothing —
+            it exists so the hook can run below this page's early returns. */}
+        <AnnotationTimer
+          taskId={task.id}
+          enabled={Boolean(editable && mayPaint && task.assigned_to === user?.id)}
+        />
+        <AnnotationCanvas
+          taskId={task.id}
+          volumeId={task.volume}
+          zStart={task.z_start}
+          zEnd={task.z_end}
+          editable={Boolean(editable && mayPaint)}
+          onAxisControls={onAxisControls}
+        />
+      </>
     </ViewerShell>
   );
+}
+
+/** Runs the timing lease for as long as the editable editor is mounted.
+ *
+ * A component rather than a call in `TaskViewerPage` because that page returns
+ * early while the task loads, and a hook cannot live behind a conditional
+ * return. Renders nothing: the timer's only visible output is the cumulative
+ * duration on the task Details card, which reads it from the server. */
+function AnnotationTimer({ taskId, enabled }: { taskId: number; enabled: boolean }) {
+  useAnnotationTimer(taskId, enabled);
+  return null;
 }

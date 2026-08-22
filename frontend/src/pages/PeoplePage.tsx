@@ -5,6 +5,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleLabel } from "../labels";
 import StatusBadge from "../components/StatusBadge";
+import AnnotatorTimeSection from "../components/AnnotatorTimeSection";
 import CollaborationManager from "../components/CollaborationManager";
 import type { Person, PersonStats } from "../types/people";
 
@@ -336,6 +337,10 @@ export function PersonCard({
           )}
         </ul>
       )}
+      {/* Directly under the Projects list, collapsed. The roster renders many
+          of these and most are never opened, so the request only fires on
+          expand — see AnnotatorTimeSection. */}
+      <AnnotatorTimeSection username={person.username} />
     </div>
   );
 }

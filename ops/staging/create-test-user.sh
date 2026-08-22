@@ -30,7 +30,7 @@ set -a
 source "$checkout/.env"
 source "$credentials_tmp"
 set +a
-"$checkout/venv/bin/python" "$checkout/backend/manage.py" shell -c '
+"$checkout/venv/bin/python" "$checkout/manage.py" shell -c '
 import os
 from django.contrib.auth import get_user_model
 User = get_user_model()

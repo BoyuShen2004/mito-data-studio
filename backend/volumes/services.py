@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 from django.conf import settings
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -710,6 +711,7 @@ def scan_hpc_directory(hpc_directory: str) -> dict:
     }
 
 
+@transaction.atomic
 def register_dataset(
     *,
     created_by,
@@ -1011,48 +1013,69 @@ def register_volume(
     has_mask = bool(label_path) or label_file is not None
     label_type = _normalize_label_type(label_type=label_type, has_mask=has_mask)
 
-    volume = Volume(
-        project=project,
-        dataset=dataset,
-        name=name,
-        image_path=image_path or "",
-        region_mask_path=region_mask_path or "",
-        label_path=label_path or "",
-        label_type=label_type,
-        metadata=metadata or {},
-    )
-    if image_file is not None:
-        volume.image_file = image_file
-    if region_mask_file is not None:
-        volume.region_mask_file = region_mask_file
-    if label_file is not None:
-        volume.label_file = label_file
-    if file_format is not None:
-        volume.file_format = file_format
-    if voxel_size is not None:
-        volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x = voxel_size
+    if dataset is not None and dataset.project_id != project.pk:
+        raise DataRegistrationError("The dataset does not belong to the project.")
 
-    volume.save()
+    values = {
+        "project": project,
+        "name": name,
+        "region_mask_path": region_mask_path or "",
+        "label_path": label_path or "",
+        "label_type": label_type,
+        "metadata": metadata or {},
+    }
+    if image_file is not None:
+        values["image_file"] = image_file
+    if region_mask_file is not None:
+        values["region_mask_file"] = region_mask_file
+    if label_file is not None:
+        values["label_file"] = label_file
+    if file_format is not None:
+        values["file_format"] = file_format
+    if voxel_size is not None:
+        values["voxel_size_z"], values["voxel_size_y"], values["voxel_size_x"] = voxel_size
+
+    # A registered source path is the stable identity of a volume inside its
+    # dataset.  The database constraint makes this safe even when a proxy times
+    # out and two identical POSTs overlap: the second request replays the row
+    # that won instead of creating another Volume and another annotation task.
+    if dataset is not None and image_path:
+        volume, created = Volume.objects.get_or_create(
+            dataset=dataset,
+            image_path=image_path,
+            defaults=values,
+        )
+        if not created:
+            expected = {
+                "project_id": project.pk,
+                "name": name,
+                "region_mask_path": region_mask_path or "",
+                "label_path": label_path or "",
+                "label_type": label_type,
+            }
+            conflicts = [
+                field for field, value in expected.items()
+                if getattr(volume, field) != value
+            ]
+            if conflicts:
+                raise DataRegistrationError(
+                    f"{image_path} is already registered in this dataset with "
+                    f"different {', '.join(conflicts)}. Edit the existing volume "
+                    "instead of registering the same source again."
+                )
+            _pin_working_mask_basename(volume)
+            return volume
+    else:
+        volume = Volume(dataset=dataset, image_path=image_path or "", **values)
+        volume.save()
+
+    _pin_working_mask_basename(volume)
 
     if autodetect_shape and any(value is None for value in (
         volume.shape_z, volume.shape_y, volume.shape_x,
         volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x,
     )):
         _try_autodetect_shape(volume)
-
-    # Coverage is a persisted registration fact, never a serializer/page-load
-    # scan. Bad/inaccessible legacy references remain registered with an
-    # honest null so a later backfill can recover after mounts/permissions do.
-    try:
-        from .region_masks import refresh_region_mask_coverage
-
-        refresh_region_mask_coverage(volume)
-    except Exception as exc:
-        logger.warning(
-            "Could not calculate region-mask coverage for volume %s: %s",
-            volume.pk,
-            exc,
-        )
 
     if enqueue_pyramid:
         enqueue_pyramid_build(volume, actor=created_by)
@@ -1062,6 +1085,21 @@ def register_volume(
         enqueue_pyramid_build(volume, actor=created_by, layer="region")
 
     return volume
+
+
+def _pin_working_mask_basename(volume: Volume) -> None:
+    """Persist the on-disk artifact name once; never recompute it later."""
+    from annotation.label_paths import (
+        WORKING_MASK_BASENAME_METADATA_KEY,
+        working_mask_basename,
+    )
+
+    metadata = dict(volume.metadata or {})
+    if metadata.get(WORKING_MASK_BASENAME_METADATA_KEY):
+        return
+    metadata[WORKING_MASK_BASENAME_METADATA_KEY] = working_mask_basename(volume)
+    volume.metadata = metadata
+    volume.save(update_fields=["metadata"])
 
 
 def pyramid_idempotency_key(volume_id: int, *, layer: str, trigger: str) -> str:

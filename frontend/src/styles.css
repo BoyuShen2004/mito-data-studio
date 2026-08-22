@@ -297,9 +297,16 @@ td.volume-name-cell {
 }
 .plan-detail-grid {
   display: grid;
-  grid-template-columns: minmax(8rem, 0.7fr) minmax(8rem, 0.7fr) minmax(10rem, 0.9fr) minmax(18rem, 2fr) minmax(10rem, auto);
+  /* Priority | Difficulty | Deadline | Instructions | Time | Annotations.
+     Time sits directly right of Instructions and is deliberately the narrowest
+     column in the row: it is a glance-at figure, not a control. */
+  grid-template-columns: minmax(8rem, 0.7fr) minmax(8rem, 0.7fr) minmax(10rem, 0.9fr) minmax(18rem, 2fr) minmax(4.5rem, auto) minmax(10rem, auto);
   gap: 0.65rem;
   align-items: start;
+}
+.plan-detail-time .annotation-time {
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 .plan-detail-grid > label,
 .plan-detail-static {
@@ -1963,10 +1970,18 @@ button.dev-reset-btn:hover:not(:disabled) {
   padding: 0.25rem 0.35rem;
   font-size: 0.8rem;
 }
-.track-range-row,
 .track-action-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.35rem;
+}
+/* Start and End are typeable layer numbers, so the row is a control strip
+   rather than the two-up readout it used to be; the trailing hint spells out
+   that the range includes both endpoints. */
+.track-range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
   gap: 0.35rem;
 }
 /* Deliberately NOT sticky. Pinning this panel to the top of the scrolling
@@ -2120,8 +2135,9 @@ button.dev-reset-btn:hover:not(:disabled) {
   gap: 0.3rem;
   font-size: 0.72rem;
 }
-.track-range-row > span {
+.track-range-field {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 0.3rem;
   padding: 0.3rem 0.4rem;
@@ -2129,6 +2145,39 @@ button.dev-reset-btn:hover:not(:disabled) {
   border-radius: 0.35rem;
   background: var(--surface);
   font-size: 0.7rem;
+}
+.track-range-hint {
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+.track-range-issue {
+  margin: 0.2rem 0 0;
+  font-size: 0.68rem;
+}
+/* The propagation summary lives in the always-enabled footer beside
+   Confirm/Reject: it is what the annotator reads to decide between them, so it
+   must stay legible even when the rest of the rail is disabled. */
+.track-inference-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--surface);
+  max-height: 11rem;
+  overflow-y: auto;
+}
+.track-inference-parent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+}
+.track-inference-branch,
+.track-inference-merge,
+.track-inference-warning {
+  line-height: 1.25;
 }
 .track-review-panel {
   flex: 0 0 auto;
@@ -3416,4 +3465,68 @@ button.dev-reset-btn:hover:not(:disabled) {
 .profile-actions {
   gap: 0.6rem;
   align-items: center;
+}
+
+
+/* --- Annotation time ------------------------------------------------------
+   `-` is not `0m`: a legacy-exempt volume's total is unknown, and the muted
+   treatment plus the tooltip say so rather than letting it read as "no work". */
+.annotation-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.annotation-time-unknown {
+  color: var(--muted);
+}
+.annotation-time-legacy {
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.annotation-time-section {
+  margin-top: 0.45rem;
+}
+.annotation-time-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.78rem;
+  text-align: left;
+}
+.annotation-time-toggle .annotation-time-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.annotation-time-projects,
+.annotation-time-datasets,
+.annotation-time-volumes {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0 0 0 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-left: 1px solid var(--border);
+}
+.annotation-time-volume {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.75rem;
+}
+.annotation-time-volume .annotation-time-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.annotation-time-empty {
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
 }

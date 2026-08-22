@@ -6,6 +6,8 @@ import type { AnnotationTask } from "../types/task";
 import type { VolumeMetaLike } from "./VolumeMeta";
 import { VolumeMetaBlock } from "./VolumeMeta";
 import StatusBadge from "./StatusBadge";
+import type { AnnotationTimeSummary } from "../api/timing";
+import { durationTitle, formatDuration } from "../time";
 
 export const submissionChannelLabel = (source?: string) =>
   source === "inapp" ? "Online (in-app)" : source === "upload" ? "Offline (file upload)" : "Unknown channel";
@@ -85,8 +87,25 @@ export function TaskDetailsCard({task: t, actions}: {task: AnnotationTask; actio
       <tr><th>Difficulty</th><td>{difficultyLabel(t.difficulty)}</td></tr>
       <tr><th>Deadline</th><td>{t.deadline ?? "—"}</td></tr>
       <tr><th>Instructions</th><td>{t.instructions || "—"}</td></tr>
+      {/* Directly below Instructions, deliberately one plain row: cumulative
+          annotation time is useful context, not the point of the page. `-`
+          means this volume predates time tracking and its real total is
+          unknown — which is a different statement from `0m`. */}
+      <tr><th>Time</th><td><AnnotationTimeCell time={t.annotation_time}/></td></tr>
     </tbody></table>
   </section>;
+}
+
+/** Cumulative annotation time, with the precise value in a tooltip. */
+export function AnnotationTimeCell({time}: {time?: AnnotationTimeSummary}) {
+  const tracked = time?.tracked ?? false;
+  const seconds = tracked ? time?.seconds ?? 0 : null;
+  return <span
+    className={`annotation-time${tracked ? "" : " annotation-time-unknown"}`}
+    title={durationTitle(seconds, {legacy: !tracked})}
+  >
+    {time?.display ?? formatDuration(seconds)}
+  </span>;
 }
 
 /** The one place the Details vertical order is written down.

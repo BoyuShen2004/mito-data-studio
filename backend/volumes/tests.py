@@ -312,6 +312,39 @@ class RegisterDatasetTests(TestCase):
         self.assertEqual(dataset.metadata.get("organism"), "mouse")
         self.assertEqual(volumes[0].dataset_id, dataset.id)
 
+    def test_retrying_the_same_source_replays_the_existing_volume(self):
+        project, first = register_dataset(
+            created_by=None,
+            dataset="Retry-safe",
+            hpc_directory=self.dir,
+            files=[{"name": "a.tif", "chunk_id": "crop-1"}],
+        )
+        _project, replay = register_dataset(
+            created_by=None,
+            dataset="Retry-safe",
+            hpc_directory=self.dir,
+            files=[{"name": "a.tif", "chunk_id": "crop-1"}],
+            project=project,
+        )
+        self.assertEqual(replay[0].pk, first[0].pk)
+        self.assertEqual(project.volumes.count(), 1)
+
+    def test_same_source_with_different_registration_facts_is_rejected(self):
+        project, _ = register_dataset(
+            created_by=None,
+            dataset="Conflict",
+            hpc_directory=self.dir,
+            files=[{"name": "a.tif", "chunk_id": "crop-1"}],
+        )
+        with self.assertRaises(DataRegistrationError):
+            register_dataset(
+                created_by=None,
+                dataset="Conflict",
+                hpc_directory=self.dir,
+                files=[{"name": "a.tif", "chunk_id": "renamed"}],
+                project=project,
+            )
+
     def test_missing_dataset_rejected(self):
         with self.assertRaises(DataRegistrationError):
             register_dataset(

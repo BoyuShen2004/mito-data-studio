@@ -33,7 +33,7 @@ docker compose --env-file .env.docker exec app \
 
 The default image supports viewing, annotation, review, sharing, and export.
 AI-assisted masks and SAM2 tracking are optional profiles; see
-[Docker deployment](DOCKER.md#build-profiles).
+[Docker deployment](docs/docker.md#build-profiles).
 
 ## Prerequisites
 
@@ -49,18 +49,20 @@ host conda checkout. Do not run them as if they were the same deployment.
 
 ## Documentation
 
-- [User guides](docs/guides/README.md) — role-based product manuals
-- [Docker deployment](DOCKER.md) — portable setup, persistence, GPU, backup,
+- [Documentation index](docs/index.md)
+- [User guide](docs/user-guide.md) — current requester, manager, annotator, sharing,
+  tracking, timing, and review workflows
+- [Development](docs/development.md) — host setup, daily run, accounts, tests, and
+  data safety
+- [Docker deployment](docs/docker.md) — portable setup, persistence, GPU, backup,
   and troubleshooting
-- [Conda development](docs/ops/conda-dev.md) — optional host development path
-- [Development checklist](docs/ops/dev-checklist.md) — start the database, run,
-  test, and how development differs from production
-- [This-host deployment](DEPLOYMENT.md) — maintainer-specific systemd runbook
+- [This-host deployment](docs/deployment.md) — maintainer-specific systemd runbook
 - [Product invariants](docs/product-invariants.md) — behaviors contributors
   must preserve
-- [Engineering documentation](docs/engineering/README.md) — architecture,
-  module maps, release records, and design history
-- [License](LICENSE)
+- [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md), and
+  [changelog](CHANGELOG.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md) and
+  [attribution register](docs/attribution.md)
 
 ## Roles at a glance
 
@@ -77,18 +79,20 @@ fills the login form but never signs in automatically.
 ## Repository layout
 
 ```text
-backend/          Django and REST API
-frontend/         React/Vite single-page application
-docs/guides/      user manuals (the user-facing source of truth)
-docs/ops/         operational guides
-docs/engineering/ engineering documentation index
-ops/              container and host deployment assets
-progress/         engineering notes and module maps
-vendor/           optional EfficientSAM/SAM2 assets managed with Git LFS
+backend/      Django project and domain apps
+frontend/     React/Vite application and browser tests
+docs/         user, developer, and deployment documentation
+scripts/dev/  local setup and live-reload entry points
+ops/          container, staging, production, and release assets
+vendor/       optional EfficientSAM/SAM2 assets managed with Git LFS
+manage.py     repository-wide Django command entry point
+Makefile      common setup, run, check, test, and build commands
 ```
 
 For contribution checks and test commands, start with
-[Conda development](docs/ops/conda-dev.md) and
-[Product invariants](docs/product-invariants.md).
+[Development](docs/development.md) and [Product invariants](docs/product-invariants.md).
 
-<!-- git-account smoke check: 2026-08-08 -->
+> **License status:** the repository is publicly structured and contributor
+> friendly, but its current `LICENSE` grants no permission for first-party code.
+> Choose an OSI-approved license before describing or distributing it as open
+> source.

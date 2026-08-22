@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import tifffile
@@ -158,6 +160,29 @@ class Execution(PyramidJobTestCase):
         self.assertTrue(self.volume.ready_streaming)
         self.assertTrue(outcome["validated"])
         self.assertIn("pyramid", job.output_paths)
+
+    def test_region_build_calculates_coverage_outside_registration(self):
+        mask = np.zeros(SHAPE, dtype=np.uint8)
+        mask[:, :, :32] = 1
+        region = self.image.parent / "region.tif"
+        tifffile.imwrite(str(region), mask)
+        self.volume.region_mask_path = str(region)
+        self.volume.save(update_fields=["region_mask_path"])
+
+        report = SimpleNamespace(
+            layer="region",
+            path="pyramids/region.zarr",
+            as_dict=lambda: {"layer": "region", "validated": True},
+        )
+        with (
+            override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON),
+            patch.object(jobs.pyramid_service, "build_pyramid", return_value=report),
+        ):
+            job = jobs.submit_build(self.spec(layer="region"))
+            jobs.run_build(job)
+
+        self.volume.refresh_from_db()
+        self.assertAlmostEqual(self.volume.region_mask_coverage, 0.25)
 
     def test_a_failing_run_records_the_failure_and_promotes_nothing(self):
         self.volume.image_path = str(self.image.parent / "missing.tif")

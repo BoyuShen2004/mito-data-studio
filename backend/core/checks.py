@@ -171,7 +171,7 @@ def check_expected_identity(app_configs, **kwargs):
                     hint=(
                         "Pin MITO_EXPECTED_CHECKOUT / _DATA_ROOT / _DB_NAME / "
                         "_BIND (and optionally _FINGERPRINT) in the deployment's "
-                        ".env. See DEPLOYMENT.md."
+                        ".env. See docs/deployment.md."
                     ),
                     id="deployment.W015",
                 )

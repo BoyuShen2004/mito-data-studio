@@ -47,8 +47,8 @@ sample_system() {
   )
   pg=$(sudo -u "$staging_user" bash -c '
     set -a; source "'$staging_root'/.env"; set +a
-    cd "'$staging_root'/backend"
-    ../venv/bin/python manage.py shell -c \
+    cd "'$staging_root'"
+    venv/bin/python manage.py shell -c \
       "from django.db import connection; c=connection.cursor(); c.execute(\"select count(*) from pg_stat_activity where datname=current_database()\"); print(c.fetchone()[0])"
   ' | tail -1)
   queues=$(ss -ltn "( sport = :${staging_bind##*:} )" | awk 'NR == 2 {print $2 " " $3}')

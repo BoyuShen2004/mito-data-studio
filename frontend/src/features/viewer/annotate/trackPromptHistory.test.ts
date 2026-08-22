@@ -17,6 +17,8 @@ const prompt = (parentId: number, childIndexes: number[], runLength = 1): Tracki
     index,
     seeds: [{ z: 3, shape: [2, 2], rle: [[0, runLength]] }],
   })),
+  start_z: 3,
+  end_z: 3,
   z_range: [3, 3],
   status: "ready",
 });

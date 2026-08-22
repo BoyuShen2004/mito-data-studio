@@ -129,9 +129,12 @@ class ResetWorkingLabelsTests(TestCase):
 
         reset_working_labels_to_registered(self.task)
 
-        # Both described voxels that no longer exist.
+        # Both are removed from the live location, but retained as timestamped
+        # recovery snapshots instead of being destroyed.
         self.assertFalse(sidecar.exists())
         self.assertFalse(backup.exists())
+        self.assertEqual(len(list(sidecar.parent.glob(f"{sidecar.name}.pre-reset.*.bak"))), 1)
+        self.assertEqual(len(list(sidecar.parent.glob(f"{backup.name}.pre-reset.*.bak"))), 1)
         self.volume.refresh_from_db()
         self.task.volume = self.volume
         self.assertEqual(list_tracking_prompts(self.task), [])

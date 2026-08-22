@@ -54,6 +54,7 @@ from __future__ import annotations
 import re
 
 _MAX_NAME_LEN = 80
+WORKING_MASK_BASENAME_METADATA_KEY = "working_mask_basename"
 # The only path components an OS resolves specially — must never be allowed
 # to stand alone as a sanitized project/dataset directory name (they'd
 # resolve to "the current directory" / "the parent directory" instead of an
@@ -181,6 +182,20 @@ def working_mask_basename(volume) -> str:
     stripped first rather than doubled (``cortex1_mask.tif`` -> working mask
     ``cortex1_mask.tif``, not ``cortex1_mask_mask.tif``).
     """
+    # Artifact identity must never depend on the *current* set of sibling DB
+    # rows.  It used to: removing a duplicate registration could make a live
+    # volume switch from ``<stem>_v107_mask.tif`` to ``<stem>_mask.tif`` on
+    # its next read.  The old draft was still on disk, but Refresh opened a
+    # freshly-seeded file at the new name and made an annotator's work appear
+    # reset.  Registration/migration pins the initially selected basename in
+    # Volume.metadata; once present it is the durable artifact identity.
+    metadata = getattr(volume, "metadata", None) or {}
+    pinned = metadata.get(WORKING_MASK_BASENAME_METADATA_KEY)
+    if isinstance(pinned, str):
+        pinned = _safe_name(_basename(pinned), "")
+        if pinned and pinned.lower().endswith("_mask.tif"):
+            return pinned
+
     stem = image_stem(volume)
     if stem.lower().endswith("_mask") and len(stem) > len("_mask"):
         stem = stem[: -len("_mask")]

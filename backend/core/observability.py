@@ -120,6 +120,30 @@ def _ready_checks() -> dict[str, bool]:
         checks["disk"] = free >= settings.MITO_READY_MIN_FREE_BYTES
     except OSError:
         checks["disk"] = False
+
+    # A stale sibling lock with the wrong owner makes every label request for
+    # that task fail even though the data root itself remains writable. Inspect
+    # only task-owned lock paths from the database (bounded by task count), not
+    # a recursive walk through potentially huge pyramids/source trees.
+    checks["annotation_locks"] = False
+    if checks.get("database") and checks["data_root"]:
+        try:
+            from annotation.label_paths import working_label_rel_path
+            from annotation.models import AnnotationTask
+
+            lock_paths = (
+                Path(f"{root / working_label_rel_path(task.volume)}.write.lock")
+                for task in AnnotationTask.objects.select_related(
+                    "volume", "volume__project", "volume__dataset"
+                ).iterator()
+            )
+            checks["annotation_locks"] = all(
+                not path.exists()
+                or (os.access(path, os.R_OK) and os.access(path, os.W_OK))
+                for path in lock_paths
+            )
+        except Exception:
+            checks["annotation_locks"] = False
     return checks
 
 

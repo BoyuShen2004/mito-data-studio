@@ -1,9 +1,0 @@
----
-description: Preserve explicit login and reset product requirements
-alwaysApply: true
----
-
-Read and preserve `docs/product-invariants.md`. Do not remove or bypass its
-development-account placement/manual-sign-in behavior or the red reset control
-inside that same section without explicit user approval and corresponding
-regression updates.

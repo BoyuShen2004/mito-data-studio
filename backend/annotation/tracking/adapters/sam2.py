@@ -70,7 +70,7 @@ class Sam2TrackingProvider(TrackingProvider):
                 raise RuntimeError(
                     "MITO_SAM2_ROOT is not set and has no default — this should "
                     "not happen unless config/settings.py was changed; see "
-                    "progress/development.md's SAM2 section."
+                    "docs/development.md."
                 )
             checkpoint = getattr(settings, "MITO_SAM2_CHECKPOINT", "") or None
             config = getattr(settings, "MITO_SAM2_CONFIG", "") or None

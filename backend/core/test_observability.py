@@ -22,8 +22,9 @@ class ObservabilityEndpointTests(TestCase):
     def test_readiness_checks_database_data_root_and_disk(self):
         with override_settings(MITO_DATA_ROOT=Path(self.tmp.name)):
             response = self.client.get("/readyz")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "ready")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["status"], "ready")
+            self.assertTrue(response.json()["checks"]["annotation_locks"])
         self.assertTrue(all(response.json()["checks"].values()))
 
     def test_metrics_are_hidden_without_configuration(self):

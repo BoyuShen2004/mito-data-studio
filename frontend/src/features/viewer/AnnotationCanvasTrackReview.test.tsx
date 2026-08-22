@@ -63,6 +63,10 @@ const trackedRuns = [[9, 4], [0, 12]] as [number, number][];
 const queuedPrompt = {
   parent_id: 9,
   subclasses: [{ index: 1, seeds: [{ z: 0, rle: [[0, 4]] as [number, number][], shape: [4, 4] as [number, number] }] }],
+  // The queue always carries the annotator's explicit inclusive bounds; here
+  // they are the single layer this 4-layer fixture propagates over.
+  start_z: 0,
+  end_z: 0,
   z_range: [0, 0] as [number, number],
   status: "ready" as const,
 };

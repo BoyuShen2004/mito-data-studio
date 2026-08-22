@@ -17,7 +17,7 @@ export default defineConfig({
   },
   webServer: {
     command: "VITE_FEATURE_CHUNK_RENDERER=true exec ./node_modules/.bin/vite --host 127.0.0.1 --port 4174 --strictPort",
-    url: "http://127.0.0.1:4174/phase14-harness.html",
+    url: "http://127.0.0.1:4174/e2e/fixtures/phase14-harness.html",
     reuseExistingServer: false,
   },
 });

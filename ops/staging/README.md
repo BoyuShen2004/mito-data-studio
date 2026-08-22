@@ -59,10 +59,9 @@ the normal release migration (the command refuses missing or mismatched
 columns, and never changes application rows):
 
 ```bash
-cd backend
-../venv/bin/python manage.py reconcile_legacy_region_mask_migration
-../venv/bin/python manage.py reconcile_legacy_region_mask_migration --apply
-../venv/bin/python manage.py migrate --noinput
+venv/bin/python manage.py reconcile_legacy_region_mask_migration
+venv/bin/python manage.py reconcile_legacy_region_mask_migration --apply
+venv/bin/python manage.py migrate --noinput
 ```
 
 For authenticated browser and multi-user validation, create three staging-only

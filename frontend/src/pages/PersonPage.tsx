@@ -3,6 +3,7 @@ import { getPerson } from "../api/people";
 import { useAsync } from "../hooks/useAsync";
 import { roleLabel } from "../labels";
 import StatusBadge from "../components/StatusBadge";
+import AnnotatorTimeSection from "../components/AnnotatorTimeSection";
 import { ProjectRef } from "./PeoplePage";
 
 /** Read-only card for one person, reached from any People roster.
@@ -93,6 +94,10 @@ export default function PersonPage() {
             ))}
           </ul>
         )}
+        {/* The same drill-down as the roster, under this person's Projects
+            list. Lazy for the same reason: opening someone's card should not
+            cost a report they may not want. */}
+        <AnnotatorTimeSection username={p.username} />
       </div>
     </>
   );

@@ -212,13 +212,17 @@ class AnnotationSubmission(models.Model):
 
 
 class AssignmentWithdrawal(models.Model):
-    """Immutable history of a manager-withdrawn task assignment.
+    """Immutable history of a manager-withdrawn or transferred assignment.
 
     The canonical task is returned to ``unassigned`` so it can be handed to a
-    new person. This row preserves the former annotator/team for the cancelled
-    item shown in that annotator's Done list; it is deliberately separate from
-    task status so later reassignment cannot rewrite the cancellation history.
+    new person, or updated in place during a direct transfer. This row preserves
+    the former annotator/team for the Done item; it is deliberately separate
+    from task status so later reassignment cannot rewrite assignment history.
     """
+
+    class Outcome(models.TextChoices):
+        WITHDRAWN = "withdrawn", "Withdrawn"
+        TRANSFERRED = "transferred", "Transferred"
 
     task = models.ForeignKey(
         AnnotationTask, on_delete=models.CASCADE, related_name="withdrawals"
@@ -231,6 +235,16 @@ class AssignmentWithdrawal(models.Model):
     )
     team_name = models.CharField(max_length=255)
     reason = models.CharField(max_length=255, default="Assignment withdrawn")
+    outcome = models.CharField(
+        max_length=20, choices=Outcome.choices, default=Outcome.WITHDRAWN
+    )
+    transferred_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assignment_transfers_received",
+    )
     withdrawn_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -552,6 +566,16 @@ class WorkSession(models.Model):
     # is heartbeating far more often than it is working.
     heartbeats = models.PositiveIntegerField(default=0)
 
+    # --- Time-tracking bookkeeping -----------------------------------------
+    # A stable per-tab token supplied by the client. Its only job is
+    # idempotency: a retried or duplicated start must resume the tab's existing
+    # session instead of opening a second one. It is not a credential — the
+    # actor is taken from the authenticated request, never from here.
+    client_token = models.CharField(max_length=64, blank=True, db_index=True)
+    # Why the session stopped, for reconciliation and support questions.
+    close_reason = models.CharField(max_length=32, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
     class Meta:
         ordering = ["-started_at", "-id"]
         constraints = [
@@ -567,11 +591,103 @@ class WorkSession(models.Model):
             models.Index(
                 fields=["ended_at", "last_heartbeat_at"], name="idx_session_stale"
             ),
+            # Idempotent start: "does this tab already have an open session?"
+            models.Index(
+                fields=["actor", "task", "client_token"],
+                name="idx_session_resume",
+            ),
         ]
 
     def __str__(self) -> str:
         who = self.actor.get_username() if self.actor_id else "?"
         return f"Session {self.id} ({who}, task #{self.task_id}, {self.active_seconds}s)"
+
+    @property
+    def is_open(self) -> bool:
+        return self.ended_at is None
+
+
+class WorkInterval(models.Model):
+    """One contiguous stretch of measured work. The unit reporting sums.
+
+    ``WorkSession.active_seconds`` is a per-session counter, and it is correct
+    for what it measures — but it cannot answer the two questions reporting
+    actually asks:
+
+    * **Two tabs are not two people.** Summing per-session counters doubles an
+      hour worked with two tabs open. The answer is the *union* of the spans,
+      which needs the spans.
+    * **A gap inside a session is not work.** Unioning whole sessions
+      (``started_at`` → ``last_heartbeat_at``) would swallow the idle gaps that
+      :func:`annotation.sessions.credited_seconds` correctly refused to credit,
+      so a laptop closed at lunch and reopened at three would bill three hours.
+
+    An interval is opened when timing starts, extended by each heartbeat that
+    credits time, and closed when the heartbeat gap exceeds the cap or the idle
+    timeout — which is exactly where the crediting policy says one stretch of
+    work ended and another began. Reporting takes the union of intervals per
+    annotator, so overlap counts once and gaps count not at all.
+
+    Append-only in spirit: rows are created and then closed, never rewritten to
+    mean a different stretch of time, so the table stays an audit trail.
+    """
+
+    class CloseReason(models.TextChoices):
+        ENDED = "ended", "Client ended the session"
+        IDLE = "idle", "Idle gap exceeded the timeout"
+        CAPPED = "capped", "Heartbeat gap exceeded the per-interval cap"
+        SUBMITTED = "submitted", "Task was submitted"
+        EXPIRED = "expired", "Abandoned — capped at the last heartbeat"
+        SUPERSEDED = "superseded", "Assignment or permission changed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        WorkSession, on_delete=models.CASCADE, related_name="intervals"
+    )
+    # task/volume/actor are denormalised from ``session`` so every aggregation
+    # the People drill-down needs is one indexed query rather than a join chain
+    # per row. They are written once at creation and never diverge: a session's
+    # task and actor are immutable.
+    task = models.ForeignKey(
+        AnnotationTask, on_delete=models.CASCADE, related_name="work_intervals"
+    )
+    volume = models.ForeignKey(
+        "volumes.Volume", on_delete=models.CASCADE, related_name="work_intervals"
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="work_intervals",
+    )
+
+    # Both from the server clock, always. A client cannot propose either.
+    started_at = models.DateTimeField(db_index=True)
+    # Null while the interval is still open. Readers must not treat an open
+    # interval as running to "now" — see
+    # ``annotation.timing.effective_interval_end``.
+    ended_at = models.DateTimeField(null=True, blank=True)
+    close_reason = models.CharField(
+        max_length=32, choices=CloseReason.choices, blank=True
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["started_at", "id"]
+        indexes = [
+            # The People drill-down: this annotator's work, newest span first.
+            models.Index(fields=["actor", "started_at"], name="idx_interval_actor"),
+            # Volume and dataset roll-ups.
+            models.Index(fields=["volume", "actor"], name="idx_interval_volume"),
+            models.Index(fields=["task", "actor"], name="idx_interval_task"),
+            # Reconciliation: which intervals are still open?
+            models.Index(fields=["ended_at"], name="idx_interval_open"),
+        ]
+
+    def __str__(self) -> str:
+        end = self.ended_at.isoformat() if self.ended_at else "open"
+        return f"Interval {self.id} ({self.started_at.isoformat()} → {end})"
 
     @property
     def is_open(self) -> bool:

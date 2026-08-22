@@ -28,7 +28,7 @@ if [[ ${VITE_FEATURE_CHUNK_PULL_QUEUE:-} != true ]] ||
   exit 2
 fi
 
-cd "$repo_root/backend"
+cd "$repo_root"
 "$python_bin" manage.py shell -c '
 from django.conf import settings
 names = [name for name in dir(settings) if name.startswith("FEATURE_")]

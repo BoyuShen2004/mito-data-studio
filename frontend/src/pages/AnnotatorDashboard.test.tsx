@@ -71,4 +71,23 @@ describe("AnnotatorDashboard", () => {
     expect(screen.getByText("Withdrawn")).toBeTruthy();
     expect(screen.queryByRole("button", {name: "View"})).toBeNull();
   });
+
+  it("shows transferred assignments as transferred history", async () => {
+    api.listMyTasks.mockResolvedValue([]);
+    api.listMyCompletedTasks.mockResolvedValue([{
+      ...task(4, "Transferred volume"),
+      history_key: "withdrawal-10",
+      status: "transferred",
+      assignment_withdrawn: true,
+      assignment_transferred: true,
+      withdrawal_reason: "Transferred to another annotator",
+      transferred_to_username: "next-user",
+      can_annotate: false,
+    }]);
+    render(<MemoryRouter initialEntries={["/?tab=done"]}><AnnotatorDashboard /></MemoryRouter>);
+    expect(await screen.findByText("Transferred volume")).toBeTruthy();
+    expect(screen.getByText("transferred")).toBeTruthy();
+    expect(screen.getByText("Transferred")).toBeTruthy();
+    expect(screen.queryByRole("button", {name: "View"})).toBeNull();
+  });
 });

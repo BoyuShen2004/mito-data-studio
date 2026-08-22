@@ -54,6 +54,7 @@ class AuditVerb(models.TextChoices):
     SUBMISSION_CREATED = "submission.created", "Submission recorded"
     SUBMISSION_SUPERSEDED = "submission.superseded", "Submission superseded"
     REVIEW_RECORDED = "review.recorded", "Review decision recorded"
+    TASK_LABELS_RESET = "task.labels_reset", "Task working labels reset"
 
 
 class UserRole(models.TextChoices):
@@ -281,3 +282,22 @@ LABEL_TYPE_TO_TASK_TYPE = {
     LabelType.PROOFREAD: TaskType.FINAL_REVIEW,
     LabelType.PARTIAL: TaskType.MANUAL_ANNOTATION,
 }
+
+
+class TimeTracking(models.TextChoices):
+    """Whether a volume's annotation time is measured, decided once at rollout.
+
+    Deliberately **durable state**, not a live query. Eligibility is settled
+    when the volume is created (or when the rollout migration runs) and never
+    re-derived from whether the volume happens to be assigned today — otherwise
+    reassigning an old volume would silently turn its unknown history into a
+    misleadingly small "total".
+
+    * ``ELIGIBLE`` — time is measured. No sessions yet simply means ``0m``.
+    * ``LEGACY_EXEMPT`` — annotation began before time tracking existed, so the
+      real total is unknowable. Always reported as ``-``, never as zero, even
+      when the database happens to hold no sessions for it.
+    """
+
+    ELIGIBLE = "eligible", "Time tracking eligible"
+    LEGACY_EXEMPT = "legacy_exempt", "Legacy — annotation time unknown"

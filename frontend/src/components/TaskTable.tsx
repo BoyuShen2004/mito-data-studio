@@ -61,12 +61,12 @@ export default function TaskTable({
     details={(row) => {
       const t = task(row);
       const detailsTo = isManager ? `/volumes/${t.volume}` : `/tasks/${t.id}`;
-      return t.assignment_withdrawn ? <span className="muted">Task #{t.id} withdrawn</span> : <Link to={detailsTo}>Task #{t.id}</Link>;
+      return t.assignment_withdrawn ? <span className="muted">Task #{t.id} {t.assignment_transferred ? "transferred" : "withdrawn"}</span> : <Link to={detailsTo}>Task #{t.id}</Link>;
     }}
     action={(row) => {
       const t = task(row);
       const canEdit = (isManager || t.assigned_to === user?.id) && t.can_annotate;
-      if (t.assignment_withdrawn) return <span className="muted">Withdrawn</span>;
+      if (t.assignment_withdrawn) return <span className="muted">{t.assignment_transferred ? "Transferred" : "Withdrawn"}</span>;
       return <div className="task-actions">
         <Link to={`/viewer/tasks/${t.id}`}><button type="button" className="secondary">View</button></Link>
         {canEdit && <Link to={`/editor/tasks/${t.id}`}><button type="button">Annotate</button></Link>}

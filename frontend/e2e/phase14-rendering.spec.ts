@@ -23,7 +23,7 @@ declare global {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/phase14-harness.html");
+  await page.goto("/e2e/fixtures/phase14-harness.html");
   await page.waitForFunction(() => Boolean(window.phase14Harness));
 });
 

@@ -155,7 +155,7 @@ def _service_identity() -> dict[str, object]:
     the value gunicorn is actually started with, and this reports the
     declaration. That is still useful: a declaration that disagrees with the
     expectation is a misconfiguration you can catch, and one that disagrees with
-    the *real* socket is caught by the external step in DEPLOYMENT.md that
+    the *real* socket is caught by the external step in docs/deployment.md that
     curls the public URL. It is not, and does not claim to be, proof of the
     final Cloudflare/nginx route.
     """

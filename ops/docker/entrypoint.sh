@@ -5,7 +5,7 @@
 # static files and execs gunicorn.
 set -euo pipefail
 
-cd /app/backend
+cd /app
 
 log() { printf '[entrypoint] %s\n' "$*" >&2; }
 

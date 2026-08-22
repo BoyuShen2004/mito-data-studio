@@ -8,6 +8,12 @@ they all belong to one logical group. After propagation the whole group is
 leaves two permanently-separate mitochondria unless the user explicitly splits
 them.
 
+This module is the group bookkeeping half of that idea. Its two neighbours own
+the rest, and are equally provider-independent: :mod:`annotation.tracking.
+components` decides *what the branches are* (component splitting and cross-layer
+association), and :mod:`annotation.tracking.contact` decides *when two of them
+have merged*. :class:`TrackGroup` carries the resulting audit trail.
+
 Everything here is pure NumPy so it is fast, GPU-free, and unit-testable; the
 GPU SAM2 work lives behind the tracking provider (see ``adapters/``).
 """
@@ -19,47 +25,24 @@ from dataclasses import dataclass, field
 import numpy as np
 
 
-# --- Connected components (ported from MTS core.mask_utils) -----------------
-
-def _neighbors8(y: int, x: int, height: int, width: int):
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            if dy == 0 and dx == 0:
-                continue
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < height and 0 <= nx < width:
-                yield ny, nx
+# --- Connected components ---------------------------------------------------
+# The implementation moved to :mod:`annotation.tracking.components`, which adds
+# the accidental-speck filter and the cross-layer association the automatic
+# branch inference needs. This wrapper keeps the original unfiltered contract
+# for the legacy ``run_branch_tracking(seeds=...)`` path and its callers.
 
 
 def split_binary_mask_components(mask: np.ndarray) -> list[np.ndarray]:
     """Split a boolean mask into its 8-connected component masks.
 
-    Mirrors ``MTS`` so fork branches are seeded identically: each disconnected
-    blob in a seed slice becomes one branch.
+    Unfiltered: every component is returned, however small. Callers that want
+    accidental brush specks removed should use
+    :func:`annotation.tracking.components.split_components`, whose default
+    ``min_area`` comes from :mod:`annotation.tracking.config`.
     """
-    m = np.asarray(mask, dtype=bool)
-    if not m.any():
-        return []
-    h, w = m.shape
-    visited = np.zeros((h, w), dtype=bool)
-    components: list[np.ndarray] = []
-    for y in range(h):
-        for x in range(w):
-            if not m[y, x] or visited[y, x]:
-                continue
-            comp = np.zeros((h, w), dtype=bool)
-            stack = [(y, x)]
-            visited[y, x] = True
-            comp[y, x] = True
-            while stack:
-                cy, cx = stack.pop()
-                for ny, nx in _neighbors8(cy, cx, h, w):
-                    if m[ny, nx] and not visited[ny, nx]:
-                        visited[ny, nx] = True
-                        comp[ny, nx] = True
-                        stack.append((ny, nx))
-            components.append(comp)
-    return components
+    from .components import split_components
+
+    return split_components(mask, min_area=1)
 
 
 def next_free_id(volume_mask: np.ndarray, reserved=None) -> int:
@@ -101,6 +84,25 @@ class TrackGroup:
     # object ids used only while propagating.  Older audit rows omit this.
     subclass_branch_ids: dict[int, int] = field(default_factory=dict)
     seed_zs: list[int] = field(default_factory=list)
+    # --- Explicit propagation bounds (inclusive) ---------------------------
+    # The range the *user* chose, not a value derived from the seed layers.
+    # Carried on the group so the audit row explains what was actually asked
+    # for, independently of where the seeds happened to land.
+    start_z: int | None = None
+    end_z: int | None = None
+    # --- Automatic branch inference / merge lifecycle ----------------------
+    # ``inferred_branches`` explains which seed components became which
+    # ephemeral branch; ``branch_provider_ids`` maps those audit keys to the
+    # temporary provider object ids; ``merge_events`` and ``terminated_at``
+    # record the child touch/merge lifecycle; ``warnings`` carries structured
+    # ambiguities for the Track preview. All are audit-only: none of them ever
+    # becomes a permanent label id.
+    inferred_branches: list[dict] = field(default_factory=list)
+    branch_provider_ids: dict[int, int] = field(default_factory=dict)
+    merge_events: list[dict] = field(default_factory=list)
+    terminated_at: dict[int, int] = field(default_factory=dict)
+    warnings: list[dict] = field(default_factory=list)
+    dropped_components: list[dict] = field(default_factory=list)
 
     def resolved_final_id(self) -> int:
         return self.final_id if self.final_id is not None else self.group_id
@@ -115,6 +117,16 @@ class TrackGroup:
                 str(k): int(v) for k, v in self.subclass_branch_ids.items()
             },
             "seed_zs": list(self.seed_zs),
+            "start_z": (None if self.start_z is None else int(self.start_z)),
+            "end_z": (None if self.end_z is None else int(self.end_z)),
+            "inferred_branches": [dict(b) for b in self.inferred_branches],
+            "branch_provider_ids": {
+                str(k): int(v) for k, v in self.branch_provider_ids.items()
+            },
+            "merge_events": [dict(e) for e in self.merge_events],
+            "terminated_at": {str(k): int(v) for k, v in self.terminated_at.items()},
+            "warnings": [dict(w) for w in self.warnings],
+            "dropped_components": [dict(d) for d in self.dropped_components],
         }
 
     @classmethod
@@ -129,6 +141,18 @@ class TrackGroup:
                 for k, v in data.get("subclass_branch_ids", {}).items()
             },
             seed_zs=[int(z) for z in data.get("seed_zs", [])],
+            start_z=(None if data.get("start_z") is None else int(data["start_z"])),
+            end_z=(None if data.get("end_z") is None else int(data["end_z"])),
+            inferred_branches=[dict(b) for b in data.get("inferred_branches", [])],
+            branch_provider_ids={
+                int(k): int(v) for k, v in data.get("branch_provider_ids", {}).items()
+            },
+            merge_events=[dict(e) for e in data.get("merge_events", [])],
+            terminated_at={
+                int(k): int(v) for k, v in data.get("terminated_at", {}).items()
+            },
+            warnings=[dict(w) for w in data.get("warnings", [])],
+            dropped_components=[dict(d) for d in data.get("dropped_components", [])],
         )
 
 

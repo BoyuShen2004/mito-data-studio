@@ -1,6 +1,7 @@
 from django.db import models
+from django.db.models import Q
 
-from core.choices import FileFormat, LabelType, VolumeStatus
+from core.choices import FileFormat, LabelType, TimeTracking, VolumeStatus
 from core.storage import get_mito_storage
 
 
@@ -117,10 +118,46 @@ class Volume(models.Model):
     status = models.CharField(
         max_length=20, choices=VolumeStatus.choices, default=VolumeStatus.REGISTERED
     )
+
+    # --- Annotation time tracking eligibility (durable, decided once) -------
+    # New volumes are eligible. The rollout migration marks volumes that were
+    # *already assigned* when the feature shipped as ``LEGACY_EXEMPT``, because
+    # their annotation started unmeasured and any total we could show would be
+    # a fraction of the real effort presented as the whole of it.
+    #
+    # This is stored rather than derived on purpose: deriving it from "is this
+    # volume assigned right now?" would silently promote an exempt volume to
+    # eligible the moment it was reassigned, and start reporting a partial
+    # number as if it were complete. Changing it afterwards is an explicit
+    # administrative act, not a side effect of assignment.
+    time_tracking = models.CharField(
+        max_length=20,
+        choices=TimeTracking.choices,
+        default=TimeTracking.ELIGIBLE,
+        db_index=True,
+        help_text=(
+            "Whether annotation time is measured for this volume. "
+            "Legacy-exempt volumes always report '-', never zero."
+        ),
+    )
+    # When the classification above was decided, and by what. Rollout metadata:
+    # it distinguishes "the migration classified this" from "created eligible
+    # afterwards", which is the difference between an unknown total and a real
+    # zero. Null for volumes created after rollout through the normal path.
+    time_tracking_set_at = models.DateTimeField(null=True, blank=True)
+    time_tracking_reason = models.CharField(max_length=64, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dataset", "image_path"],
+                condition=Q(dataset__isnull=False) & ~Q(image_path=""),
+                name="unique_registered_image_per_dataset",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.project.title})"

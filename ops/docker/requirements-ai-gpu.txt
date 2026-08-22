@@ -3,7 +3,7 @@
 # Matches the pins in ../../requirements-release.in — the combination the
 # release environment was validated against. Requires an NVIDIA driver on the
 # host and the NVIDIA Container Toolkit; see the `gpu` profile in
-# docker-compose.yml and the GPU section of DOCKER.md.
+# docker-compose.yml and the GPU section of docs/docker.md.
 #
 # Expect a large image (roughly 7-8 GB): the CUDA torch wheels alone are ~2.5 GB
 # and pull further nvidia-* runtime wheels.

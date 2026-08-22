@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { TrackingPrompt } from "../../../api/viewer";
+import type { TrackingPrompt, TrackResult } from "../../../api/viewer";
 import type { OverwriteMode } from "../../../api/viewer";
+import CommitNumberInput from "../CommitNumberInput";
+import { canPropagatePrompt, toLayer, toZ, trackRangeIssue } from "./trackRange";
 
 export type TrackingPromptTool = "brush" | "erase" | "box_erase" | "box" | "point";
 
@@ -17,6 +19,59 @@ const PROMPT_TOOL_CELLS: ({ tool: TrackingPromptTool; label: string; title: stri
   null,
 ];
 
+/**
+ * What the automatic logic did, in the annotator's layer numbering.
+ *
+ * Temporary branch ids are deliberately *not* shown as things to manage — they
+ * are ephemeral audit keys, and every one of them was merged into the parent
+ * label before this rendered. The summary exists so Confirm is an informed
+ * decision, not a leap of faith.
+ */
+function TrackInferenceSummary({ results }: { results: TrackResult[] }) {
+  const groups = results.map((result) => result.group).filter((g): g is NonNullable<TrackResult["group"]> => g != null);
+  if (!groups.length) return null;
+  return (
+    <section className="track-inference-summary" aria-label="Track propagation summary">
+      {groups.map((group) => {
+        const branches = group.inferred_branches ?? [];
+        const merges = group.merge_events ?? [];
+        const warnings = group.warnings ?? [];
+        return (
+          <div className="track-inference-parent" key={group.group_id}>
+            <strong>{`Parent ${group.final_id}`}</strong>
+            <span className="muted">
+              {`${branches.length} inferred child${branches.length === 1 ? "" : "ren"}`}
+              {group.start_z != null && group.end_z != null
+                ? ` · layers ${toLayer(group.start_z)}–${toLayer(group.end_z)}`
+                : ""}
+            </span>
+            {branches.map((branch) => (
+              <span className="muted track-inference-branch" key={branch.branch_key}>
+                {`Child ${branch.branch_key} seeded on layer${branch.seed_zs.length === 1 ? "" : "s"} `}
+                {branch.seed_zs.map(toLayer).join(", ") || "—"}
+                {group.terminated_at?.[String(branch.branch_key)] != null
+                  ? ` · ends at layer ${toLayer(group.terminated_at[String(branch.branch_key)])}`
+                  : ""}
+              </span>
+            ))}
+            {merges.map((event, i) => (
+              <span className="muted track-inference-merge" key={`${event.loser_branch}-${event.contact_z}-${i}`}>
+                {`Child ${event.loser_branch} merged into child ${event.survivor_branch} at layer `}
+                {`${toLayer(event.contact_z)} (${event.reason})`}
+              </span>
+            ))}
+            {warnings.map((warning, i) => (
+              <span className="error track-inference-warning" role="status" key={`${warning.code}-${i}`}>
+                {warning.message}
+              </span>
+            ))}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 /** Scrollable SAM2 parent-class queue. Child-class numbers are local UI ids. */
 export default function TrackRail({
   hidden, disabled, activeId, activeColorCss,
@@ -24,8 +79,8 @@ export default function TrackRail({
   savingProgress, progressSaved,
   trackError, axisIsZ, prompts, selectedParentId, selectedChildIndex,
   pendingReview, reviewAction, promptUndoCount, promptRedoCount,
-  overwriteMode,
-  onSelectPrompt, onSelectChild, onQueueActive,
+  overwriteMode, layerCount, lastResults,
+  onSelectPrompt, onSelectChild, onQueueActive, onRange,
   onAddChild, onPromptTool, onSaveProgress, onPromptBrushSize, onPromptEraserSize,
   onClearSeed, onRemoveChild, onRemovePrompt,
   onPromptUndo, onPromptRedo, onOverwriteMode, onPropagateAll, onPropagateSelected, onReview,
@@ -41,7 +96,13 @@ export default function TrackRail({
   reviewAction: "confirm" | "reject" | null;
   promptUndoCount: number; promptRedoCount: number;
   overwriteMode: OverwriteMode;
+  /** Volume depth in layers; 0 while the volume metadata is still loading. */
+  layerCount: number;
+  /** Groups returned by the most recent propagation, for the preview summary. */
+  lastResults: TrackResult[];
   onSelectPrompt: (parentId: number) => void;
+  /** Commit an explicit inclusive range, in 0-based API z. */
+  onRange: (parentId: number, startZ: number | null, endZ: number | null) => void;
   onSelectChild: (index: number) => void; onQueueActive: () => void;
   onAddChild: () => void; onPromptTool: (tool: TrackingPromptTool | null) => void;
   onSaveProgress: () => void;
@@ -58,11 +119,12 @@ export default function TrackRail({
   const blocked = disabled || !axisIsZ;
   const selected = prompts.find((p) => p.parent_id === selectedParentId) ?? null;
   const selectedChild = selected?.subclasses.find((child) => child.index === selectedChildIndex) ?? null;
-  const readyCount = prompts.filter((p) => p.subclasses.some((child) => child.seeds.length)).length;
   const canEdit = Boolean(selected && selectedChild);
-  const selectedSeedZs = selected?.subclasses.flatMap((child) => child.seeds.map((seed) => seed.z)) ?? [];
-  const startLayer = selectedSeedZs.length ? Math.min(...selectedSeedZs) : null;
-  const endLayer = selectedSeedZs.length ? Math.max(...selectedSeedZs) : null;
+  // Start/End are the annotator's explicit inclusive bounds, never derived
+  // from the seed layers. Displayed 1-based to match the viewer's z field.
+  const rangeIssue = trackRangeIssue(selected, layerCount);
+  const readyPrompts = prompts.filter((p) => canPropagatePrompt(p, layerCount));
+  const maxLayer = layerCount > 0 ? layerCount : 1;
   const pendingParentIds = pendingReview?.parent_ids?.length
     ? pendingReview.parent_ids
     : prompts.filter((prompt) => prompt.status === "pending").map((prompt) => prompt.parent_id);
@@ -144,7 +206,7 @@ export default function TrackRail({
         <section className="track-queue-panel" aria-label="Track parent queue">
           <div className="track-queue-heading">
             <strong>Queued parents</strong>
-            <span className="muted">{prompts.length} queued · {readyCount} ready</span>
+            <span className="muted">{prompts.length} queued · {readyPrompts.length} ready</span>
           </div>
           <div className="track-prompt-list" role="listbox" aria-label="Queued parent classes">
             {prompts.map((prompt) => {
@@ -185,16 +247,47 @@ export default function TrackRail({
             {!prompts.length && <p className="muted track-queue-empty">No parent classes queued. Choose an active class, add it below, then select a child-class prompt tool and draw on the image.</p>}
           </div>
           <button type="button" className="track-add-parent" onClick={onQueueActive} disabled={reviewLocked}>Add parent class {activeId} to queue</button>
+          {/* The range belongs to the selected parent, so with nothing selected
+              these are a placeholder rather than an editable "1" that would
+              read as a real value the annotator had chosen. */}
           <div className="track-range-row" role="group" aria-label="Selected parent propagation range">
-            <span><strong>Start layer</strong> {startLayer ?? "—"}</span>
-            <span><strong>End layer</strong> {endLayer ?? "—"}</span>
+            <span className="track-range-field">
+              <strong>Start layer</strong>
+              {selected ? (
+                <CommitNumberInput
+                  value={selected.start_z == null ? 1 : toLayer(selected.start_z)}
+                  min={1}
+                  max={maxLayer}
+                  ariaLabel="Start layer"
+                  title={`First layer to propagate (1–${maxLayer}, inclusive)`}
+                  onCommit={(layer) => onRange(selected.parent_id, toZ(layer), selected.end_z)}
+                />
+              ) : <span className="muted">—</span>}
+            </span>
+            <span className="track-range-field">
+              <strong>End layer</strong>
+              {selected ? (
+                <CommitNumberInput
+                  value={selected.end_z == null ? 1 : toLayer(selected.end_z)}
+                  min={1}
+                  max={maxLayer}
+                  ariaLabel="End layer"
+                  title={`Last layer to propagate (1–${maxLayer}, inclusive)`}
+                  onCommit={(layer) => onRange(selected.parent_id, selected.start_z, toZ(layer))}
+                />
+              ) : <span className="muted">—</span>}
+            </span>
+            <span className="muted track-range-hint">inclusive</span>
           </div>
+          {selected && rangeIssue && (
+            <p className="muted track-range-issue" role="status">{rangeIssue}</p>
+          )}
           {tracking && (
             <div className="track-propagation-status" role="status">
               <span>
                 {trackingParentIds.length === 1
                   ? `Propagating parent ${trackingParentIds[0]}…`
-                  : `Propagating ${trackingParentIds.length || readyCount} parents…`}
+                  : `Propagating ${trackingParentIds.length || readyPrompts.length} parents…`}
                 {` running ${trackingElapsed}s`}
               </span>
               <div className="track-progress" role="progressbar" aria-label="Track propagation in progress">
@@ -215,8 +308,8 @@ export default function TrackRail({
             </select>
           </label>
           <div className="track-action-grid track-propagate-actions" aria-label="Track propagation actions">
-            <button type="button" className="track-propagate-selected" title="Propagate every child-class seed under the selected parent class" onClick={onPropagateSelected} disabled={reviewLocked || tracking || !selected || !selected.subclasses.some((child) => child.seeds.length)}>{tracking ? "Propagating…" : "Propagate selected"}</button>
-            <button type="button" className="secondary track-propagate-all" title="Propagate every queued parent class with all of its child-class seeds" onClick={onPropagateAll} disabled={reviewLocked || tracking || readyCount === 0}>{`Propagate all (${readyCount})`}</button>
+            <button type="button" className="track-propagate-selected" title={rangeIssue ?? "Propagate the selected parent class across its Start–End range"} onClick={onPropagateSelected} disabled={reviewLocked || tracking || rangeIssue != null}>{tracking ? "Propagating…" : "Propagate selected"}</button>
+            <button type="button" className="secondary track-propagate-all" title={readyPrompts.length ? "Propagate every queued parent class with a valid Start–End range and at least one seed" : "No queued parent has both seeds and a valid Start–End range"} onClick={onPropagateAll} disabled={reviewLocked || tracking || readyPrompts.length === 0}>{`Propagate all (${readyPrompts.length})`}</button>
           </div>
         </section>
 
@@ -231,6 +324,7 @@ export default function TrackRail({
           propagate un-reviewable (a disabled fieldset disables every control
           nested under it, not just its direct children). */}
       <div className="track-rail-footer">
+        <TrackInferenceSummary results={lastResults} />
         <section className="track-review-panel" aria-label="Pending Track preview review">
           <div className="track-review-actions">
             <button type="button" className="track-review-confirm" title={reviewing ? `Confirm pending Track preview for parents ${pendingParentIds.join(", ")}` : "No pending Track preview to confirm"} disabled={tracking || reviewAction != null || !reviewing} onClick={() => onReview("confirm")}>{reviewAction === "confirm" ? "Confirming…" : "Confirm"}</button>
