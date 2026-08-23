@@ -69,6 +69,20 @@ describe("Track Box/Point proposal lifecycle wiring", () => {
     expect(request).toBeGreaterThan(chain);
   });
 
+  it("merges a committed proposal into the layer instead of replacing it", () => {
+    // Regression: `saveTrackingPromptMask(proposal.mask)` made every commit the
+    // layer's whole content, so committing a second Box/Point object deleted
+    // the first and a layer could only ever hold one prompt.
+    const start = CANVAS_SOURCE.indexOf("const commitTrackingProposal");
+    const end = CANVAS_SOURCE.indexOf("commitTrackingProposalRef.current = commitTrackingProposal", start);
+    const commit = CANVAS_SOURCE.slice(start, end);
+    expect(commit).toContain("mergePromptMask(currentTrackingPromptMask(), proposal.mask)");
+    expect(commit).toContain("saveTrackingPromptMask(merged.slice())");
+    // The bare proposal must not reach the durable seed or the live draft.
+    expect(commit).not.toContain("saveTrackingPromptMask(proposal.mask");
+    expect(commit).not.toContain("mask: proposal.mask.slice()");
+  });
+
   it("removes the destructive frontend Track split helper", () => {
     expect(CANVAS_SOURCE).not.toContain("splitTrackingSeed");
     expect(CANVAS_SOURCE).not.toContain("splitMask8");

@@ -77,6 +77,7 @@ import Labels3DPanel from "./Labels3DPanel";
 import AnnotateToolChrome from "./annotate/AnnotateToolChrome";
 import TrackRail, { type TrackingPromptTool } from "./annotate/TrackRail";
 import { canPropagatePrompt, trackRangeIssue } from "./annotate/trackRange";
+import { mergePromptMask } from "./annotate/promptMask";
 import {
   restoreTrackingPromptGeometry,
   snapshotTrackingPromptGeometry,
@@ -4825,10 +4826,16 @@ export default function AnnotationCanvas({
       trackPromptPredictSeqRef.current += 1;
       trackPromptPredictingRef.current = false;
       trackPromptFinalizeWhenReadyRef.current = false;
-      trackPromptDraftRef.current = { key, mask: proposal.mask.slice() };
+      // Merge, never replace. The prediction only describes the object of this
+      // one gesture, so writing it back as the layer mask deleted every prompt
+      // committed before it -- a layer could hold exactly one object no matter
+      // how many the annotator drew. Separated blobs are the whole point: the
+      // backend splits them into branches by connected component.
+      const merged = mergePromptMask(currentTrackingPromptMask(), proposal.mask);
+      trackPromptDraftRef.current = { key, mask: merged.slice() };
       trackPromptPointsRef.current = { key, points: [] };
       setTrackPromptRevision((value) => value + 1);
-      const saved = await saveTrackingPromptMask(proposal.mask.slice());
+      const saved = await saveTrackingPromptMask(merged.slice());
       if (saved && trackPromptProposalRef.current?.key === key) {
         trackPromptProposalRef.current = null;
         setTrackPromptRevision((value) => value + 1);
@@ -4840,7 +4847,7 @@ export default function AnnotationCanvas({
       if (trackPromptCommitPromiseRef.current === operation) trackPromptCommitPromiseRef.current = null;
     });
     return operation;
-  }, [saveTrackingPromptMask, trackingPromptKey]);
+  }, [currentTrackingPromptMask, saveTrackingPromptMask, trackingPromptKey]);
   commitTrackingProposalRef.current = commitTrackingProposal;
 
   const stageTrackingProposal = useCallback((key: string, seq: number, mask: Uint8Array) => {
