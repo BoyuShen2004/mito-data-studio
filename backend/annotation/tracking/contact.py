@@ -269,7 +269,7 @@ def resolve_branch_contacts(
                         {
                             "code": "ambiguous_child_merge",
                             "message": (
-                                f"Inferred children {first} and {second} merge at layer "
+                                f"Inferred branches {first} and {second} merge at layer "
                                 f"z={contact_z} but both have prompts after it; both were "
                                 "kept for review instead of terminating either."
                             ),

@@ -4588,7 +4588,7 @@ export default function AnnotationCanvas({
       setSelectedTrackParent(activeId);
       setSelectedTrackSubclass(1);
     } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Could not queue parent class");
+      setTrackError(e instanceof Error ? e.message : "Could not queue the class");
     }
   }, [activeId, index, persistTrackingPrompt, selectTrackingPrompt, trackingPrompts]);
 
@@ -4617,30 +4617,6 @@ export default function AnnotationCanvas({
     }
   }, [persistTrackingPrompt, trackingPrompts]);
 
-  const addTrackingSubclass = useCallback(async () => {
-    const prompt = trackingPrompts.find((item) => item.parent_id === selectedTrackParent);
-    if (!prompt) return;
-    const next = Math.max(0, ...prompt.subclasses.map((subclass) => subclass.index)) + 1;
-    try {
-      await persistTrackingPrompt({ ...prompt, subclasses: [...prompt.subclasses, { index: next, seeds: [] }], status: "draft" });
-      setSelectedTrackSubclass(next);
-    } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Could not add child class");
-    }
-  }, [persistTrackingPrompt, selectedTrackParent, trackingPrompts]);
-
-  const removeTrackingSubclass = useCallback(async (subclassIndex: number) => {
-    const prompt = trackingPrompts.find((item) => item.parent_id === selectedTrackParent);
-    if (!prompt) return;
-    const subclasses = prompt.subclasses.filter((subclass) => subclass.index !== subclassIndex);
-    try {
-      await persistTrackingPrompt({ ...prompt, subclasses, status: subclasses.some((subclass) => subclass.seeds.length) ? "ready" : "draft" });
-      setSelectedTrackSubclass(subclasses[0]?.index ?? null);
-    } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Could not remove child class");
-    }
-  }, [persistTrackingPrompt, selectedTrackParent, trackingPrompts]);
-
   const removeTrackingPrompt = useCallback(async () => {
     if (selectedTrackParent == null) return;
     try {
@@ -4650,7 +4626,7 @@ export default function AnnotationCanvas({
       setSelectedTrackParent(remaining[0]?.parent_id ?? null);
       setSelectedTrackSubclass(remaining[0]?.subclasses[0]?.index ?? null);
     } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Could not remove parent class");
+      setTrackError(e instanceof Error ? e.message : "Could not remove the class");
     }
   }, [selectedTrackParent, taskId, trackingPrompts]);
 
@@ -4672,7 +4648,7 @@ export default function AnnotationCanvas({
       .map((prompt) => prompt.parent_id);
     if (!parentIds.length) {
       setTrackError(
-        "No queued parent is ready: each needs at least one child-class seed and "
+        "No queued class is ready: each needs at least one seed and "
         + "a Start/End range that contains every seed layer.",
       );
       return;
@@ -4738,10 +4714,13 @@ export default function AnnotationCanvas({
 
   const trackingPromptKey = useCallback(() => {
     const [h, w] = shapeRef.current;
-    return selectedTrackParent != null && selectedTrackSubclass != null
-      ? `${selectedTrackParent}:${selectedTrackSubclass}:${index}:${h}x${w}`
+    // One surface per class per layer. The seed slots underneath are the
+    // backend's bookkeeping for inferred branches, not a selection the
+    // annotator makes, so they must not split the drawing surface.
+    return selectedTrackParent != null
+      ? `${selectedTrackParent}:${index}:${h}x${w}`
       : "";
-  }, [index, selectedTrackParent, selectedTrackSubclass]);
+  }, [index, selectedTrackParent]);
 
   const currentTrackingPromptMask = useCallback(() => {
     const [h, w] = shapeRef.current;
@@ -4749,15 +4728,21 @@ export default function AnnotationCanvas({
     if (!key || h === 0 || w === 0) return null;
     if (trackPromptDraftRef.current?.key === key) return trackPromptDraftRef.current.mask;
     const prompt = trackingPrompts.find((item) => item.parent_id === selectedTrackParent);
-    const child = prompt?.subclasses.find((item) => item.index === selectedTrackSubclass);
-    const seed = child?.seeds.find((item) => item.z === index);
-    const mask = seed && seed.shape[0] === h && seed.shape[1] === w
-      ? maskFromTrackingSeed(seed.rle, h * w)
-      : new Uint8Array(h * w);
+    // A queue row saved before the backend inferred branches on its own can
+    // still carry several seed slots. Read their union, so those older pixels
+    // are seeds the annotator can actually erase rather than marks that are
+    // visible but untouchable.
+    const mask = new Uint8Array(h * w);
+    for (const child of prompt?.subclasses ?? []) {
+      const seed = child.seeds.find((item) => item.z === index);
+      if (!seed || seed.shape[0] !== h || seed.shape[1] !== w) continue;
+      const slot = maskFromTrackingSeed(seed.rle, h * w);
+      for (let i = 0; i < mask.length; i += 1) if (slot[i]) mask[i] = 1;
+    }
     trackPromptDraftRef.current = { key, mask };
     if (trackPromptPointsRef.current.key !== key) trackPromptPointsRef.current = { key, points: [] };
     return mask;
-  }, [index, selectedTrackParent, selectedTrackSubclass, trackingPromptKey, trackingPrompts]);
+  }, [index, selectedTrackParent, trackingPromptKey, trackingPrompts]);
 
   const saveTrackingPromptMask = useCallback((mask: Uint8Array) => {
     // Serialize formal mask writes. Brush strokes can finish close together;
@@ -4765,18 +4750,24 @@ export default function AnnotationCanvas({
     // after the newer cumulative mask while Save progress is waiting.
     const operation = trackPromptSaveChainRef.current.then(async (): Promise<boolean> => {
       const prompt = trackingPrompts.find((item) => item.parent_id === selectedTrackParent);
-      if (!prompt || selectedTrackSubclass == null) return false;
+      if (!prompt) return false;
       const [h, w] = shapeRef.current;
       const any = mask.some(Boolean);
-      const subclasses = prompt.subclasses.map((child) => {
-        if (child.index !== selectedTrackSubclass) return child;
-        const otherSeeds = child.seeds.filter((seed) => seed.z !== index);
-        return {
-          ...child,
-          seeds: any
-            ? [...otherSeeds, { z: index, rle: trueRunsRLE(mask), shape: [h, w] as [number, number] }]
-            : otherSeeds,
-        };
+      // The mask was read as the union of every slot on this layer, so write it
+      // back to one and drop the layer from the rest. Leaving their copies in
+      // place would resurrect pixels that were just erased. Dividing a drawing
+      // into branches happens on the server, from its disconnected pieces —
+      // there is nothing to apportion between slots here.
+      const target = selectedTrackSubclass ?? prompt.subclasses[0]?.index ?? 1;
+      const seed = any
+        ? { z: index, rle: trueRunsRLE(mask), shape: [h, w] as [number, number] }
+        : null;
+      const slots = prompt.subclasses.some((child) => child.index === target)
+        ? prompt.subclasses
+        : [...prompt.subclasses, { index: target, seeds: [] }];
+      const subclasses = slots.map((child) => {
+        const kept = child.seeds.filter((item) => item.z !== index);
+        return { ...child, seeds: child.index === target && seed ? [...kept, seed] : kept };
       });
       const next: TrackingPrompt = {
         ...prompt,
@@ -4792,7 +4783,7 @@ export default function AnnotationCanvas({
         setTrackError(null);
         return true;
       } catch (e) {
-        setTrackError(e instanceof Error ? e.message : "Could not save child-class prompt");
+        setTrackError(e instanceof Error ? e.message : "Could not save the seed");
         const queue = await getTrackingPrompts(taskId).catch(() => null);
         if (queue) setTrackingPrompts(queue.items);
         return false;
@@ -4858,7 +4849,7 @@ export default function AnnotationCanvas({
     if (!mask.some(Boolean)) {
       trackPromptFinalizeWhenReadyRef.current = false;
       trackPromptProposalRef.current = null;
-      setTrackError("No child-class proposal found — adjust the Box or Point prompts.");
+      setTrackError("No proposal found — adjust the Box or Point prompts.");
       setTrackPromptRevision((value) => value + 1);
       return;
     }
@@ -5088,10 +5079,15 @@ export default function AnnotationCanvas({
       emphasis: 0 | 1 | 2;
     }[] = [];
     for (const prompt of trackingPrompts) {
+      const isSelectedPrompt = prompt.parent_id === selectedTrackParent;
       for (const child of prompt.subclasses) {
-        const isSelectedChild = prompt.parent_id === selectedTrackParent && child.index === selectedTrackSubclass;
+        // The selected class draws once from the live surface, which already
+        // holds the union of its slots; drawing the slots as well would stack
+        // duplicate overlays on the same pixels.
+        const isSelectedSlot = isSelectedPrompt && child.index === selectedTrackSubclass;
+        if (isSelectedPrompt && !isSelectedSlot) continue;
         const seed = child.seeds.find((item) => item.z === index);
-        const mask = isSelectedChild
+        const mask = isSelectedSlot
           ? selectedMask
           : seed && seed.shape[0] === h && seed.shape[1] === w
             ? maskFromTrackingSeed(seed.rle, h * w)
@@ -5100,7 +5096,7 @@ export default function AnnotationCanvas({
         overlays.push({
           mask,
           color: trackingPromptColor(prompt.parent_id, child.index),
-          emphasis: isSelectedChild ? 2 : prompt.parent_id === selectedTrackParent ? 1 : 0,
+          emphasis: isSelectedSlot ? 2 : 0,
         });
       }
     }
@@ -5111,7 +5107,7 @@ export default function AnnotationCanvas({
         compositeMaskColor(image, overlay.mask, overlay.color, overlay.emphasis === 2 ? 185 : overlay.emphasis === 1 ? 120 : 65);
       }
       // AI Box/Point prediction is a green proposal layer. It is deliberately
-      // separate from the magenta durable child seed until Enter/double-click.
+      // separate from the magenta durable seed until Enter/double-click.
       if (proposal) compositeMaskColor(image, proposal, [34, 197, 94], 185);
       ctx.putImageData(image, 0, 0);
       const scale = canvas.getBoundingClientRect().width / Math.max(w, 1);
@@ -6382,18 +6378,14 @@ export default function AnnotationCanvas({
             layerCount={axisLen}
             lastResults={lastTrackResults}
             selectedParentId={selectedTrackParent}
-            selectedChildIndex={selectedTrackSubclass}
             onSelectPrompt={selectTrackingPrompt}
             onRange={(parentId, startZ, endZ) => void setTrackingPromptRange(parentId, startZ, endZ)}
-            onSelectChild={setSelectedTrackSubclass}
             onQueueActive={() => void queueActiveTrackingPrompt()}
-            onAddChild={() => void addTrackingSubclass()}
             onPromptTool={changeTrackPromptTool}
             onSaveProgress={() => void saveTrackProgress()}
             onPromptBrushSize={setTrackPromptBrushSize}
             onPromptEraserSize={setTrackPromptEraserSize}
             onClearSeed={clearTrackingSeed}
-            onRemoveChild={(subclassIndex) => void removeTrackingSubclass(subclassIndex)}
             onRemovePrompt={() => void removeTrackingPrompt()}
             onPromptUndo={undoTrackingPrompt}
             onPromptRedo={redoTrackingPrompt}

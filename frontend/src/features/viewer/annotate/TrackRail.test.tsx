@@ -21,7 +21,7 @@ function renderRail(
   const onPromptUndo = vi.fn();
   const onPromptRedo = vi.fn();
   const onRemovePrompt = vi.fn();
-  const onRemoveChild = vi.fn();
+  const onClearSeed = vi.fn();
   const onReview = vi.fn();
   const onRange = vi.fn();
   const view = render(<TrackRail
@@ -30,25 +30,23 @@ function renderRail(
     promptEditing={promptTool != null} promptTool={promptTool} promptBrushSize={8} promptEraserSize={12}
     savingProgress={false} progressSaved={progressSaved}
     trackError={null} axisIsZ prompts={prompts} selectedParentId={prompts[0]?.parent_id ?? null}
-    selectedChildIndex={prompts[0]?.subclasses[0]?.index ?? null}
     pendingReview={pendingReview} promptUndoCount={promptUndoCount} promptRedoCount={promptRedoCount}
     reviewAction={reviewAction}
     overwriteMode="overwrite_empty"
     layerCount={layerCount} lastResults={lastResults} onRange={onRange}
-    onSelectPrompt={vi.fn()}
-    onSelectChild={vi.fn()} onQueueActive={vi.fn()} onAddChild={vi.fn()}
+    onSelectPrompt={vi.fn()} onQueueActive={vi.fn()}
     onPromptTool={onPromptTool} onSaveProgress={onSaveProgress} onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()}
-    onClearSeed={vi.fn()} onRemoveChild={onRemoveChild}
+    onClearSeed={onClearSeed}
     onRemovePrompt={onRemovePrompt} onPropagateAll={vi.fn()}
     onPropagateSelected={vi.fn()} onPromptUndo={onPromptUndo} onPromptRedo={onPromptRedo}
     onOverwriteMode={vi.fn()}
     onReview={onReview}
   />);
-  return { onPromptTool, onSaveProgress, onPromptUndo, onPromptRedo, onRemovePrompt, onRemoveChild, onReview, onRange, ...view };
+  return { onPromptTool, onSaveProgress, onPromptUndo, onPromptRedo, onRemovePrompt, onClearSeed, onReview, onRange, ...view };
 }
 
 describe("TrackRail", () => {
-  it("shows an unlimited scrollable parent-class queue with local child classes", () => {
+  it("shows an unlimited scrollable class queue with no sub-class rows", () => {
     const prompts = Array.from({ length: 25 }, (_, i): TrackingPrompt => ({
       parent_id: i + 1,
       subclasses: [{ index: 1, seeds: [] }],
@@ -58,13 +56,15 @@ describe("TrackRail", () => {
       status: "draft",
     }));
     renderRail(prompts);
-    expect(screen.getByRole("listbox", { name: "Queued parent classes" }).querySelectorAll('[role="option"]')).toHaveLength(25);
-    expect(screen.getByText("Parent 25")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Child class 1" })).toBeTruthy();
+    expect(screen.getByRole("listbox", { name: "Queued classes" }).querySelectorAll('[role="option"]')).toHaveLength(25);
+    expect(screen.getByText("Class 25")).toBeTruthy();
+    // Branch splitting is the backend's job, so there is nothing per-class to
+    // expand, select or name here.
+    expect(screen.queryByRole("button", { name: /Child class/ })).toBeNull();
     expect(screen.queryByText(/Subclass/)).toBeNull();
   });
 
-  it("activates dedicated child-class prompt tools", () => {
+  it("activates the seed prompt tools", () => {
     const { onPromptTool } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
@@ -89,7 +89,7 @@ describe("TrackRail", () => {
       z_range: [0, 9],
       status: "draft",
     }], "brush");
-    expect(screen.getByRole("region", { name: "SAM tracking prompt tools" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Track seed tools" })).toBeTruthy();
     for (const name of ["Brush", "Erase", "Box erase", "Box", "Point"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
@@ -105,7 +105,7 @@ describe("TrackRail", () => {
       z_range: [0, 9],
       status: "draft",
     }]);
-    const grid = screen.getByRole("region", { name: "SAM tracking prompt tools" })
+    const grid = screen.getByRole("region", { name: "Track seed tools" })
       .querySelector(".track-tool-grid")!;
     expect(Array.from(grid.children).map((element) =>
       element.classList.contains("track-tool-spacer") ? "empty" : element.textContent,
@@ -143,7 +143,10 @@ describe("TrackRail", () => {
     expect(onPromptTool).toHaveBeenCalledWith("brush");
   });
 
-  it("keeps manual child creation and has no Track Split control", () => {
+  it("has no manual child creation and no Track Split control", () => {
+    // The backend infers branches from the disconnected pieces of one drawing,
+    // so asking the annotator to create and pick sub-classes by hand described
+    // a workflow the server no longer has.
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
@@ -152,7 +155,8 @@ describe("TrackRail", () => {
       z_range: [0, 0],
       status: "draft",
     }]);
-    expect(screen.getByRole("button", { name: "+ child" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "+ child" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /child/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Split/ })).toBeNull();
   });
 
@@ -165,7 +169,7 @@ describe("TrackRail", () => {
       z_range: [3, 3],
       status: "running",
     }], null, null, 0, 0, false, true);
-    expect(screen.getByText(/Propagating 2 parents… running 0s/)).toBeTruthy();
+    expect(screen.getByText(/Propagating 2 classes… running 0s/)).toBeTruthy();
     expect(screen.getByRole("progressbar", { name: "Track propagation in progress" })).toBeTruthy();
     expect(container.querySelector(".track-propagation-status .track-progress-indeterminate")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Propagating…" }) as HTMLButtonElement).disabled).toBe(true);
@@ -188,7 +192,7 @@ describe("TrackRail", () => {
 
   it("does not render instructional footer text below the prompt tools", () => {
     renderRail([]);
-    const tools = screen.getByRole("region", { name: "SAM tracking prompt tools" });
+    const tools = screen.getByRole("region", { name: "Track seed tools" });
     expect(tools.querySelector("p")).toBeNull();
     expect(screen.queryByText(/Select a parent class and child class/)).toBeNull();
   });
@@ -196,7 +200,7 @@ describe("TrackRail", () => {
   it("puts compact prompt Undo and Redo controls in the Track header", () => {
     const { container, onPromptUndo, onPromptRedo } = renderRail([], null, null, 2, 1);
     const headerActions = container.querySelector<HTMLElement>(".track-history-actions")!;
-    const tools = screen.getByRole("region", { name: "SAM tracking prompt tools" });
+    const tools = screen.getByRole("region", { name: "Track seed tools" });
     const undo = screen.getByRole("button", { name: "Undo" });
     const redo = screen.getByRole("button", { name: "Redo" });
 
@@ -259,13 +263,13 @@ describe("TrackRail", () => {
     expect(screen.queryByText(/Paint directly on the image/)).toBeNull();
   });
 
-  it("places Queued parents and its list above Add parent, then Start/End", () => {
+  it("places the Queue heading and its list above Add class, then Start/End", () => {
     const { container } = renderRail([]);
     const heading = container.querySelector(".track-queue-heading")!;
-    const list = screen.getByRole("listbox", { name: "Queued parent classes" });
-    const add = screen.getByRole("button", { name: "Add parent class 50 to queue" });
-    const range = screen.getByRole("group", { name: "Selected parent propagation range" });
-    expect(heading.textContent).toContain("Queued parents");
+    const list = screen.getByRole("listbox", { name: "Queued classes" });
+    const add = screen.getByRole("button", { name: "Add class 50 to queue" });
+    const range = screen.getByRole("group", { name: "Selected class propagation range" });
+    expect(heading.textContent).toContain("Queue");
     expect(heading.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(list.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(add.compareDocumentPosition(range) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
@@ -280,13 +284,12 @@ describe("TrackRail", () => {
       tracking={false} trackingParentIds={[]} promptEditing={false} promptTool={null}
       savingProgress={false} progressSaved={false}
       promptBrushSize={8} promptEraserSize={12} trackError={null} axisIsZ prompts={[]}
-      selectedParentId={null} selectedChildIndex={null} pendingReview={null}
+      selectedParentId={null} pendingReview={null}
       reviewAction={null} promptUndoCount={0} promptRedoCount={0}
       overwriteMode="overwrite_empty" layerCount={20} lastResults={[]} onRange={vi.fn()}
-      onSelectPrompt={vi.fn()} onSelectChild={vi.fn()}
-      onQueueActive={vi.fn()} onAddChild={vi.fn()} onPromptTool={vi.fn()}
+      onSelectPrompt={vi.fn()} onQueueActive={vi.fn()} onPromptTool={vi.fn()}
       onSaveProgress={vi.fn()} onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()}
-      onClearSeed={vi.fn()} onRemoveChild={vi.fn()} onRemovePrompt={vi.fn()}
+      onClearSeed={vi.fn()} onRemovePrompt={vi.fn()}
       onPromptUndo={vi.fn()} onPromptRedo={vi.fn()} onOverwriteMode={onOverwriteMode}
       onPropagateAll={vi.fn()} onPropagateSelected={vi.fn()} onReview={vi.fn()}
     />);
@@ -321,10 +324,10 @@ describe("TrackRail", () => {
     expect(end.value).not.toBe("9");
   });
 
-  it("shows a placeholder range when no parent is selected", () => {
+  it("shows a placeholder range when no class is selected", () => {
     // An editable "1" here would read as a range the annotator had chosen.
     renderRail([]);
-    const range = screen.getByRole("group", { name: "Selected parent propagation range" });
+    const range = screen.getByRole("group", { name: "Selected class propagation range" });
     expect(range.textContent).toContain("Start layer");
     expect(range.textContent).toContain("—");
     expect(screen.queryByRole("textbox", { name: "Start layer" })).toBeNull();
@@ -402,7 +405,7 @@ describe("TrackRail", () => {
       ...base, subclasses: [{ index: 1, seeds: [] }], start_z: 0, end_z: 9, z_range: [0, 9],
     }]);
     expect(propagate().disabled).toBe(true);
-    expect(screen.getByText(/Draw at least one child-class seed/)).toBeTruthy();
+    expect(screen.getByText(/Draw at least one seed/)).toBeTruthy();
     seedless.unmount();
 
     // Valid: one seed inside a wider inclusive range.
@@ -412,7 +415,7 @@ describe("TrackRail", () => {
     expect(all().textContent).toBe("Propagate all (1)");
   });
 
-  it("summarises inferred children, merges and ambiguities before Confirm", () => {
+  it("summarises inferred branches, merges and ambiguities before Confirm", () => {
     renderRail(
       [{
         parent_id: 50,
@@ -441,19 +444,21 @@ describe("TrackRail", () => {
             { loser_branch: 2, survivor_branch: 1, contact_z: 3, reason: "smaller_branch" },
           ],
           terminated_at: { "2": 3 },
-          warnings: [{ code: "ambiguous_child_merge", message: "Children 1 and 2 are ambiguous." }],
+          warnings: [{ code: "ambiguous_child_merge", message: "Branches 1 and 2 are ambiguous." }],
         },
       }],
     );
     const summary = screen.getByRole("region", { name: "Track propagation summary" });
-    expect(summary.textContent).toContain("2 inferred children");
+    expect(summary.textContent).toContain("2 branches");
     expect(summary.textContent).toContain("layers 1–6");
     // Seed layers and the merge layer are shown 1-based, like everything else.
-    expect(summary.textContent).toContain("Child 1 seeded on layers 1, 5");
-    expect(summary.textContent).toContain("Child 2 seeded on layer 1");
+    expect(summary.textContent).toContain("Branch 1 seeded on layers 1, 5");
+    expect(summary.textContent).toContain("Branch 2 seeded on layer 1");
     expect(summary.textContent).toContain("ends at layer 4");
-    expect(summary.textContent).toContain("Child 2 merged into child 1 at layer 4");
-    expect(summary.textContent).toContain("Children 1 and 2 are ambiguous.");
+    expect(summary.textContent).toContain("Branch 2 merged into branch 1 at layer 4");
+    expect(summary.textContent).toContain("Branches 1 and 2 are ambiguous.");
+    // No family-tree vocabulary survives in the summary the annotator reads.
+    expect(summary.textContent).not.toMatch(/child|parent/i);
     // The annotator is never asked to manage the temporary branch ids.
     expect(summary.textContent).not.toContain("91");
     expect(summary.textContent).not.toContain("92");
@@ -464,7 +469,7 @@ describe("TrackRail", () => {
     expect(screen.queryByRole("region", { name: "Track propagation summary" })).toBeNull();
   });
 
-  it("offers Confirm/Reject for a pending parent preview and blocks propagation", () => {
+  it("offers Confirm/Reject for a pending class preview and blocks propagation", () => {
     renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 4, shape: [2, 2], rle: [[0, 1]] }] }],
@@ -489,13 +494,13 @@ describe("TrackRail", () => {
     expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("keeps multi-parent review ids in button titles without visible copy", () => {
+  it("keeps multi-class review ids in button titles without visible copy", () => {
     renderRail([], null, { parent_ids: [50, 51, 52], status: "pending_review" });
     const confirm = screen.getByRole("button", { name: "Confirm" }) as HTMLButtonElement;
     expect(confirm.title).toContain("50, 51, 52");
     expect(confirm.disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.queryByText(/Review propagated parent/)).toBeNull();
+    expect(screen.queryByText(/Review propagated class/)).toBeNull();
     expect(screen.queryByText(/Scrub z to review/)).toBeNull();
   });
 
@@ -523,7 +528,7 @@ describe("TrackRail", () => {
     expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
   });
 
-  it("attaches compact propagation controls to the queued-parent panel", () => {
+  it("attaches compact propagation controls to the queue panel", () => {
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
@@ -539,8 +544,8 @@ describe("TrackRail", () => {
     expect(footer.contains(propagation)).toBe(false);
     expect(queue.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
-  it("expands selected-parent controls inline in the queue", () => {
-    const { container } = renderRail([{
+  it("expands the selected class inline to its seed actions", () => {
+    const { container, onClearSeed } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
       start_z: 0,
@@ -549,16 +554,18 @@ describe("TrackRail", () => {
       status: "draft",
     }]);
     const list = container.querySelector(".track-prompt-list")!;
-    const selectedParent = list.querySelector(".track-parent-item.selected")!;
-    const detail = selectedParent.querySelector(".track-subclass-panel")!;
-    expect(selectedParent.contains(detail)).toBe(true);
-    expect(selectedParent.getAttribute("aria-selected")).toBe("true");
-    expect(detail.querySelector(".track-subclass-row.selected")).toBeTruthy();
+    const selectedClass = list.querySelector(".track-class-item.selected")!;
+    const detail = selectedClass.querySelector(".track-inline-actions")!;
+    expect(selectedClass.contains(detail)).toBe(true);
+    expect(selectedClass.getAttribute("aria-selected")).toBe("true");
+    expect(selectedClass.querySelector(".track-subclass-panel")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear this z" }));
+    expect(onClearSeed).toHaveBeenCalledOnce();
   });
 
   it("never pins the prompt tools over the content below them", () => {
     // Regression: `.track-prompt-tools { position: sticky; top: 0 }` floated
-    // the pink panel over the parent/child panel and the queued-parent list.
+    // the pink panel over the queue list below it.
     const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
@@ -570,12 +577,12 @@ describe("TrackRail", () => {
     const tools = container.querySelector<HTMLElement>(".track-prompt-tools")!;
     expect(tools.style.position).not.toBe("sticky");
     // It must remain in normal flow before the queue it used to overlap.
-    const panel = container.querySelector(".track-subclass-panel")!;
+    const panel = container.querySelector(".track-queue-panel")!;
     expect(tools.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(tools.closest(".track-rail-body")).toBe(panel.closest(".track-rail-body"));
   });
 
-  it("removes a parent with a small × at the end of the parent row", () => {
+  it("removes a class with a small × at the end of its row", () => {
     const { container, onRemovePrompt } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [] }],
@@ -585,35 +592,65 @@ describe("TrackRail", () => {
       status: "draft",
     }]);
     expect(screen.queryByRole("button", { name: "Remove parent" })).toBeNull();
-    const remove = screen.getByRole("button", { name: "Remove parent class 50" });
+    const remove = screen.getByRole("button", { name: "Remove class 50" });
     expect(remove.textContent).toBe("×");
     expect(remove.classList.contains("danger")).toBe(false);
-    // Same control shape as the child-class remove, and last in its row.
     expect(remove.classList.contains("track-remove")).toBe(true);
-    const row = container.querySelector<HTMLElement>(".track-parent-item.selected .track-parent-row")!;
+    const row = container.querySelector<HTMLElement>(".track-class-item.selected .track-class-row")!;
     expect(row.lastElementChild).toBe(remove);
     fireEvent.click(remove);
     expect(onRemovePrompt).toHaveBeenCalledOnce();
   });
 
-  it("drops the child-class Jump button but keeps select, seed z and ×", () => {
-    const { container, onRemoveChild } = renderRail([{
+  it("reports how many layers a class is seeded on instead of listing slots", () => {
+    const { container } = renderRail([{
+      parent_id: 50,
+      // Two slots seeded on three distinct layers. The annotator is told about
+      // the layers, which is what they can act on; the slots are the backend's
+      // branch bookkeeping and stay out of the queue row.
+      subclasses: [
+        { index: 1, seeds: [{ z: 7, shape: [2, 2], rle: [[0, 1]] }, { z: 8, shape: [2, 2], rle: [[0, 1]] }] },
+        { index: 2, seeds: [{ z: 8, shape: [2, 2], rle: [[0, 1]] }, { z: 9, shape: [2, 2], rle: [[0, 1]] }] },
+      ],
+      start_z: 7,
+      end_z: 9,
+      z_range: [7, 9],
+      status: "ready",
+    }]);
+    const row = container.querySelector<HTMLElement>(".track-class-item.selected")!;
+    expect(row.textContent).toContain("3 seed layers");
+    expect(row.textContent).not.toContain("z=7");
+    expect(screen.queryByRole("button", { name: /Child class/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Remove child/ })).toBeNull();
+    expect(container.querySelector(".track-subclass-row")).toBeNull();
+  });
+
+  it("says a class has no seeds rather than showing an empty slot list", () => {
+    const { container } = renderRail([{
+      parent_id: 50,
+      subclasses: [{ index: 1, seeds: [] }],
+      start_z: 0,
+      end_z: 9,
+      z_range: [0, 9],
+      status: "draft",
+    }]);
+    expect(container.querySelector(".track-class-item.selected")!.textContent).toContain("no seeds");
+  });
+
+  it("keeps no parent or child vocabulary anywhere the annotator can read it", () => {
+    const { container } = renderRail([{
       parent_id: 50,
       subclasses: [{ index: 1, seeds: [{ z: 7, shape: [2, 2], rle: [[0, 1]] }] }],
       start_z: 7,
       end_z: 7,
       z_range: [7, 7],
-      status: "ready",
-    }]);
-    expect(screen.queryByRole("button", { name: "Jump" })).toBeNull();
-    const row = container.querySelector<HTMLElement>(".track-subclass-row")!;
-    expect(screen.getByRole("button", { name: "Child class 1" })).toBeTruthy();
-    expect(row.textContent).toContain("z=7");
-    const remove = screen.getByRole("button", { name: "Remove child class 1" });
-    expect(remove.textContent).toBe("×");
-    expect(row.lastElementChild).toBe(remove);
-    fireEvent.click(remove);
-    expect(onRemoveChild).toHaveBeenCalledWith(1);
+      status: "draft",
+    }], "brush");
+    expect(container.textContent).not.toMatch(/parent|child/i);
+    for (const element of Array.from(container.querySelectorAll("[title], [aria-label]"))) {
+      expect(element.getAttribute("title") ?? "").not.toMatch(/parent|child/i);
+      expect(element.getAttribute("aria-label") ?? "").not.toMatch(/parent|child/i);
+    }
   });
 
   it("keeps Confirm/Reject clickable while the rest of the rail is blocked", () => {
@@ -627,15 +664,14 @@ describe("TrackRail", () => {
       promptEditing={false} promptTool={null} promptBrushSize={8} promptEraserSize={12}
       savingProgress={false} progressSaved={false}
       trackError={null} axisIsZ={false} prompts={[]} selectedParentId={null}
-      selectedChildIndex={null}
       pendingReview={{ parent_ids: [50], status: "pending_review" }}
       promptUndoCount={0} promptRedoCount={0} reviewAction={null}
       overwriteMode="overwrite_empty"
       layerCount={20} lastResults={[]} onRange={vi.fn()}
-      onSelectPrompt={vi.fn()} onSelectChild={vi.fn()} onQueueActive={vi.fn()}
-      onAddChild={vi.fn()} onPromptTool={vi.fn()} onSaveProgress={vi.fn()}
+      onSelectPrompt={vi.fn()} onQueueActive={vi.fn()}
+      onPromptTool={vi.fn()} onSaveProgress={vi.fn()}
       onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()} onClearSeed={vi.fn()}
-      onRemoveChild={vi.fn()} onRemovePrompt={vi.fn()} onPropagateAll={vi.fn()}
+      onRemovePrompt={vi.fn()} onPropagateAll={vi.fn()}
       onPropagateSelected={vi.fn()} onPromptUndo={vi.fn()} onPromptRedo={vi.fn()}
       onOverwriteMode={vi.fn()}
       onReview={onReview}

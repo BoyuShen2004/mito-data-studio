@@ -82,7 +82,7 @@ describe("trackRangeIssue", () => {
 
   it("requires at least one non-empty prompt", () => {
     expect(trackRangeIssue(prompt({ subclasses: [{ index: 1, seeds: [] }] }), 20))
-      .toMatch(/Draw at least one child-class seed/);
+      .toMatch(/Draw at least one seed/);
   });
 
   it("does not require prompts on either endpoint", () => {
@@ -111,7 +111,7 @@ describe("trackRangeIssue", () => {
   });
 
   it("asks for a selection when there is no prompt at all", () => {
-    expect(trackRangeIssue(null, 20)).toMatch(/Select a queued parent/);
+    expect(trackRangeIssue(null, 20)).toMatch(/Select a queued class/);
     expect(canPropagatePrompt(undefined, 20)).toBe(false);
   });
 });

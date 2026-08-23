@@ -111,10 +111,10 @@ const propagateButton = () =>
 /** Wait for the first plane *and* the queue fetch to land, then propagate.
  * Propagating before the canvas holds a plane makes the returned plan look
  * stale, which is a test-harness race, not the behaviour under test. */
-async function propagateQueuedParent() {
+async function propagateQueuedClass() {
   await screen.findByRole("button", { name: "Fit window" });
   await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
-  await screen.findByText("Parent 9");
+  await screen.findByText("Class 9");
   await waitFor(() => expect(propagateButton().disabled).toBe(false));
   await userEvent.click(propagateButton());
   await waitFor(() => expect(confirmButton().disabled).toBe(false));
@@ -148,30 +148,30 @@ describe("Track propagate review", () => {
     await screen.findByRole("button", { name: "Fit window" });
     expect(confirmButton().disabled).toBe(true);
 
-    await propagateQueuedParent();
+    await propagateQueuedClass();
 
     expect(rejectButton().disabled).toBe(false);
     // Propagating again is what must be blocked while a result is unreviewed.
     expect(propagateButton().disabled).toBe(true);
   });
 
-  it("retires the propagated parent on Confirm without a server review call", async () => {
+  it("retires the propagated class on Confirm without a server review call", async () => {
     mount();
-    await propagateQueuedParent();
+    await propagateQueuedClass();
 
     await userEvent.click(confirmButton());
 
     await waitFor(() => expect(track.replaceTrackingPrompts).toHaveBeenCalled());
-    // Confirmed parents leave the queue; nothing is asked of the server-side
+    // Confirmed classes leave the queue; nothing is asked of the server-side
     // review endpoint, which has no pending preview to act on.
     expect(track.replaceTrackingPrompts.mock.calls[0][1]).toEqual([]);
     expect(track.reviewTrackingPreview).not.toHaveBeenCalled();
     await waitFor(() => expect(confirmButton().disabled).toBe(true));
   });
 
-  it("restores the pre-propagation planes on Reject and re-arms the parent", async () => {
+  it("restores the pre-propagation planes on Reject and re-arms the class", async () => {
     mount();
-    await propagateQueuedParent();
+    await propagateQueuedClass();
     // The plan landed in the pending buffer, so the editor has unsaved work.
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
 

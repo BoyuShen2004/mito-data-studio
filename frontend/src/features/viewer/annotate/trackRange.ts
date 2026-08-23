@@ -46,7 +46,7 @@ export function trackRangeIssue(
   prompt: TrackingPrompt | null | undefined,
   layerCount: number,
 ): string | null {
-  if (!prompt) return "Select a queued parent class first.";
+  if (!prompt) return "Select a queued class first.";
   const { start_z: startZ, end_z: endZ } = prompt;
   if (startZ == null || endZ == null) {
     return "Set both Start and End layers before propagating.";
@@ -62,7 +62,7 @@ export function trackRangeIssue(
     return `End layer ${toLayer(endZ)} must not be before Start layer ${toLayer(startZ)}.`;
   }
   if (!promptHasSeeds(prompt)) {
-    return "Draw at least one child-class seed before propagating.";
+    return "Draw at least one seed before propagating.";
   }
   const outside = promptSeedZs(prompt).filter((z) => z < startZ || z > endZ);
   if (outside.length) {

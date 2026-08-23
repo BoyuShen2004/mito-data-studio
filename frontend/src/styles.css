@@ -1960,7 +1960,7 @@ button.dev-reset-btn:hover:not(:disabled) {
   font-size: 0.7rem;
   color: var(--muted);
 }
-.track-add-parent {
+.track-add-class {
   width: 100%;
   padding: 0.3rem 0.45rem;
   font-size: 0.72rem;
@@ -2168,7 +2168,7 @@ button.dev-reset-btn:hover:not(:disabled) {
   max-height: 11rem;
   overflow-y: auto;
 }
-.track-inference-parent {
+.track-inference-class {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -2219,19 +2219,19 @@ button.dev-reset-btn:hover:not(:disabled) {
 .track-queue-empty {
   padding: 0.25rem;
 }
-.track-parent-item {
+.track-class-item {
   border: 1px solid transparent;
   border-radius: 0.35rem;
   background: transparent;
 }
-.track-parent-item.selected {
+.track-class-item.selected {
   border-color: color-mix(in srgb, var(--accent) 85%, white);
   background: color-mix(in srgb, var(--accent) 11%, var(--surface));
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .track-prompt-row {
   display: grid;
-  grid-template-columns: 0.55rem 0.6rem minmax(4rem, 1fr) auto auto;
+  grid-template-columns: 0.6rem minmax(4rem, 1fr) auto auto;
   align-items: center;
   gap: 0.3rem;
   width: 100%;
@@ -2243,61 +2243,29 @@ button.dev-reset-btn:hover:not(:disabled) {
   border: none;
   box-shadow: none;
 }
-.track-subclass-row.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
-  box-shadow: inset 3px 0 0 var(--accent);
-}
 .track-prompt-row:hover {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
-.track-parent-caret {
-  color: var(--muted);
-  font-size: 0.65rem;
-}
-.track-parent-dot {
+.track-class-dot {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
   background: var(--muted);
 }
-.track-subclass-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  padding: 0 0.3rem 0.35rem 1rem;
-}
-/* Parent header: title takes the slack, the remove "×" sits at the end of the
-   row exactly like the child-class rows below it. */
-.track-parent-row {
+/* Queue row: the title takes the slack and the remove "×" sits at the end. */
+.track-class-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.2rem;
   padding: 0.1rem;
 }
-.track-subclass-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.2rem;
-  border: 1px solid transparent;
-  border-radius: 0.3rem;
-  padding: 0.15rem;
-  font-size: 0.68rem;
-}
-/* Small, quiet "×" — the parent and child removes are the same control, so
-   they look the same. Replaces the oversized red "Remove parent" button. */
+/* Small, quiet "×". Replaces the oversized red "Remove parent" button. */
 .track-remove {
   min-width: 0;
   padding: 0.05rem 0.3rem;
   line-height: 1.1;
   font-size: 0.78rem;
-}
-.track-subclass-row .muted {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .track-inline-actions {
   display: flex;
