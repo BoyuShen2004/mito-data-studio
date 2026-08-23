@@ -87,19 +87,21 @@ first.
 
 For Track:
 
-1. Add a parent label to the queue and paint one or more seed masks.
+1. Add a class to the queue and paint its seeds.
 2. Enter inclusive, one-based **Start layer** and **End layer** values. Every
    seed must lie inside the range.
-3. Choose the overwrite policy and propagate the selected parent or all queued
-   parents.
+3. Choose the overwrite policy and propagate the selected class or all queued
+   classes.
 4. Scrub the affected layers and choose **Confirm** or **Reject**.
 5. Press the editor's **Save** after confirming.
 
-Disconnected seed regions are followed as separate internal children and
-merged back into the parent label. Track reports inferred children, merges,
-terminations, and ambiguous matches. Track prompt Undo/Redo changes prompt
-geometry only; queue and child-management actions are not part of that history.
-Propagation is a compound pending edit and does not write the working draft.
+Disconnected pieces of a seed are followed as separate branches and merged back
+into the class label, so drawing two separate blobs is how you ask for two
+branches — there is nothing to create or select by hand. Track reports the
+inferred branches, merges, terminations, and ambiguous matches. Track prompt
+Undo/Redo changes prompt geometry only; queue actions are not part of that
+history. Propagation is a compound pending edit and does not write the working
+draft.
 
 ## Annotation time
 
