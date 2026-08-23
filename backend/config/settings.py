@@ -120,6 +120,18 @@ ALLOWED_HOSTS = [
     if h.strip()
 ]
 
+# Public identity of this deployment. When the site is renamed, the retired
+# hostnames stay in ALLOWED_HOSTS (so their requests are still served rather
+# than rejected) but are permanently redirected to the canonical one, which is
+# what finishes a rename instead of leaving two live addresses forever.
+# Loopback names are deliberately never listed here — see core.canonical_host.
+MITO_CANONICAL_HOST = os.getenv("MITO_CANONICAL_HOST", "").strip()
+MITO_LEGACY_HOSTS = [
+    h.strip()
+    for h in os.getenv("MITO_LEGACY_HOSTS", "").split(",")
+    if h.strip()
+]
+
 
 # --- Application definition ------------------------------------------------
 
@@ -146,6 +158,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Before WhiteNoise: a retired hostname must redirect for the SPA shell and
+    # its static assets too, not just for API routes.
+    "core.canonical_host.CanonicalHostRedirectMiddleware",
     "core.observability.RequestObservabilityMiddleware",
     # Serves the built frontend (frontend/dist) and STATIC_ROOT directly from
     # the WSGI process — no-op in dev since neither directory exists there.

@@ -88,6 +88,31 @@ npm run build:production --prefix frontend
 Then reload the web unit and smoke-check it. The dispatcher needs a restart only
 when its Python code or unit definition changed.
 
+## Public hostname
+
+The canonical public address is `mito-data-studio.seg.bio`. The earlier
+`mito-data-agent.seg.bio` is retired: it stays in `DJANGO_ALLOWED_HOSTS` so its
+requests are still accepted, and `core.canonical_host` permanently redirects
+them to the canonical host. Two environment variables drive it, and the
+middleware is inert unless both are set:
+
+```ini
+MITO_CANONICAL_HOST=mito-data-studio.seg.bio
+MITO_LEGACY_HOSTS=mito-data-agent.seg.bio
+```
+
+Never list a loopback name in `MITO_LEGACY_HOSTS`. The health checks below and
+the metrics scraper reach the service as `127.0.0.1`, and redirecting those
+would replace every `200` in this runbook with a `301` to a name that only
+resolves through the public proxy.
+
+Safe methods get `301`; everything else gets `308`, which carries the same
+permanent meaning without letting a client downgrade a `POST` to a `GET` and
+silently drop the request body.
+
+An `.env` change needs `systemctl restart`, not `reload` — a gunicorn HUP does
+not reread `EnvironmentFile`.
+
 ## Health and identity checks
 
 ```bash
