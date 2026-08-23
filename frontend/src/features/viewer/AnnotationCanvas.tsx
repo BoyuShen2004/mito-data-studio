@@ -169,10 +169,10 @@ const SIDE_RAIL_W = 14;
 const clampSidePanel = (w: number) =>
   Math.max(SIDE_PANEL_MIN, Math.min(SIDE_PANEL_MAX, Math.round(w)));
 
-function trackingPromptColor(parentId: number, childIndex: number): [number, number, number] {
-  // Parent ids establish the main hue; child ids move far enough around the
-  // wheel to remain distinguishable without making color carry selection.
-  const hue = ((parentId * 137.508) + (childIndex - 1) * 47) % 360;
+function trackingPromptColor(classId: number): [number, number, number] {
+  // One hue per queued class. The golden-angle step keeps neighbouring ids far
+  // apart on the wheel without colour ever having to carry selection.
+  const hue = (classId * 137.508) % 360;
   const saturation = 0.78;
   const lightness = 0.62;
   const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
@@ -786,7 +786,6 @@ export default function AnnotationCanvas({
   const [trackError, setTrackError] = useState<string | null>(null);
   const [trackingPrompts, setTrackingPrompts] = useState<TrackingPrompt[]>([]);
   const [selectedTrackParent, setSelectedTrackParent] = useState<number | null>(null);
-  const [selectedTrackSubclass, setSelectedTrackSubclass] = useState<number | null>(null);
   /** `local` marks a preview that only exists in this browser's pending buffer
    * — the batch endpoint plans rather than writes, so there is nothing on the
    * server to Confirm or Reject. Server-side previews (legacy volumes that
@@ -836,7 +835,6 @@ export default function AnnotationCanvas({
         setTrackingPendingReview(resolveTrackingPendingReview(queue));
         if (queue.items.length) {
           setSelectedTrackParent((current) => current ?? queue.items[0].parent_id);
-          setSelectedTrackSubclass((current) => current ?? queue.items[0].subclasses[0]?.index ?? null);
         }
       })
       .catch((e) => live && setTrackError(e instanceof Error ? e.message : "Could not load Track prompts"));
@@ -4462,7 +4460,6 @@ export default function AnnotationCanvas({
       setTrackingPrompts([]);
       setTrackingPendingReview(null);
       setSelectedTrackParent(null);
-      setSelectedTrackSubclass(null);
       trackPreviewUndoRef.current = null;
       setDirty(false);
       setStatus("idle");
@@ -4542,7 +4539,6 @@ export default function AnnotationCanvas({
     const prompt = trackingPrompts.find((item) => item.parent_id === parentId);
     if (!prompt) return;
     setSelectedTrackParent(parentId);
-    setSelectedTrackSubclass(prompt.subclasses[0]?.index ?? null);
     setActiveId(parentId);
     const seedZs = prompt.subclasses.flatMap((subclass) => subclass.seeds.map((seed) => seed.z));
     if (seedZs.length) requestIndex(Math.min(...seedZs));
@@ -4569,7 +4565,6 @@ export default function AnnotationCanvas({
     try {
       await persistTrackingPrompt(prompt);
       setSelectedTrackParent(activeId);
-      setSelectedTrackSubclass(1);
     } catch (e) {
       setTrackError(e instanceof Error ? e.message : "Could not queue the class");
     }
@@ -4607,7 +4602,6 @@ export default function AnnotationCanvas({
       const remaining = trackingPrompts.filter((item) => item.parent_id !== selectedTrackParent);
       setTrackingPrompts(remaining);
       setSelectedTrackParent(remaining[0]?.parent_id ?? null);
-      setSelectedTrackSubclass(remaining[0]?.subclasses[0]?.index ?? null);
     } catch (e) {
       setTrackError(e instanceof Error ? e.message : "Could not remove the class");
     }
@@ -4736,21 +4730,19 @@ export default function AnnotationCanvas({
       if (!prompt) return false;
       const [h, w] = shapeRef.current;
       const any = mask.some(Boolean);
-      // The mask was read as the union of every slot on this layer, so write it
-      // back to one and drop the layer from the rest. Leaving their copies in
-      // place would resurrect pixels that were just erased. Dividing a drawing
-      // into branches happens on the server, from its disconnected pieces —
-      // there is nothing to apportion between slots here.
-      const target = selectedTrackSubclass ?? prompt.subclasses[0]?.index ?? 1;
+      // A class has one seed mask per layer. ``subclasses`` survives only
+      // because it is still the wire format; the server divides a layer into
+      // branches itself, from the disconnected pieces of the drawing. Queues
+      // saved under the old manual workflow can still carry several slots, so
+      // this layer is written to the first and dropped from the rest — leaving
+      // their copies behind would resurrect pixels that were just erased.
       const seed = any
         ? { z: index, rle: trueRunsRLE(mask), shape: [h, w] as [number, number] }
         : null;
-      const slots = prompt.subclasses.some((child) => child.index === target)
-        ? prompt.subclasses
-        : [...prompt.subclasses, { index: target, seeds: [] }];
-      const subclasses = slots.map((child) => {
+      const slots = prompt.subclasses.length ? prompt.subclasses : [{ index: 1, seeds: [] }];
+      const subclasses = slots.map((child, at) => {
         const kept = child.seeds.filter((item) => item.z !== index);
-        return { ...child, seeds: child.index === target && seed ? [...kept, seed] : kept };
+        return { ...child, seeds: at === 0 && seed ? [...kept, seed] : kept };
       });
       const next: TrackingPrompt = {
         ...prompt,
@@ -4784,7 +4776,7 @@ export default function AnnotationCanvas({
       if (trackPromptSavePromiseRef.current === operation) trackPromptSavePromiseRef.current = null;
     });
     return operation;
-  }, [index, persistTrackingPrompt, recordTrackingHistory, selectedTrackParent, selectedTrackSubclass, taskId, trackingPrompts]);
+  }, [index, persistTrackingPrompt, recordTrackingHistory, selectedTrackParent, taskId, trackingPrompts]);
 
   const discardTrackingProposal = useCallback(() => {
     trackPromptPredictSeqRef.current += 1;
@@ -4923,11 +4915,6 @@ export default function AnnotationCanvas({
       trackPromptDraftRef.current = null;
       const selected = restored.items.find((item) => item.parent_id === selectedTrackParent) ?? restored.items[0] ?? null;
       setSelectedTrackParent(selected?.parent_id ?? null);
-      setSelectedTrackSubclass((childIndex) =>
-        selected?.subclasses.some((child) => child.index === childIndex)
-          ? childIndex
-          : selected?.subclasses[0]?.index ?? null,
-      );
       setTrackPromptRevision((value) => value + 1);
       setTrackError(null);
     } catch (error) {
@@ -4996,7 +4983,6 @@ export default function AnnotationCanvas({
     }
     const selected = stored.items.find((item) => item.parent_id === selectedTrackParent) ?? stored.items[0] ?? null;
     setSelectedTrackParent(selected?.parent_id ?? null);
-    setSelectedTrackSubclass(selected?.subclasses[0]?.index ?? null);
     setTrackPromptRevision((value) => value + 1);
     setLabelsSummaryToken((value) => value + 1);
   }, [selectedTrackParent, syncTrackingHistoryCounts, taskId, trackingPendingReview, trackingPrompts, writeCompoundEdits]);
@@ -5026,7 +5012,6 @@ export default function AnnotationCanvas({
       }
       const selected = reviewed.items.find((item) => item.parent_id === selectedTrackParent) ?? reviewed.items[0] ?? null;
       setSelectedTrackParent(selected?.parent_id ?? null);
-      setSelectedTrackSubclass(selected?.subclasses[0]?.index ?? null);
       await loadSlice(index, undefined, { forceServer: true });
       setLabelsSummaryToken((value) => value + 1);
       setLabels3DRefreshKey((value) => value + 1);
@@ -5082,7 +5067,7 @@ export default function AnnotationCanvas({
         compositeMaskColor(
           image,
           overlay.mask,
-          trackingPromptColor(overlay.parentId, overlay.slotIndex),
+          trackingPromptColor(overlay.parentId),
           overlay.emphasis === 2 ? 185 : 65,
         );
       }
@@ -5092,7 +5077,7 @@ export default function AnnotationCanvas({
       ctx.putImageData(image, 0, 0);
       const scale = canvas.getBoundingClientRect().width / Math.max(w, 1);
       for (const overlay of overlays) {
-        const [r, g, b] = trackingPromptColor(overlay.parentId, overlay.slotIndex);
+        const [r, g, b] = trackingPromptColor(overlay.parentId);
         const width = overlay.emphasis === 2 ? 2.8 : 1.1;
         const contour = overlay.emphasis === 2 ? "#ffffff" : `rgba(${r}, ${g}, ${b}, 0.65)`;
         strokeMaskContour(ctx, overlay.mask, h, w, Math.max(0.75, width / Math.max(scale, 0.001)), contour);

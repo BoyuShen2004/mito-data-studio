@@ -1913,7 +1913,7 @@ def track_task_batch(
             )
             if not result.get("group"):
                 raise ValueError(
-                    f"Parent {group['parent_id']} has no non-empty subclass seeds"
+                    f"Class {group['parent_id']} has no seeds to propagate"
                 )
             results.append(result)
             logger.info(
@@ -2148,7 +2148,7 @@ def plan_track_task_batch(
             )
             if not result.get("group"):
                 raise ValueError(
-                    f"Parent {group['parent_id']} has no non-empty subclass seeds"
+                    f"Class {group['parent_id']} has no seeds to propagate"
                 )
             # Everything below ran in slab-local z; the client and the audit
             # trail speak whole-volume z.

@@ -31,7 +31,7 @@ export function promptSeedZs(prompt: TrackingPrompt): number[] {
   ).sort((a, b) => a - b);
 }
 
-export function promptHasSeeds(prompt: TrackingPrompt): boolean {
+function promptHasSeeds(prompt: TrackingPrompt): boolean {
   return prompt.subclasses.some((child) => child.seeds.length > 0);
 }
 

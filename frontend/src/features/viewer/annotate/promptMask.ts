@@ -59,10 +59,8 @@ interface SeedSlot {
   seeds: { z: number; rle: [number, number][]; shape: [number, number] }[];
 }
 
-export interface SeedOverlay {
+interface SeedOverlay {
   parentId: number;
-  /** Only used to pick a colour; the annotator never sees slot numbers. */
-  slotIndex: number;
   mask: Uint8Array;
   /** 2 = the class being edited, 0 = the rest of the queue. */
   emphasis: 0 | 2;
@@ -94,12 +92,7 @@ export function trackingSeedOverlays({
   for (const prompt of prompts) {
     if (prompt.parent_id === selectedParentId) {
       if (selectedMask?.some(Boolean)) {
-        overlays.push({
-          parentId: prompt.parent_id,
-          slotIndex: prompt.subclasses[0]?.index ?? 1,
-          mask: selectedMask,
-          emphasis: 2,
-        });
+        overlays.push({ parentId: prompt.parent_id, mask: selectedMask, emphasis: 2 });
       }
       continue;
     }
@@ -108,7 +101,7 @@ export function trackingSeedOverlays({
       if (!seed || seed.shape[0] !== height || seed.shape[1] !== width) continue;
       const mask = maskFromTrackingSeed(seed.rle, height * width);
       if (!mask.some(Boolean)) continue;
-      overlays.push({ parentId: prompt.parent_id, slotIndex: slot.index, mask, emphasis: 0 });
+      overlays.push({ parentId: prompt.parent_id, mask, emphasis: 0 });
     }
   }
   // The edited class paints last so it stays legible over the rest.
