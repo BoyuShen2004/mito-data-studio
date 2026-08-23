@@ -77,7 +77,12 @@ import Labels3DPanel from "./Labels3DPanel";
 import AnnotateToolChrome from "./annotate/AnnotateToolChrome";
 import TrackRail, { type TrackingPromptTool } from "./annotate/TrackRail";
 import { canPropagatePrompt, trackRangeIssue } from "./annotate/trackRange";
-import { mergePromptMask } from "./annotate/promptMask";
+import {
+  maskFromTrackingSeed,
+  mergePromptMask,
+  trackingSeedOverlays,
+  trueRunsRLE,
+} from "./annotate/promptMask";
 import {
   restoreTrackingPromptGeometry,
   snapshotTrackingPromptGeometry,
@@ -163,29 +168,6 @@ const SIDE_PANEL_MAX = 520;
 const SIDE_RAIL_W = 14;
 const clampSidePanel = (w: number) =>
   Math.max(SIDE_PANEL_MIN, Math.min(SIDE_PANEL_MAX, Math.round(w)));
-
-/** True-run RLE ([start, length] of contiguous truthy pixels) — the shape the
- * tracking endpoint expects for seed masks, distinct from the label-id RLE. */
-function trueRunsRLE(mask: Uint8Array): [number, number][] {
-  const runs: [number, number][] = [];
-  let i = 0;
-  while (i < mask.length) {
-    if (mask[i]) {
-      const start = i;
-      while (i < mask.length && mask[i]) i++;
-      runs.push([start, i - start]);
-    } else {
-      i++;
-    }
-  }
-  return runs;
-}
-
-function maskFromTrackingSeed(runs: [number, number][], size: number): Uint8Array {
-  const mask = new Uint8Array(size);
-  for (const [start, length] of runs) mask.fill(1, start, Math.min(size, start + length));
-  return mask;
-}
 
 function trackingPromptColor(parentId: number, childIndex: number): [number, number, number] {
   // Parent ids establish the main hue; child ids move far enough around the
@@ -4787,6 +4769,12 @@ export default function AnnotationCanvas({
         setTrackError(e instanceof Error ? e.message : "Could not save the seed");
         const queue = await getTrackingPrompts(taskId).catch(() => null);
         if (queue) setTrackingPrompts(queue.items);
+        // Drop the local surface too, so the canvas re-reads from the queue the
+        // server just confirmed. Refetching without this left the rejected
+        // strokes painted on screen, which reads as "saved" -- the one thing a
+        // failed save must not look like.
+        trackPromptDraftRef.current = null;
+        setTrackPromptRevision((value) => value + 1);
         return false;
       }
     });
@@ -5080,38 +5068,23 @@ export default function AnnotationCanvas({
     const proposal = trackPromptProposalRef.current?.key === key
       ? trackPromptProposalRef.current.mask
       : null;
-    const overlays: {
-      mask: Uint8Array;
-      color: [number, number, number];
-      emphasis: 0 | 1 | 2;
-    }[] = [];
-    for (const prompt of trackingPrompts) {
-      const isSelectedPrompt = prompt.parent_id === selectedTrackParent;
-      for (const child of prompt.subclasses) {
-        // The selected class draws once from the live surface, which already
-        // holds the union of its slots; drawing the slots as well would stack
-        // duplicate overlays on the same pixels.
-        const isSelectedSlot = isSelectedPrompt && child.index === selectedTrackSubclass;
-        if (isSelectedPrompt && !isSelectedSlot) continue;
-        const seed = child.seeds.find((item) => item.z === index);
-        const mask = isSelectedSlot
-          ? selectedMask
-          : seed && seed.shape[0] === h && seed.shape[1] === w
-            ? maskFromTrackingSeed(seed.rle, h * w)
-            : null;
-        if (!mask?.some(Boolean)) continue;
-        overlays.push({
-          mask,
-          color: trackingPromptColor(prompt.parent_id, child.index),
-          emphasis: isSelectedSlot ? 2 : 0,
-        });
-      }
-    }
-    overlays.sort((a, b) => a.emphasis - b.emphasis);
+    const overlays = trackingSeedOverlays({
+      prompts: trackingPrompts,
+      selectedParentId: selectedTrackParent,
+      selectedMask,
+      z: index,
+      height: h,
+      width: w,
+    });
     if (overlays.length || proposal) {
       const image = ctx.createImageData(w, h);
       for (const overlay of overlays) {
-        compositeMaskColor(image, overlay.mask, overlay.color, overlay.emphasis === 2 ? 185 : overlay.emphasis === 1 ? 120 : 65);
+        compositeMaskColor(
+          image,
+          overlay.mask,
+          trackingPromptColor(overlay.parentId, overlay.slotIndex),
+          overlay.emphasis === 2 ? 185 : 65,
+        );
       }
       // AI Box/Point prediction is a green proposal layer. It is deliberately
       // separate from the magenta durable seed until Enter/double-click.
@@ -5119,9 +5092,9 @@ export default function AnnotationCanvas({
       ctx.putImageData(image, 0, 0);
       const scale = canvas.getBoundingClientRect().width / Math.max(w, 1);
       for (const overlay of overlays) {
-        const [r, g, b] = overlay.color;
-        const width = overlay.emphasis === 2 ? 2.8 : overlay.emphasis === 1 ? 1.8 : 1.1;
-        const contour = overlay.emphasis === 2 ? "#ffffff" : `rgba(${r}, ${g}, ${b}, ${overlay.emphasis === 1 ? 0.95 : 0.65})`;
+        const [r, g, b] = trackingPromptColor(overlay.parentId, overlay.slotIndex);
+        const width = overlay.emphasis === 2 ? 2.8 : 1.1;
+        const contour = overlay.emphasis === 2 ? "#ffffff" : `rgba(${r}, ${g}, ${b}, 0.65)`;
         strokeMaskContour(ctx, overlay.mask, h, w, Math.max(0.75, width / Math.max(scale, 0.001)), contour);
       }
       if (proposal) strokeMaskContour(ctx, proposal, h, w, Math.max(1, 2.5 / Math.max(scale, 0.001)), "#86efac");
@@ -5146,7 +5119,7 @@ export default function AnnotationCanvas({
       const positive = trackPromptHoverLabelRef.current === 1;
       drawBrushCursor(ctx, hover[1], hover[0], Math.max(2, 6 / Math.max(scale, 0.001)), positive ? "#22c55e" : "#ef4444", line, 2 / Math.max(scale, 0.001), "disc");
     }
-  }, [currentTrackingPromptMask, fitMode, index, selectedTrackParent, selectedTrackSubclass, trackPromptBrushSize, trackPromptEraserSize, trackPromptRevision, trackPromptTool, trackingPromptKey, trackingPrompts, zoom]);
+  }, [currentTrackingPromptMask, fitMode, index, selectedTrackParent, trackPromptBrushSize, trackPromptEraserSize, trackPromptRevision, trackPromptTool, trackingPromptKey, trackingPrompts, zoom]);
 
   useEffect(() => { renderTrackingPromptOverlay(); }, [renderTrackingPromptOverlay, sliceLoading]);
 

@@ -348,8 +348,12 @@ class HardCase(models.Model):
 
     class Meta:
         # Newest first — the inbox reads like email (see the F acceptance row
-        # in progress/history/05-submit-people-hardcases.md).
-        ordering = ["-created_at"]
+        # in progress/history/05-submit-people-hardcases.md). ``-id`` breaks
+        # the tie: ``auto_now_add`` gives two cases raised in the same tick the
+        # same timestamp, and without a second key the database is free to
+        # return them in either order, so "newest first" silently stopped
+        # holding for cases raised together.
+        ordering = ["-created_at", "-id"]
 
     def __str__(self) -> str:
         return f"HardCase #{self.pk} task #{self.task_id} label {self.label_id}"

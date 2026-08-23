@@ -4380,9 +4380,17 @@ def visible_hard_cases(user, *, project=None, volume=None):
     from accounts.roles import is_manager
     from projects.models import Project
 
-    qs = HardCase.objects.select_related(
-        "task", "volume", "project", "created_by", "resolved_by"
-    ).annotate(message_count_value=Count("messages"))
+    # ``order_by`` is explicit rather than inherited: adding an aggregate
+    # annotation makes Django drop the model's ``Meta.ordering`` from the query
+    # altogether, so the inbox came back in whatever order the database chose --
+    # in practice insertion order, the exact opposite of "newest first".
+    qs = (
+        HardCase.objects.select_related(
+            "task", "volume", "project", "created_by", "resolved_by"
+        )
+        .annotate(message_count_value=Count("messages"))
+        .order_by("-created_at", "-id")
+    )
     if project is not None:
         qs = qs.filter(project=project)
     if volume is not None:

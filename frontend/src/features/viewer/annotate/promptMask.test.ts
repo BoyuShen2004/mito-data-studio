@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergePromptMask } from "./promptMask";
+import { mergePromptMask, trackingSeedOverlays } from "./promptMask";
 
 /** Grid helper: "." empty, "#" seeded. */
 function mask(rows: string[]): Uint8Array {
@@ -142,5 +142,96 @@ describe("mergePromptMask", () => {
     const stale = new Uint8Array(9).fill(1);
     const proposal = mask(["#.", ".."]);
     expect(Array.from(mergePromptMask(stale, proposal))).toEqual([1, 0, 0, 0]);
+  });
+});
+
+describe("trackingSeedOverlays", () => {
+  const seed = (z: number, rle: [number, number][]) => ({ z, rle, shape: [2, 2] as [number, number] });
+  const args = { z: 0, height: 2, width: 2 };
+
+  it("draws a class whose slots the selection index does not name", () => {
+    // Regression: the overlay decided what to paint by matching a "selected
+    // slot" index. A class whose slot list was empty — or whose index was stale
+    // — matched nothing, so its live strokes were never drawn and the annotator
+    // painted onto a canvas that showed nothing back.
+    const live = Uint8Array.from([1, 1, 0, 0]);
+    const overlays = trackingSeedOverlays({
+      ...args,
+      prompts: [{ parent_id: 9, subclasses: [] }],
+      selectedParentId: 9,
+      selectedMask: live,
+    });
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].mask).toBe(live);
+    expect(overlays[0].emphasis).toBe(2);
+  });
+
+  it("draws the selected class once, however many slots it carries", () => {
+    const live = Uint8Array.from([1, 1, 1, 0]);
+    const overlays = trackingSeedOverlays({
+      ...args,
+      prompts: [{
+        parent_id: 9,
+        subclasses: [
+          { index: 1, seeds: [seed(0, [[0, 2]])] },
+          { index: 2, seeds: [seed(0, [[2, 1]])] },
+        ],
+      }],
+      selectedParentId: 9,
+      selectedMask: live,
+    });
+    // One overlay from the live surface, not one per slot — stacking them would
+    // composite the same pixels twice and darken the selected seed.
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].mask).toBe(live);
+  });
+
+  it("still draws every other queued class from its durable seeds", () => {
+    const overlays = trackingSeedOverlays({
+      ...args,
+      prompts: [
+        { parent_id: 9, subclasses: [{ index: 1, seeds: [seed(0, [[0, 1]])] }] },
+        { parent_id: 12, subclasses: [{ index: 1, seeds: [seed(0, [[3, 1]])] }] },
+      ],
+      selectedParentId: 9,
+      selectedMask: Uint8Array.from([1, 0, 0, 0]),
+    });
+    expect(overlays.map((o) => o.parentId).sort((a, b) => a - b)).toEqual([9, 12]);
+    // The edited class paints last so it stays legible over the rest.
+    expect(overlays[overlays.length - 1].parentId).toBe(9);
+    expect(overlays[overlays.length - 1].emphasis).toBe(2);
+  });
+
+  it("omits the selected class when its surface is empty", () => {
+    const overlays = trackingSeedOverlays({
+      ...args,
+      prompts: [{ parent_id: 9, subclasses: [{ index: 1, seeds: [] }] }],
+      selectedParentId: 9,
+      selectedMask: new Uint8Array(4),
+    });
+    expect(overlays).toEqual([]);
+  });
+
+  it("skips seeds saved at a different slice shape", () => {
+    const overlays = trackingSeedOverlays({
+      ...args,
+      prompts: [{
+        parent_id: 12,
+        subclasses: [{ index: 1, seeds: [{ z: 0, rle: [[0, 1]], shape: [8, 8] as [number, number] }] }],
+      }],
+      selectedParentId: 9,
+      selectedMask: null,
+    });
+    expect(overlays).toEqual([]);
+  });
+
+  it("only draws seeds belonging to the layer on screen", () => {
+    const overlays = trackingSeedOverlays({
+      ...args,
+      prompts: [{ parent_id: 12, subclasses: [{ index: 1, seeds: [seed(3, [[0, 1]])] }] }],
+      selectedParentId: null,
+      selectedMask: null,
+    });
+    expect(overlays).toEqual([]);
   });
 });
