@@ -4744,9 +4744,22 @@ export default function AnnotationCanvas({
         const kept = child.seeds.filter((item) => item.z !== index);
         return { ...child, seeds: at === 0 && seed ? [...kept, seed] : kept };
       });
+      // Drawing on a layer is the annotator saying they mean that layer, so the
+      // propagation range grows to hold it. Queueing a class pins Start/End to
+      // the single layer it was queued on; without this, every seed drawn on any
+      // other layer fell outside the range and Propagate stayed disabled with no
+      // way forward but editing two number fields by hand.
+      //
+      // Only ever wider. Narrowing stays an explicit act in the Start/End
+      // fields, which is what "the range is the annotator's" was protecting.
+      const seedZs = subclasses.flatMap((child) => child.seeds.map((item) => item.z));
+      const lo = seedZs.length ? Math.min(...seedZs) : null;
+      const hi = seedZs.length ? Math.max(...seedZs) : null;
       const next: TrackingPrompt = {
         ...prompt,
         subclasses,
+        start_z: lo == null ? prompt.start_z : Math.min(prompt.start_z ?? lo, lo),
+        end_z: hi == null ? prompt.end_z : Math.max(prompt.end_z ?? hi, hi),
         status: subclasses.some((child) => child.seeds.length) ? "ready" : "draft",
       };
       // Optimistic replacement makes the queue and seed markers respond

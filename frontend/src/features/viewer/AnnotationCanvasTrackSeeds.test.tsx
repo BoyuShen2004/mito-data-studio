@@ -162,9 +162,9 @@ function pointer(
   el.dispatchEvent(ev);
 }
 
-function mount() {
+function mount(zStart = 0) {
   return render(
-    <AnnotationCanvas taskId={5} volumeId={3} zStart={0} zEnd={3} editable api={api as never} />,
+    <AnnotationCanvas taskId={5} volumeId={3} zStart={zStart} zEnd={3} editable api={api as never} />,
   );
 }
 
@@ -371,6 +371,38 @@ describe("Track seeds on one layer", () => {
 
     await waitFor(() => expect(track.putTrackingPrompt.mock.calls.length).toBeGreaterThan(1));
     expect(lastSavedSeedRuns()).toEqual([[0, 2], [14, 2]]);
+  });
+
+  it("widens the range to the layer being drawn on, so Propagate stays reachable", async () => {
+    // Regression: queueing a class pins Start/End to the single layer it was
+    // queued on. A seed drawn on any other layer then fell outside that range,
+    // which disabled Propagate -- a real session saved seed after seed and
+    // never sent one propagate request.
+    track.getTrackingPrompts.mockResolvedValue({
+      version: 1,
+      items: [{ ...emptyPrompt, start_z: 0, end_z: 0, z_range: [0, 0] as [number, number] }],
+      pending_review: null,
+    });
+    track.predictMaskFromPoints.mockResolvedValue({ shape: [4, 4], runs: topLeftPair });
+
+    mount(2);  // the editor opens on layer 2; the class is pinned to layer 0
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await screen.findByText("Class 9");
+    await userEvent.click(screen.getByRole("button", { name: "Point" }));
+
+    const overlay = screen.getByLabelText("SAM tracking prompt overlay");
+    pointer(overlay, "pointerdown", { clientX: 10, clientY: 10 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalled());
+    fireEvent.keyDown(window, { key: "Enter" });
+    await waitFor(() => expect(track.putTrackingPrompt).toHaveBeenCalled());
+
+    const calls = track.putTrackingPrompt.mock.calls;
+    const saved = calls[calls.length - 1][1] as { start_z: number; end_z: number };
+    expect([saved.start_z, saved.end_z]).toEqual([0, 2]);
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Propagate selected" }) as HTMLButtonElement).disabled)
+        .toBe(false));
   });
 
   it("sends the two objects as one seed so the server can split them", async () => {
