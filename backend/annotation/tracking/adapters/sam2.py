@@ -158,31 +158,44 @@ class Sam2TrackingProvider(TrackingProvider):
             if stack.ndim != 3 or not stack.shape[0]:
                 raise ValueError("Tracking image crop is empty")
             height, width = stack.shape[1:]
-            roi = xy_crop.plan_xy_roi(request.seeds, height, width)
+            # Prompts far enough apart cannot share one crop window, and a seed
+            # left outside the window is cropped to nothing -- its branch then
+            # propagates as an empty mask and the prompt silently vanishes. Each
+            # group gets its own window, which also keeps every window as small
+            # as its own prompts need.
+            groups = xy_crop.cluster_seeds(request.seeds, height, width)
             logger.info(
-                "SAM2 propagation z_range=%s source_shape=%s initial_xy_roi=%s",
+                "SAM2 propagation z_range=%s source_shape=%s groups=%d",
                 (z_lo, z_hi),
                 tuple(int(v) for v in stack.shape),
-                roi.cache_token(),
+                len(groups),
             )
-            attempted = set()
-            while True:
-                attempted.add(roi.cache_token())
-                if roi.covers(height, width):
-                    crop_stack, seeds = stack, request.seeds
-                else:
-                    crop_stack = xy_crop.crop_stack(stack, roi)
-                    seeds = xy_crop.crop_seeds(request.seeds, roi)
-                result = self._propagate_crop(sam, crop_stack, seeds, z_lo)
-                if roi.covers(height, width):
-                    return result
-                expanded = xy_crop.maybe_expand_for_border(
-                    roi, height, width, result.masks
+            merged: dict[int, dict[int, np.ndarray]] = {}
+            for group in groups:
+                for branch, per_z in self._propagate_group(
+                    sam, stack, group, z_lo, height, width
+                ).masks.items():
+                    merged.setdefault(int(branch), {}).update(per_z)
+            return PropagationResult(masks=merged)
+
+    def _propagate_group(self, sam, stack, seeds, z_lo, height, width):
+        """Propagate one group of seeds inside the smallest window holding it."""
+        roi = xy_crop.plan_xy_roi(seeds, height, width)
+        logger.info("SAM2 group xy_roi=%s branches=%s", roi.cache_token(), sorted(seeds))
+        attempted = set()
+        while True:
+            attempted.add(roi.cache_token())
+            if roi.covers(height, width):
+                crop_stack, cropped = stack, seeds
+            else:
+                crop_stack = xy_crop.crop_stack(stack, roi)
+                cropped = xy_crop.crop_seeds(seeds, roi)
+            result = self._propagate_crop(sam, crop_stack, cropped, z_lo)
+            if roi.covers(height, width):
+                return result
+            expanded = xy_crop.maybe_expand_for_border(roi, height, width, result.masks)
+            if expanded is None or expanded.cache_token() in attempted:
+                return PropagationResult(
+                    masks=xy_crop.paste_masks(result.masks, roi, (height, width))
                 )
-                if expanded is None or expanded.cache_token() in attempted:
-                    return PropagationResult(
-                        masks=xy_crop.paste_masks(
-                            result.masks, roi, (height, width)
-                        )
-                    )
-                roi = expanded
+            roi = expanded

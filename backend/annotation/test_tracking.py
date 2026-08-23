@@ -383,6 +383,54 @@ class RoleGatingApiTests(TestCase):
             "note": "fork",
         }
 
+    def test_one_layer_holds_several_disconnected_prompts_for_one_class(self):
+        """Two separated blobs on one layer must survive the round trip and
+        become two tracked branches of the same class.
+
+        This is the whole point of dropping manual child classes: the annotator
+        draws the pieces, the server works out that they are separate objects.
+        """
+        client = self._client(self.annotator)
+        # Rows 0 and 8 of a 10x10 slice: nowhere near touching, and each well above
+        # the speck filter, so the server has to see two 8-connected components.
+        two_blobs = [[0, 6], [80, 6]]
+        payload = {
+            "parent_id": 61,
+            "subclasses": [
+                {"index": 1, "seeds": [{"z": 2, "rle": two_blobs, "shape": [10, 10]}]},
+            ],
+            "start_z": 2,
+            "end_z": 3,
+            "status": "ready",
+        }
+        saved = client.put(
+            f"/api/tasks/{self.task.id}/track/prompts/", payload, format="json"
+        )
+        self.assertEqual(saved.status_code, 200, saved.content)
+
+        queue = client.get(f"/api/tasks/{self.task.id}/track/prompts/")
+        stored = next(
+            item for item in queue.json()["items"] if item["parent_id"] == 61
+        )
+        seeds = [s for c in stored["subclasses"] for s in c["seeds"] if s["z"] == 2]
+        self.assertEqual(len(seeds), 1, "one seed mask per layer")
+        self.assertEqual(
+            [list(run) for run in seeds[0]["rle"]], two_blobs,
+            "both blobs must survive the save",
+        )
+
+        propagated = client.post(
+            f"/api/tasks/{self.task.id}/track/batch/",
+            {"parent_ids": [61]},
+            format="json",
+        )
+        self.assertEqual(propagated.status_code, 200, propagated.content)
+        group = propagated.json()["results"][0]["group"]
+        self.assertEqual(
+            len(group["inferred_branches"]), 2,
+            f"two separated blobs must infer two branches, got {group['inferred_branches']}",
+        )
+
     def test_prompt_queue_is_unbounded_and_batch_merges_subclasses(self):
         client = self._client(self.annotator)
         for parent_id in range(17, 29):

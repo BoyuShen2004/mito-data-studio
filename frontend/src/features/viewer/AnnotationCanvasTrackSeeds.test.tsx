@@ -338,6 +338,41 @@ describe("Track seeds on one layer", () => {
     expect(track.putTrackingPrompt).not.toHaveBeenCalled();
   });
 
+  it("accumulates when each object is refined with several clicks then finalized", async () => {
+    // The sequence the access log shows in real use: click, refine, refine,
+    // Enter -- then the same again on the next mitochondrion.
+    track.predictMaskFromPoints
+      .mockResolvedValueOnce({ shape: [4, 4], runs: topLeftPair })
+      .mockResolvedValueOnce({ shape: [4, 4], runs: topLeftPair })
+      .mockResolvedValueOnce({ shape: [4, 4], runs: bottomRightPair })
+      .mockResolvedValueOnce({ shape: [4, 4], runs: bottomRightPair });
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await screen.findByText("Class 9");
+    await userEvent.click(screen.getByRole("button", { name: "Point" }));
+    const overlay = screen.getByLabelText("SAM tracking prompt overlay");
+
+    // First object: click pixel 0, refine on pixel 1 (inside it), finalize.
+    pointer(overlay, "pointerdown", { clientX: 10, clientY: 10 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1));
+    pointer(overlay, "pointerdown", { clientX: 110, clientY: 10 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(2));
+    fireEvent.keyDown(window, { key: "Enter" });
+    await waitFor(() => expect(lastSavedSeedRuns()).toEqual([[0, 2]]));
+
+    // Second object, far away: same shape of interaction.
+    pointer(overlay, "pointerdown", { clientX: 290, clientY: 390 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(3));
+    pointer(overlay, "pointerdown", { clientX: 390, clientY: 390 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(4));
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    await waitFor(() => expect(track.putTrackingPrompt.mock.calls.length).toBeGreaterThan(1));
+    expect(lastSavedSeedRuns()).toEqual([[0, 2], [14, 2]]);
+  });
+
   it("sends the two objects as one seed so the server can split them", async () => {
     // The layer holds a single seed mask; separating it into branches is the
     // backend's connected-component job, and it can only do that if both blobs
