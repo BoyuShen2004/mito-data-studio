@@ -5149,25 +5149,44 @@ export default function AnnotationCanvas({
       setTrackPromptRevision((v) => v + 1);
     } else {
       const key = trackingPromptKey();
-      if (trackPromptPointsRef.current.key !== key) trackPromptPointsRef.current = { key, points: [] };
-      const label = e.altKey ? 0 : 1;
-      const points = [...trackPromptPointsRef.current.points, { x: px, y: py, label: label as 0 | 1 }];
-      trackPromptPointsRef.current = { key, points };
-      setTrackPromptRevision((v) => v + 1);
-      const seq = ++trackPromptPredictSeqRef.current;
-      trackPromptPredictingRef.current = true;
-      trackPromptFinalizeWhenReadyRef.current = e.ctrlKey || e.metaKey;
-      const prediction = predictMaskFromPoints(taskId, "z", index, points.map((p) => [p.x, p.y]), points.map((p) => p.label as 0 | 1), undefined, roiOnlyRef.current)
-        .then((res) => {
+      const [, width] = shapeRef.current;
+      const negative = e.altKey;
+      const finalizeNow = e.ctrlKey || e.metaKey;
+      const prediction = (async () => {
+        // Decide against the *settled* proposal: a click arriving while the
+        // previous prediction is still in flight would otherwise be judged
+        // against a mask that does not exist yet and always read as "outside".
+        await trackPromptPredictionPromiseRef.current?.catch(() => {});
+        const live = trackPromptProposalRef.current?.key === key
+          ? trackPromptProposalRef.current.mask
+          : null;
+        // Clicking something the current proposal does not cover means "that
+        // one too", not "this one is wrong": bank what is on screen and start a
+        // fresh point set from this click, so Point accumulates objects the way
+        // Brush accumulates strokes. A click *inside* the proposal, and every
+        // Alt-click, still refines the object being described.
+        if (live != null && !negative && !live[py * width + px]) {
+          await commitTrackingProposalRef.current().catch(() => false);
+        }
+        if (trackPromptPointsRef.current.key !== key) trackPromptPointsRef.current = { key, points: [] };
+        const points = [...trackPromptPointsRef.current.points, { x: px, y: py, label: (negative ? 0 : 1) as 0 | 1 }];
+        trackPromptPointsRef.current = { key, points };
+        setTrackPromptRevision((v) => v + 1);
+        // Sequenced after any commit above, which bumps the predict sequence.
+        const seq = ++trackPromptPredictSeqRef.current;
+        trackPromptPredictingRef.current = true;
+        trackPromptFinalizeWhenReadyRef.current = finalizeNow;
+        try {
+          const res = await predictMaskFromPoints(taskId, "z", index, points.map((pt) => [pt.x, pt.y]), points.map((pt) => pt.label), undefined, roiOnlyRef.current);
           const predicted = Uint8Array.from(decodeRuns(res.runs, res.shape[0] * res.shape[1]), (v) => v ? 1 : 0);
           stageTrackingProposal(key, seq, predicted);
-        })
-        .catch((error) => {
+        } catch (error) {
           if (seq !== trackPromptPredictSeqRef.current) return;
           trackPromptPredictingRef.current = false;
           trackPromptFinalizeWhenReadyRef.current = false;
           setTrackError(error instanceof Error ? error.message : "Point prompt failed");
-        });
+        }
+      })();
       trackPromptPredictionPromiseRef.current = prediction;
       void prediction.finally(() => {
         if (trackPromptPredictionPromiseRef.current === prediction) trackPromptPredictionPromiseRef.current = null;
@@ -5216,20 +5235,29 @@ export default function AnnotationCanvas({
         setTrackPromptRevision((v) => v + 1);
         return;
       }
-      const seq = ++trackPromptPredictSeqRef.current;
-      trackPromptPredictingRef.current = true;
-      trackPromptFinalizeWhenReadyRef.current = false;
-      const prediction = predictMaskFromBox(taskId, "z", index, [[box.x0, box.y0], [box.x1, box.y1]], undefined, roiOnlyRef.current)
-        .then((res) => {
+      // Each completed drag is a finished object, exactly like a brush stroke.
+      // Bank the one still on screen before starting the next, otherwise the
+      // new prediction replaces a proposal that was never committed and the
+      // layer silently keeps only the last box drawn.
+      const prediction = (async () => {
+        await trackPromptPredictionPromiseRef.current?.catch(() => {});
+        await commitTrackingProposalRef.current().catch(() => false);
+        // Sequenced *after* the commit: committing bumps the predict sequence,
+        // which would otherwise make this prediction look stale on arrival.
+        const seq = ++trackPromptPredictSeqRef.current;
+        trackPromptPredictingRef.current = true;
+        trackPromptFinalizeWhenReadyRef.current = false;
+        try {
+          const res = await predictMaskFromBox(taskId, "z", index, [[box.x0, box.y0], [box.x1, box.y1]], undefined, roiOnlyRef.current);
           const predicted = Uint8Array.from(decodeRuns(res.runs, res.shape[0] * res.shape[1]), (v) => v ? 1 : 0);
           stageTrackingProposal(key, seq, predicted);
-        })
-        .catch((error) => {
+        } catch (error) {
           if (seq !== trackPromptPredictSeqRef.current) return;
           trackPromptPredictingRef.current = false;
           trackPromptFinalizeWhenReadyRef.current = false;
           setTrackError(error instanceof Error ? error.message : "Box prompt failed");
-        });
+        }
+      })();
       trackPromptPredictionPromiseRef.current = prediction;
       void prediction.finally(() => {
         if (trackPromptPredictionPromiseRef.current === prediction) trackPromptPredictionPromiseRef.current = null;

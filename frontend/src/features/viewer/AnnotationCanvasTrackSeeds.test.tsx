@@ -24,6 +24,7 @@ const track = vi.hoisted(() => ({
   trackTaskBatch: vi.fn(),
   reviewTrackingPreview: vi.fn(),
   predictMaskFromPoints: vi.fn(),
+  predictMaskFromBox: vi.fn(),
   fetchObjectUrl: vi.fn(),
 }));
 
@@ -46,6 +47,7 @@ vi.mock("../../api/viewer", async (importOriginal) => ({
   trackTaskBatch: track.trackTaskBatch,
   reviewTrackingPreview: track.reviewTrackingPreview,
   predictMaskFromPoints: track.predictMaskFromPoints,
+  predictMaskFromBox: track.predictMaskFromBox,
 }));
 
 const meta = {
@@ -141,6 +143,25 @@ afterAll(() => {
   HTMLCanvasElement.prototype.getContext = originalGetContext;
 });
 
+/**
+ * Dispatch a pointer event that actually carries coordinates.
+ *
+ * jsdom has no usable `PointerEvent`, and `fireEvent.pointerDown` drops
+ * `clientX`/`clientY` on the floor — every click would land on `NaN`, which
+ * silently satisfies "outside the current proposal" and makes the refinement
+ * path untestable. A `MouseEvent` named `pointerdown` reaches React's
+ * `onPointerDown` with its coordinates intact.
+ */
+function pointer(
+  el: Element,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  init: MouseEventInit,
+) {
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+  Object.defineProperty(ev, "pointerId", { value: 1 });
+  el.dispatchEvent(ev);
+}
+
 function mount() {
   return render(
     <AnnotationCanvas taskId={5} volumeId={3} zStart={0} zEnd={3} editable api={api as never} />,
@@ -160,11 +181,22 @@ function lastSavedSeedRuns(): [number, number][] | null {
 async function seedAt(clientX: number, clientY: number) {
   const overlay = screen.getByLabelText("SAM tracking prompt overlay");
   const saves = track.putTrackingPrompt.mock.calls.length;
-  fireEvent.pointerDown(overlay, { clientX, clientY, pointerId: 1, button: 0 });
+  pointer(overlay, "pointerdown", { clientX, clientY });
   // The prediction is a network round trip; Enter must land after it stages.
   await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalled());
   fireEvent.keyDown(window, { key: "Enter" });
   await waitFor(() => expect(track.putTrackingPrompt.mock.calls.length).toBeGreaterThan(saves));
+}
+
+/** Drag a box across the image, the way the Box tool is actually used. */
+async function boxFrom(x0: number, y0: number, x1: number, y1: number) {
+  const overlay = screen.getByLabelText("SAM tracking prompt overlay");
+  const predictions = track.predictMaskFromBox.mock.calls.length;
+  pointer(overlay, "pointerdown", { clientX: x0, clientY: y0 });
+  pointer(overlay, "pointermove", { clientX: x1, clientY: y1 });
+  pointer(overlay, "pointerup", { clientX: x1, clientY: y1 });
+  await waitFor(() =>
+    expect(track.predictMaskFromBox.mock.calls.length).toBeGreaterThan(predictions));
 }
 
 describe("Track seeds on one layer", () => {
@@ -211,7 +243,7 @@ describe("Track seeds on one layer", () => {
     await userEvent.click(screen.getByRole("button", { name: "Point" }));
 
     const overlay = screen.getByLabelText("SAM tracking prompt overlay");
-    fireEvent.pointerDown(overlay, { clientX: 10, clientY: 10, pointerId: 1, button: 0 });
+    pointer(overlay, "pointerdown", { clientX: 10, clientY: 10 });
     await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalled());
     fireEvent.keyDown(window, { key: "Enter" });
 
@@ -225,9 +257,85 @@ describe("Track seeds on one layer", () => {
     // be gone is any *seed*-coloured pixel, which is what the canvas uses to say
     // "this is committed".
     painted = [];
-    fireEvent.pointerMove(overlay, { clientX: 20, clientY: 20, pointerId: 1 });
+    pointer(overlay, "pointermove", { clientX: 20, clientY: 20 });
     await waitFor(() => expect(painted.length).toBeGreaterThan(0));
     expect([...paintedColors()].filter((c) => c !== PROPOSAL_GREEN)).toEqual([]);
+  });
+
+  it("keeps both boxes when they are drawn one after another", async () => {
+    // How the Box tool is actually used: draw one object, draw the next, and
+    // expect both to stay -- exactly how Brush behaves. Requiring Enter between
+    // them meant the second drag silently threw the first away.
+    track.predictMaskFromBox
+      .mockResolvedValueOnce({ shape: [4, 4], runs: topLeftPair })
+      .mockResolvedValueOnce({ shape: [4, 4], runs: bottomRightPair });
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await screen.findByText("Class 9");
+    await userEvent.click(screen.getByRole("button", { name: "Box" }));
+
+    await boxFrom(10, 10, 210, 210);
+    await boxFrom(190, 190, 390, 390);
+    fireEvent.keyDown(window, { key: "Enter" });
+    await waitFor(() => expect(track.putTrackingPrompt).toHaveBeenCalled());
+
+    expect(lastSavedSeedRuns()).toEqual([[0, 2], [14, 2]]);
+  });
+
+  it("keeps both point objects when they are clicked one after another", async () => {
+    // The same expectation as Box: click one mitochondrion, click the next, and
+    // both stay. No Enter in between.
+    track.predictMaskFromPoints
+      .mockResolvedValueOnce({ shape: [4, 4], runs: topLeftPair })
+      .mockResolvedValueOnce({ shape: [4, 4], runs: bottomRightPair });
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await screen.findByText("Class 9");
+    await userEvent.click(screen.getByRole("button", { name: "Point" }));
+
+    const overlay = screen.getByLabelText("SAM tracking prompt overlay");
+    pointer(overlay, "pointerdown", { clientX: 10, clientY: 10 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1));
+    // Pixel 15 — outside the first proposal, so a different object.
+    pointer(overlay, "pointerdown", { clientX: 390, clientY: 390 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(2));
+    fireEvent.keyDown(window, { key: "Enter" });
+    await waitFor(() => expect(track.putTrackingPrompt).toHaveBeenCalled());
+
+    expect(lastSavedSeedRuns()).toEqual([[0, 2], [14, 2]]);
+  });
+
+  it("still refines one object when the click lands on it", async () => {
+    // The accumulate rule must not cost the ability to correct a bad mask: a
+    // click the proposal already covers is a refinement, and so is any
+    // Alt-click, so both go to the server as one growing point set.
+    track.predictMaskFromPoints.mockResolvedValue({ shape: [4, 4], runs: topLeftPair });
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await screen.findByText("Class 9");
+    await userEvent.click(screen.getByRole("button", { name: "Point" }));
+
+    const overlay = screen.getByLabelText("SAM tracking prompt overlay");
+    // Pixel 0, then pixel 1 — inside the proposal the first click produced.
+    pointer(overlay, "pointerdown", { clientX: 10, clientY: 10 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1));
+    pointer(overlay, "pointerdown", { clientX: 110, clientY: 10 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(2));
+    // An Alt-click outside it is a negative correction, not a new object.
+    pointer(overlay, "pointerdown", { clientX: 390, clientY: 390, altKey: true });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(3));
+
+    // One growing point set, and nothing banked behind it.
+    const [, , , points, labels] = track.predictMaskFromPoints.mock.calls[2];
+    expect(points).toEqual([[0, 0], [1, 0], [3, 3]]);
+    expect(labels).toEqual([1, 1, 0]);
+    expect(track.putTrackingPrompt).not.toHaveBeenCalled();
   });
 
   it("sends the two objects as one seed so the server can split them", async () => {

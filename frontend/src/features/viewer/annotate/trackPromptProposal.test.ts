@@ -12,10 +12,26 @@ describe("Track Box/Point proposal lifecycle wiring", () => {
   it("stages predictions without durably saving them in the prediction callbacks", () => {
     for (const predictor of ["predictMaskFromPoints", "predictMaskFromBox"]) {
       const start = TRACK_HANDLERS.indexOf(predictor);
-      const end = TRACK_HANDLERS.indexOf(".catch", start);
+      const end = TRACK_HANDLERS.indexOf("} catch (error)", start);
       const predictionCallback = TRACK_HANDLERS.slice(start, end);
       expect(predictionCallback).toContain("stageTrackingProposal");
       expect(predictionCallback).not.toContain("saveTrackingPromptMask");
+    }
+  });
+
+  it("banks the pending proposal before starting the next Box or Point object", () => {
+    // Without this, a second gesture replaced a proposal that had never been
+    // committed, so Box and Point could only ever leave one object on a layer
+    // while Brush accumulated freely.
+    for (const predictor of ["predictMaskFromPoints", "predictMaskFromBox"]) {
+      const start = TRACK_HANDLERS.lastIndexOf("const prediction = (async () => {",
+        TRACK_HANDLERS.indexOf(predictor));
+      const gesture = TRACK_HANDLERS.slice(start, TRACK_HANDLERS.indexOf(predictor));
+      expect(gesture).toContain("commitTrackingProposalRef.current()");
+      // The sequence number must be taken after the commit, which bumps it —
+      // otherwise the new prediction looks stale the moment it arrives.
+      expect(gesture.indexOf("commitTrackingProposalRef.current()"))
+        .toBeLessThan(gesture.indexOf("++trackPromptPredictSeqRef.current"));
     }
   });
 
