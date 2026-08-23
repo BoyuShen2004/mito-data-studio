@@ -3,8 +3,8 @@ set -euo pipefail
 
 duration_seconds=${MITO_OBSERVATION_SECONDS:-3600}
 sample_seconds=${MITO_OBSERVATION_SAMPLE_SECONDS:-30}
-checkout=${MITO_PRODUCTION_ROOT:-/home/weidf/shenb/mito-data-studio-production-v1.1.0}
-service=${MITO_PRODUCTION_SERVICE:-mito-data-studio-v1.1.0.service}
+checkout=${MITO_PRODUCTION_ROOT:-/home/weidf/shenb/mito-data-studio-production-v1.1.5}
+service=${MITO_PRODUCTION_SERVICE:-mito-data-studio-v1.1.5.service}
 service_user=${MITO_PRODUCTION_USER:-mito-production-v11}
 public_url=${MITO_PUBLIC_URL:-https://mito-data-studio.seg.bio}
 evidence_dir=${MITO_OBSERVATION_EVIDENCE_DIR:?set an unused evidence directory outside the repository}
