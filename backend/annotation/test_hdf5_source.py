@@ -453,6 +453,17 @@ class Hdf5WorkingCopyTests(TestCase):
         np.testing.assert_array_equal(first_plane, self.mask_array[1])
         np.testing.assert_array_equal(second_plane, self.mask_array[4])
 
+    def test_plan_reader_loads_a_contiguous_h5_z_slab(self):
+        from annotation.services import _LazyPlanLabels
+
+        with override_settings(MITO_DATA_ROOT=self.root):
+            reader = _LazyPlanLabels(self.task, "z", [])
+            slab = reader.read_z_slab(1, 5)
+            reader.close()
+
+        self.assertEqual(slab.dtype, np.int32)
+        np.testing.assert_array_equal(slab, self.mask_array[1:5])
+
     def test_a_mismatched_shape_is_not_used_as_a_seed(self):
         from annotation.services import _writable_label
 

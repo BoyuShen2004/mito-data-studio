@@ -7,6 +7,9 @@ follows semantic versioning for tagged releases.
 
 ### Changed
 
+- Added a release/publication documentation portal covering product behavior,
+  complete user workflows, architecture, data contracts, AI models, reference
+  hardware, manuscript methods, reproducibility, and release gates.
 - Reorganized the repository around a root Django `manage.py`, `docs/`,
   `scripts/dev/`, and a common `Makefile` command surface.
 - Kept `backend/manage.py` as a temporary compatibility shim for installed

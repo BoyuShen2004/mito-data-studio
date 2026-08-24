@@ -2045,7 +2045,10 @@ def plan_track_task_batch(
     diffs are deliberately axial. This avoids a temporary preview file and,
     crucially, never calls ``_save_label_volume``.
     """
+    import logging
     import os
+    import time
+
     import numpy as np
 
     from .tracking.registry import get_tracking_provider
@@ -2057,6 +2060,8 @@ def plan_track_task_batch(
     from .tools.overwrite import DEFAULT_OVERWRITE_MODE, is_valid_mode
     from .visualization.slice_io import _open_volume, resolve_path
 
+    logger = logging.getLogger("mito.track.timing")
+    total_started = time.perf_counter()
     if axis != "z":
         raise ValueError("Track propagation is axial; switch the viewer to z first.")
     if not groups:
@@ -2107,17 +2112,32 @@ def plan_track_task_batch(
     if slab_voxels > slab_limit:
         raise ValueError(
             f"Track range has {slab_voxels:,} voxels; bounded plan limit is "
-            f"{slab_limit:,}. Move the seed layers closer or split the run."
+            f"{slab_limit:,} (MITO_TRACK_PLAN_MAX_VOXELS). Split the queue "
+            "by z range and run Propagate all in two passes, or lower the "
+            "configured ranges before retrying."
         )
     # Detach the bounded slab before slow model compute. The shared source
     # handle remains owned by slice_io's bounded LRU, not by this request.
+    image_started = time.perf_counter()
     image = np.array(image_source[slab_lo : slab_hi + 1], copy=True)
     image_source = None
+    image_ms = (time.perf_counter() - image_started) * 1000.0
 
     reader = _LazyPlanLabels(task, "z", pending_slices)
     try:
-        working = np.stack(
-            [reader.read_axis("z", z) for z in range(slab_lo, slab_hi + 1)]
+        labels_started = time.perf_counter()
+        working = reader.read_z_slab(slab_lo, slab_hi + 1)
+        labels_ms = (time.perf_counter() - labels_started) * 1000.0
+        logger.info(
+            "track_plan task=%s groups=%d slab=%s slab_voxels=%d "
+            "image_copy_ms=%.1f labels_load_ms=%.1f pending_planes=%d",
+            task.pk,
+            len(groups),
+            (slab_lo, slab_hi),
+            slab_voxels,
+            image_ms,
+            labels_ms,
+            len(reader.pending),
         )
         global_max = max(
             get_label_max_id_readonly(volume),
@@ -2129,7 +2149,10 @@ def plan_track_task_batch(
         )
         provider = get_tracking_provider()
         results = []
-        for group, (lo, hi) in zip(groups, ranges):
+        for position, (group, (lo, hi)) in enumerate(
+            zip(groups, ranges), start=1
+        ):
+            parent_started = time.perf_counter()
             local_branch_seeds = {
                 int(child): {int(z) - slab_lo: mask for z, mask in per_z.items()}
                 for child, per_z in group.get("branch_seeds", {}).items()
@@ -2154,10 +2177,32 @@ def plan_track_task_batch(
             # trail speak whole-volume z.
             _shift_track_audit_to_volume_z(result, slab_lo)
             results.append(result)
+            logger.info(
+                "track_plan task=%s provider=%s parent=%s position=%d/%d "
+                "z_range=%s parent_ms=%.1f",
+                task.pk,
+                provider.name,
+                group["parent_id"],
+                position,
+                len(groups),
+                (lo, hi),
+                (time.perf_counter() - parent_started) * 1000.0,
+            )
         bbox = (slab_lo, slab_hi + 1, 0, reader.shape[1], 0, reader.shape[2])
+        diff_started = time.perf_counter()
         slices = _planned_crop_slices(reader, "z", bbox, working)
+        diff_ms = (time.perf_counter() - diff_started) * 1000.0
     finally:
         reader.close()
+    logger.info(
+        "track_plan task=%s complete groups=%d changed_slices=%d "
+        "diff_encode_ms=%.1f total_ms=%.1f",
+        task.pk,
+        len(results),
+        len(slices),
+        diff_ms,
+        (time.perf_counter() - total_started) * 1000.0,
+    )
     return {
         "results": results,
         "done": len(results),
@@ -3223,6 +3268,44 @@ class _LazyPlanLabels:
                 plane[:, x] = pending[index, :]
         return plane
 
+    def read_z_slab(self, start: int, stop: int):
+        """Read ``[start:stop]`` in one backend operation, then overlay drafts.
+
+        TIFF/NPY memmaps turn this into one contiguous copy and HDF5 can serve
+        it as one hyperslab read.  The old ``np.stack(read_axis(...))`` path
+        dispatched one Python/backend read per z plane, which was noticeable
+        before SAM2 started for large Propagate-all ranges.
+        """
+        import numpy as np
+
+        start, stop = int(start), int(stop)
+        if not 0 <= start <= stop <= self.shape[0]:
+            raise ValueError(
+                f"z slab [{start}:{stop}] is outside label depth {self.shape[0]}."
+            )
+        slab_shape = (stop - start, self.shape[1], self.shape[2])
+        if self.source is None:
+            slab = np.zeros(slab_shape, dtype=np.int32)
+        else:
+            # One owned int32 allocation. For a memmap the indexed source is a
+            # view; for HDF5 the backend must first decode its hyperslab, but
+            # this still avoids the old list of per-plane arrays plus stack.
+            slab = np.array(
+                self.source[start:stop], dtype=np.int32, copy=True
+            )
+
+        if self.axis == "z":
+            for z, pending in self.pending.items():
+                if start <= z < stop:
+                    slab[z - start] = pending
+        elif self.axis == "y":
+            for y, pending in self.pending.items():
+                slab[:, y, :] = pending[start:stop, :]
+        elif self.axis == "x":
+            for x, pending in self.pending.items():
+                slab[:, :, x] = pending[start:stop, :]
+        return slab
+
 
 def _encode_planned_plane(index: int, before, after) -> dict | None:
     import numpy as np
@@ -3492,7 +3575,12 @@ def plan_merge_labels_task(
 def plan_delete_label_task(
     task, label_id: int, *, axis: str = "z", pending_slices=None,
 ) -> dict:
-    """Return planes with ``label_id`` cleared; lifecycle metadata is untouched."""
+    """Return planes with ``label_id`` cleared; lifecycle metadata is untouched.
+
+    Along z, prefer the cached labels-summary ``z_start``/``z_end`` so a small
+    instance does not force a full-volume plane read (that was the multi-second
+    Delete path on large stacks). Pending overlays can still widen the span.
+    """
     import numpy as np
 
     label_id = int(label_id)
@@ -3504,13 +3592,16 @@ def plan_delete_label_task(
     voxels = 0
     try:
         axis_len = reader.shape[{"z": 0, "y": 1, "x": 2}[axis]]
-        for index in range(axis_len):
+        scan_indices = _delete_scan_indices(
+            reader, label_id, axis, axis_len, volume=task.volume,
+        )
+        for index in scan_indices:
             before = reader.read_axis(axis, index)
             hit = before == label_id
+            if not np.any(hit):
+                continue
             count = int(np.count_nonzero(hit))
             voxels += count
-            if count == 0:
-                continue
             after = before.copy()
             after[hit] = 0
             slices.append(_encode_planned_plane(index, before, after))
@@ -3524,6 +3615,54 @@ def plan_delete_label_task(
         "axis": axis,
         "slices": slices,
     }
+
+
+def _delete_scan_indices(
+    reader: _LazyPlanLabels,
+    label_id: int,
+    axis: str,
+    axis_len: int,
+    *,
+    volume=None,
+):
+    """Planes that may contain ``label_id`` — full axis only as a fallback."""
+    import numpy as np
+
+    if axis != "z":
+        return range(axis_len)
+
+    indices: set[int] = set()
+    for index, plane in reader.pending.items():
+        if 0 <= int(index) < axis_len and np.any(plane == label_id):
+            indices.add(int(index))
+
+    if volume is not None:
+        try:
+            from .label_paths import working_label_rel_path
+            from .cellable_port.labels_3d import label_summary
+            from .visualization.slice_io import resolve_path
+
+            path = resolve_path(working_label_rel_path(volume))
+            if path.exists():
+                row = next(
+                    (
+                        item
+                        for item in label_summary(path).get("labels", [])
+                        if int(item["id"]) == int(label_id)
+                    ),
+                    None,
+                )
+                if row is not None:
+                    z0 = max(0, int(row["z_start"]))
+                    z1 = min(axis_len - 1, int(row["z_end"]))
+                    if z0 <= z1:
+                        indices.update(range(z0, z1 + 1))
+        except Exception:
+            pass
+
+    if not indices:
+        return range(axis_len)
+    return sorted(indices)
 
 
 def _interpolation_endpoints(volume, axis: str, first_index: int, last_index: int):

@@ -1,3 +1,5 @@
+import { EMPTY_VALUE } from "./emptyValue";
+
 /**
  * Compact duration formatting for annotation time.
  *
@@ -13,9 +15,9 @@
  * claim we know something we do not.
  */
 
-/** `-` for unknown, `0m`, `37m`, `2h 14m`, `3d 4h`. */
+/** `—` for unknown, `0m`, `37m`, `2h 14m`, `3d 4h`. */
 export function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null) return "-";
+  if (seconds == null) return EMPTY_VALUE;
   const total = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(total / 60);
   if (minutes < 60) return `${minutes}m`;

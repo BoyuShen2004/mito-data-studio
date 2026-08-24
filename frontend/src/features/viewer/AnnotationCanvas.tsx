@@ -31,7 +31,6 @@ import {
   type WatershedSeed,
   type TrackingPrompt,
   type TrackingPromptQueue,
-  type TrackResult,
   type OverwriteMode,
   type PendingToolSlice,
   type PlannedLabelSlice,
@@ -792,10 +791,6 @@ export default function AnnotationCanvas({
    * were propagated through the publishing path) still arrive without it. */
   const [trackingPendingReview, setTrackingPendingReview] = useState<{ parent_ids: number[]; status: "pending_review"; local?: boolean } | null>(null);
   const [trackReviewAction, setTrackReviewAction] = useState<"confirm" | "reject" | null>(null);
-  /** Groups from the most recent propagation, for the rail's preview summary:
-   * inferred children, their seed layers, merge/termination events and any
-   * ambiguity warnings. Cleared once the review is resolved. */
-  const [lastTrackResults, setLastTrackResults] = useState<TrackResult[]>([]);
   const [trackUndoCount, setTrackUndoCount] = useState(0);
   const [trackRedoCount, setTrackRedoCount] = useState(0);
   const [trackPromptHistoryBusy, setTrackPromptHistoryBusy] = useState(false);
@@ -923,6 +918,10 @@ export default function AnnotationCanvas({
   const trackPromptDrawingRef = useRef(false);
   const trackPromptLastRef = useRef<[number, number] | null>(null);
   const trackPromptBoxRef = useRef<BoxDrag | null>(null);
+  /** Second click of a double-click must not open a fresh Box/Point proposal —
+   * the following `dblclick` commits the one already on screen (same as the
+   * annotate Box/Point finalize path). */
+  const trackPromptSuppressGestureRef = useRef(false);
   const trackPromptHoverRef = useRef<[number, number] | null>(null);
   const trackPromptHoverLabelRef = useRef<0 | 1>(1);
   /** Non-scrolling shell — fit size is measured here so scrollbar gutters
@@ -4544,15 +4543,49 @@ export default function AnnotationCanvas({
     if (seedZs.length) requestIndex(Math.min(...seedZs));
   }, [trackingPrompts, requestIndex]);
 
+  /** The smallest id nothing is using — counting saved voxels, unsaved planes
+   * and Track-only parent prompts, but *not* the current Active reservation,
+   * so clicking New twice without painting keeps returning the same id. */
+  const allocateFreshLabelId = useCallback(() => {
+    const planes: (Int32Array | null)[] = [idsRef.current];
+    for (const ids of pendingSlicesRef.current.values()) planes.push(ids);
+    const next = nextFreshLabelId({
+      summaryIds: labelsSummaryRows.map((row) => row.id),
+      trackParentIds: trackingPrompts.map((prompt) => prompt.parent_id),
+      planes,
+    });
+    // `nextIdRef` is the server's "never reuse below this" bookkeeping for
+    // tools that mint ids themselves (Split, Track). New no longer consults it
+    // — a hole below it is exactly what New is now for — but it must still
+    // never go backwards.
+    nextIdRef.current = Math.max(nextIdRef.current, next + 1);
+    return next;
+  }, [labelsSummaryRows, trackingPrompts]);
+
+  /** Preview of what Add-to-queue / New will mint — same rule as Select → New. */
+  const nextTrackQueueClassId = useMemo(() => {
+    const planes: (Int32Array | null)[] = [idsRef.current];
+    for (const ids of pendingSlicesRef.current.values()) planes.push(ids);
+    return nextFreshLabelId({
+      summaryIds: labelsSummaryRows.map((row) => row.id),
+      trackParentIds: trackingPrompts.map((prompt) => prompt.parent_id),
+      planes,
+    });
+  }, [labelsSummaryRows, trackingPrompts, dirty, labelsSummaryToken, activeId]);
+
   const queueActiveTrackingPrompt = useCallback(async () => {
     setTrackError(null);
-    const existing = trackingPrompts.find((item) => item.parent_id === activeId);
+    // Same mint as Select → New: the queued class is always a fresh id, and
+    // Active follows it so the next paint/seed lands on that class.
+    const classId = allocateFreshLabelId();
+    setActiveId(classId);
+    const existing = trackingPrompts.find((item) => item.parent_id === classId);
     if (existing) {
-      selectTrackingPrompt(activeId);
+      selectTrackingPrompt(classId);
       return;
     }
     const prompt: TrackingPrompt = {
-      parent_id: activeId,
+      parent_id: classId,
       subclasses: [{ index: 1, seeds: [] }],
       // Explicit and inclusive from the start: the layer on screen, which the
       // annotator widens with the rail's Start/End fields. Never re-derived
@@ -4564,11 +4597,11 @@ export default function AnnotationCanvas({
     };
     try {
       await persistTrackingPrompt(prompt);
-      setSelectedTrackParent(activeId);
+      setSelectedTrackParent(classId);
     } catch (e) {
       setTrackError(e instanceof Error ? e.message : "Could not queue the class");
     }
-  }, [activeId, index, persistTrackingPrompt, selectTrackingPrompt, trackingPrompts]);
+  }, [allocateFreshLabelId, index, persistTrackingPrompt, selectTrackingPrompt, trackingPrompts]);
 
   /** Commit the annotator's explicit inclusive Start/End for one parent.
    *
@@ -4655,13 +4688,12 @@ export default function AnnotationCanvas({
       if (!(await applyPendingToolPlan(result.axis, result.slices))) {
         throw new Error("Track result became stale before it could be applied.");
       }
-      // What the automatic branch inference and merge lifecycle decided, shown
-      // in the rail so Confirm is an informed choice.
-      setLastTrackResults(result.results ?? []);
       // The batch endpoint *plans* — it returns planes for the pending buffer
       // and never writes labels or a server-side pending review. The review
       // step is therefore ours to hold: mark the propagated parents pending so
       // Confirm/Reject light up, and remember the compound Reject must undo.
+      // The annotator decides from the canvas preview alone — no rail genealogy
+      // report.
       trackPreviewUndoRef.current = {
         parentIds,
         edits: lastAppliedPlanRef.current ?? [],
@@ -4796,6 +4828,7 @@ export default function AnnotationCanvas({
     trackPromptPredictingRef.current = false;
     trackPromptPredictionPromiseRef.current = null;
     trackPromptFinalizeWhenReadyRef.current = false;
+    trackPromptSuppressGestureRef.current = false;
     trackPromptProposalRef.current = null;
     trackPromptBoxRef.current = null;
     trackPromptDrawingRef.current = false;
@@ -4919,10 +4952,13 @@ export default function AnnotationCanvas({
     const current = snapshotTrackingPromptGeometry(trackingPrompts);
     destination.push(current);
     syncTrackingHistoryCounts();
+    // Keep the rail populated while the server round-trip runs — never blank
+    // the queue first (that is what made Undo/Redo flash).
+    const restoredItems = restoreTrackingPromptGeometry(trackingPrompts, target);
+    setTrackingPrompts(restoredItems);
     setTrackPromptHistoryBusy(true);
     discardTrackingProposal();
     try {
-      const restoredItems = restoreTrackingPromptGeometry(trackingPrompts, target);
       const restored = await replaceTrackingPrompts(taskId, restoredItems);
       setTrackingPrompts(restored.items);
       trackPromptDraftRef.current = null;
@@ -4933,6 +4969,7 @@ export default function AnnotationCanvas({
     } catch (error) {
       destination.pop();
       source.push(target);
+      setTrackingPrompts(trackingPrompts);
       syncTrackingHistoryCounts();
       setTrackError(error instanceof Error ? error.message : `Could not ${direction} Track prompt edit`);
     } finally {
@@ -5005,10 +5042,6 @@ export default function AnnotationCanvas({
     setTrackReviewAction(action);
     setTrackError(null);
     changeTrackPromptTool(null);
-    // The summary describes a propagation that is about to stop being pending
-    // either way, so it retires with the review rather than lingering next to
-    // the next parent the annotator selects.
-    setLastTrackResults([]);
     try {
       if (trackingPendingReview.local) {
         await reviewLocalTrackPreview(action);
@@ -5133,6 +5166,20 @@ export default function AnnotationCanvas({
 
   const onTrackPromptPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!trackPromptTool || tracking) return;
+    // Match annotate Box/Point: the second click of a double-click is only a
+    // finalize gesture. Starting a new prediction here is what left a fresh
+    // proposal on top of the seed that just committed.
+    if (
+      e.detail >= 2
+      && (trackPromptTool === "box" || trackPromptTool === "point")
+    ) {
+      trackPromptSuppressGestureRef.current = true;
+      trackPromptDrawingRef.current = false;
+      trackPromptBoxRef.current = null;
+      e.preventDefault();
+      return;
+    }
+    trackPromptSuppressGestureRef.current = false;
     const point = pixelFromEvent(e);
     const mask = currentTrackingPromptMask();
     if (!point || !mask) return;
@@ -5155,16 +5202,29 @@ export default function AnnotationCanvas({
         // previous prediction is still in flight would otherwise be judged
         // against a mask that does not exist yet and always read as "outside".
         await trackPromptPredictionPromiseRef.current?.catch(() => {});
+        if (trackPromptSuppressGestureRef.current) return;
         const live = trackPromptProposalRef.current?.key === key
           ? trackPromptProposalRef.current.mask
           : null;
+        const clickedInside = live != null && !negative && Boolean(live[py * width + px]);
         // Clicking something the current proposal does not cover means "that
         // one too", not "this one is wrong": bank what is on screen and start a
         // fresh point set from this click, so Point accumulates objects the way
         // Brush accumulates strokes. A click *inside* the proposal, and every
         // Alt-click, still refines the object being described.
-        if (live != null && !negative && !live[py * width + px]) {
+        if (live != null && !negative && !clickedInside) {
           await commitTrackingProposalRef.current().catch(() => false);
+        }
+        if (trackPromptSuppressGestureRef.current) return;
+        // A parallel double-click may have committed while we waited. An
+        // inside-click that no longer has a proposal must not open a new one
+        // at the same spot (the annotate finalize path leaves no residual
+        // preview either).
+        if (clickedInside) {
+          const still = trackPromptProposalRef.current?.key === key
+            ? trackPromptProposalRef.current.mask
+            : null;
+          if (!still) return;
         }
         if (trackPromptPointsRef.current.key !== key) trackPromptPointsRef.current = { key, points: [] };
         const points = [...trackPromptPointsRef.current.points, { x: px, y: py, label: (negative ? 0 : 1) as 0 | 1 }];
@@ -5176,6 +5236,7 @@ export default function AnnotationCanvas({
         trackPromptFinalizeWhenReadyRef.current = finalizeNow;
         try {
           const res = await predictMaskFromPoints(taskId, "z", index, points.map((pt) => [pt.x, pt.y]), points.map((pt) => pt.label), undefined, roiOnlyRef.current);
+          if (trackPromptSuppressGestureRef.current) return;
           const predicted = Uint8Array.from(decodeRuns(res.runs, res.shape[0] * res.shape[1]), (v) => v ? 1 : 0);
           stageTrackingProposal(key, seq, predicted);
         } catch (error) {
@@ -5213,6 +5274,12 @@ export default function AnnotationCanvas({
   }, [currentTrackingPromptMask, paintTrackingPrompt, pixelFromEvent, trackPromptBrushSize, trackPromptEraserSize, trackPromptTool]);
 
   const onTrackPromptPointerUp = useCallback(() => {
+    if (trackPromptSuppressGestureRef.current) {
+      trackPromptDrawingRef.current = false;
+      trackPromptLastRef.current = null;
+      trackPromptBoxRef.current = null;
+      return;
+    }
     if (!trackPromptDrawingRef.current) return;
     trackPromptDrawingRef.current = false; trackPromptLastRef.current = null;
     const mask = currentTrackingPromptMask();
@@ -5226,10 +5293,13 @@ export default function AnnotationCanvas({
       void saveTrackingPromptMask(mask.slice());
     } else if (trackPromptTool === "box" && box) {
       const key = trackingPromptKey();
-      // A double-click used to finalize an existing proposal also produces
-      // click-sized pointer-up boxes. Do not replace the good proposal with a
-      // meaningless zero-area prediction before the double-click event fires.
-      if (Math.abs(box.x1 - box.x0) < 2 || Math.abs(box.y1 - box.y0) < 2) {
+      // Match annotate box_mask: zero-area click-ups (double-click constituents)
+      // must not replace a good proposal with a new prediction.
+      const x0 = Math.min(box.x0, box.x1);
+      const x1 = Math.max(box.x0, box.x1);
+      const y0 = Math.min(box.y0, box.y1);
+      const y1 = Math.max(box.y0, box.y1);
+      if (!(x1 > x0 && y1 > y0)) {
         setTrackPromptRevision((v) => v + 1);
         return;
       }
@@ -5239,14 +5309,17 @@ export default function AnnotationCanvas({
       // layer silently keeps only the last box drawn.
       const prediction = (async () => {
         await trackPromptPredictionPromiseRef.current?.catch(() => {});
+        if (trackPromptSuppressGestureRef.current) return;
         await commitTrackingProposalRef.current().catch(() => false);
+        if (trackPromptSuppressGestureRef.current) return;
         // Sequenced *after* the commit: committing bumps the predict sequence,
         // which would otherwise make this prediction look stale on arrival.
         const seq = ++trackPromptPredictSeqRef.current;
         trackPromptPredictingRef.current = true;
         trackPromptFinalizeWhenReadyRef.current = false;
         try {
-          const res = await predictMaskFromBox(taskId, "z", index, [[box.x0, box.y0], [box.x1, box.y1]], undefined, roiOnlyRef.current);
+          const res = await predictMaskFromBox(taskId, "z", index, [[x0, y0], [x1, y1]], undefined, roiOnlyRef.current);
+          if (trackPromptSuppressGestureRef.current) return;
           const predicted = Uint8Array.from(decodeRuns(res.runs, res.shape[0] * res.shape[1]), (v) => v ? 1 : 0);
           stageTrackingProposal(key, seq, predicted);
         } catch (error) {
@@ -5471,6 +5544,7 @@ export default function AnnotationCanvas({
         /* z-nav only in View */
       } else if (e.key === "Enter" && (trackPromptTool === "box" || trackPromptTool === "point")) {
         e.preventDefault();
+        trackPromptSuppressGestureRef.current = true;
         void commitTrackingProposal();
       } else if (e.key === "Escape" && trackPromptTool != null) {
         e.preventDefault();
@@ -6014,24 +6088,9 @@ export default function AnnotationCanvas({
     [zoom],
   );
 
-  /** The smallest id nothing is using — counting saved voxels, unsaved planes
-   * and Track-only parent prompts, but *not* the current Active reservation,
-   * so clicking New twice without painting keeps returning the same id. */
   const newInstance = useCallback(() => {
-    const planes: (Int32Array | null)[] = [idsRef.current];
-    for (const ids of pendingSlicesRef.current.values()) planes.push(ids);
-    const next = nextFreshLabelId({
-      summaryIds: labelsSummaryRows.map((row) => row.id),
-      trackParentIds: trackingPrompts.map((prompt) => prompt.parent_id),
-      planes,
-    });
-    // `nextIdRef` is the server's "never reuse below this" bookkeeping for
-    // tools that mint ids themselves (Split, Track). New no longer consults it
-    // — a hole below it is exactly what New is now for — but it must still
-    // never go backwards.
-    nextIdRef.current = Math.max(nextIdRef.current, next + 1);
-    setActiveId(next);
-  }, [labelsSummaryRows, trackingPrompts]);
+    setActiveId(allocateFreshLabelId());
+  }, [allocateFreshLabelId]);
 
   const togglePinned3D = useCallback((id: number) => {
     if (autoPinnedSoloRef.current === id) autoPinnedSoloRef.current = null;
@@ -6269,13 +6328,15 @@ export default function AnnotationCanvas({
             splitRunning ||
             mergeRunning ||
             deleteRunning ||
-            floodRunning ||
-            tracking ||
-            trackingPendingReview != null ||
-            trackPromptTool != null
+            floodRunning
           }
           paintTool={paintTool}
-          onPaintTool={setPaintTool}
+          onPaintTool={(tool) => {
+            // Leaving Track seed-drawing must not wipe the queue — only pause
+            // prompt editing so Select / New / brush can run on labels.
+            if (trackPromptTool != null) changeTrackPromptTool(null);
+            setPaintTool(tool);
+          }}
           dirty={dirty}
           status={status}
           sliceLoading={sliceLoading}
@@ -6360,11 +6421,10 @@ export default function AnnotationCanvas({
               wsRunning ||
               splitRunning ||
               mergeRunning ||
-              deleteRunning ||
-              tracking ||
-              trackPromptHistoryBusy
+              deleteRunning
             }
             activeId={activeId}
+            queueClassId={nextTrackQueueClassId}
             activeColorCss={labelColorCss(activeId)}
             tracking={tracking}
             trackingParentIds={trackingParentIds}
@@ -6382,7 +6442,7 @@ export default function AnnotationCanvas({
             promptRedoCount={trackRedoCount}
             overwriteMode={trackOverwriteMode}
             layerCount={axisLen}
-            lastResults={lastTrackResults}
+            historyBusy={trackPromptHistoryBusy}
             selectedParentId={selectedTrackParent}
             onSelectPrompt={selectTrackingPrompt}
             onRange={(parentId, startZ, endZ) => void setTrackingPromptRange(parentId, startZ, endZ)}
@@ -6562,6 +6622,11 @@ export default function AnnotationCanvas({
                       if (trackPromptTool !== "box" && trackPromptTool !== "point") return;
                       e.preventDefault();
                       e.stopPropagation();
+                      // Suppress any in-flight click→predict that raced the
+                      // finalize, same outcome as annotate commitAiPreview.
+                      trackPromptSuppressGestureRef.current = true;
+                      trackPromptDrawingRef.current = false;
+                      trackPromptBoxRef.current = null;
                       void commitTrackingProposal();
                     }}
                     onContextMenu={(e) => trackPromptTool && e.preventDefault()}

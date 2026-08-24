@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import { EMPTY_VALUE } from "../emptyValue";
 import { METADATA_FIELDS } from "../metadataFields";
 import type { DatasetMetadata } from "../types/project";
 import RegionCoverage from "./RegionCoverage";
@@ -63,7 +64,7 @@ export function VolumeMetaBlock({
       <dt>Region coverage</dt><dd><RegionCoverage hasMask={Boolean(volume.has_region_mask)} coverage={volume.region_mask_coverage}/></dd>
       {scientificMetadata !== undefined && METADATA_FIELDS.map(({key, label}) => {
         const value = scientificMetadata?.[key];
-        const display = value == null || String(value).trim() === "" ? "-" : String(value);
+        const display = value == null || String(value).trim() === "" ? EMPTY_VALUE : String(value);
         return <Fragment key={String(key)}><dt>{label}</dt><dd>{display}</dd></Fragment>;
       })}
     </dl>
@@ -127,7 +128,7 @@ export function DatasetVolumesTable({
         {action && <th className={actionClassName}>{actionLabel}</th>}
       </tr></thead>
       <tbody>{volumes.map((volume, index) => <tr key={volume.row_key ?? (volume as {id?: number}).id ?? index}>
-        {project && <td className="cell-name truncate">{project(volume)}</td>}
+        {project && <td className="cell-name volume-name-cell">{project(volume)}</td>}
         <td className="cell-name volume-name-cell" title={volume.name}>{volume.name || "—"}</td>
         <td className="mono-cell">{volume.file_format || "—"}</td>
         <td className="mono-cell">{formatShape(volume)}</td>
@@ -135,7 +136,7 @@ export function DatasetVolumesTable({
         <td className="cell-badge"><RegionCoverage hasMask={Boolean(volume.has_region_mask)} coverage={volume.region_mask_coverage}/></td>
         <td className="cell-badge"><StatusBadge value={volume.label_type || "none"}/></td>
         {status && <td className="cell-badge">{status(volume)}</td>}
-        {assignee && <td className="truncate">{assignee(volume)}</td>}
+        {assignee && <td className="cell-name volume-name-cell">{assignee(volume)}</td>}
         {streaming && <td className="cell-badge cell-streaming">{streaming(volume)}</td>}
         {details && <td className="cell-details">{details(volume)}</td>}
         {action && <td className={`${actionClassName} compact-actions`}>

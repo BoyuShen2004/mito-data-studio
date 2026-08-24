@@ -41,6 +41,10 @@ describe("Track Box/Point proposal lifecycle wiring", () => {
     expect(CANVAS_SOURCE).toContain('e.key === "Escape" && trackPromptTool != null');
     expect(CANVAS_SOURCE).toContain("discardTrackingProposal();");
     expect(CANVAS_SOURCE).toContain('onDoubleClick={(e) => {');
+    // Second click of a double-click must not open a residual proposal.
+    expect(TRACK_HANDLERS).toContain("e.detail >= 2");
+    expect(TRACK_HANDLERS).toContain("trackPromptSuppressGestureRef.current");
+    expect(TRACK_HANDLERS).toContain("x1 > x0 && y1 > y0");
   });
 
   it("awaits prediction and durable proposal commit before Save progress exits prompt mode", () => {

@@ -549,7 +549,7 @@ def task_time(task: AnnotationTask, *, actor=None, now=None) -> dict:
         return {
             "tracked": False,
             "seconds": None,
-            "display": "-",
+            "display": EMPTY_VALUE,
             "eligibility": TimeTracking.LEGACY_EXEMPT,
         }
     filters = {"task": task}
@@ -603,7 +603,7 @@ def task_time_map(tasks, *, now=None) -> dict[int, dict]:
             out[task.id] = {
                 "tracked": False,
                 "seconds": None,
-                "display": "-",
+                "display": EMPTY_VALUE,
                 "eligibility": TimeTracking.LEGACY_EXEMPT,
             }
             continue
@@ -626,7 +626,7 @@ def volume_time(volume, *, actor=None, now=None) -> dict:
         return {
             "tracked": False,
             "seconds": None,
-            "display": "-",
+            "display": EMPTY_VALUE,
             "eligibility": TimeTracking.LEGACY_EXEMPT,
         }
     filters = {"volume": volume}
@@ -641,8 +641,11 @@ def volume_time(volume, *, actor=None, now=None) -> dict:
     }
 
 
+EMPTY_VALUE = "—"
+
+
 def format_duration(seconds: int | None) -> str:
-    """Compact duration: ``-``, ``0m``, ``37m``, ``2h 14m``, ``3d 4h``.
+    """Compact duration: ``—``, ``0m``, ``37m``, ``2h 14m``, ``3d 4h``.
 
     Mirrored by ``formatDuration`` in ``frontend/src/time.ts``; the two are
     kept identical by :mod:`annotation.test_time_tracking` and
@@ -652,7 +655,7 @@ def format_duration(seconds: int | None) -> str:
     same string as a real zero.
     """
     if seconds is None:
-        return "-"
+        return EMPTY_VALUE
     seconds = max(0, int(seconds))
     minutes = seconds // 60
     if minutes < 60:

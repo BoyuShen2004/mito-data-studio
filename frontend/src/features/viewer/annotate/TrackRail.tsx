@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { TrackingPrompt, TrackResult } from "../../../api/viewer";
+import type { TrackingPrompt } from "../../../api/viewer";
 import type { OverwriteMode } from "../../../api/viewer";
 import CommitNumberInput from "../CommitNumberInput";
 import { canPropagatePrompt, promptSeedZs, toLayer, toZ, trackRangeIssue } from "./trackRange";
@@ -27,59 +27,6 @@ function seedSummary(prompt: TrackingPrompt): string {
 }
 
 /**
- * What the automatic logic did, in the annotator's layer numbering.
- *
- * Branch ids are deliberately *not* shown as things to manage — they are
- * ephemeral audit keys the backend assigns while splitting a seed, and every
- * one of them was merged into the class label before this rendered. The
- * summary exists so Confirm is an informed decision, not a leap of faith.
- */
-function TrackInferenceSummary({ results }: { results: TrackResult[] }) {
-  const groups = results.map((result) => result.group).filter((g): g is NonNullable<TrackResult["group"]> => g != null);
-  if (!groups.length) return null;
-  return (
-    <section className="track-inference-summary" aria-label="Track propagation summary">
-      {groups.map((group) => {
-        const branches = group.inferred_branches ?? [];
-        const merges = group.merge_events ?? [];
-        const warnings = group.warnings ?? [];
-        return (
-          <div className="track-inference-class" key={group.group_id}>
-            <strong>{`Class ${group.final_id}`}</strong>
-            <span className="muted">
-              {`${branches.length} branch${branches.length === 1 ? "" : "es"}`}
-              {group.start_z != null && group.end_z != null
-                ? ` · layers ${toLayer(group.start_z)}–${toLayer(group.end_z)}`
-                : ""}
-            </span>
-            {branches.map((branch) => (
-              <span className="muted track-inference-branch" key={branch.branch_key}>
-                {`Branch ${branch.branch_key} seeded on layer${branch.seed_zs.length === 1 ? "" : "s"} `}
-                {branch.seed_zs.map(toLayer).join(", ") || "—"}
-                {group.terminated_at?.[String(branch.branch_key)] != null
-                  ? ` · ends at layer ${toLayer(group.terminated_at[String(branch.branch_key)])}`
-                  : ""}
-              </span>
-            ))}
-            {merges.map((event, i) => (
-              <span className="muted track-inference-merge" key={`${event.loser_branch}-${event.contact_z}-${i}`}>
-                {`Branch ${event.loser_branch} merged into branch ${event.survivor_branch} at layer `}
-                {`${toLayer(event.contact_z)} (${event.reason})`}
-              </span>
-            ))}
-            {warnings.map((warning, i) => (
-              <span className="error track-inference-warning" role="status" key={`${warning.code}-${i}`}>
-                {warning.message}
-              </span>
-            ))}
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-/**
  * Scrollable SAM2 class queue.
  *
  * The annotator queues a class, draws seeds on it, and sets an explicit
@@ -89,18 +36,21 @@ function TrackInferenceSummary({ results }: { results: TrackResult[] }) {
  * hand. Drawing two separate blobs is how you ask for two branches.
  */
 export default function TrackRail({
-  hidden, disabled, activeId, activeColorCss,
+  hidden, disabled, activeId, queueClassId, activeColorCss,
   tracking, trackingParentIds, promptEditing, promptTool, promptBrushSize, promptEraserSize,
   savingProgress, progressSaved,
   trackError, axisIsZ, prompts, selectedParentId,
   pendingReview, reviewAction, promptUndoCount, promptRedoCount,
-  overwriteMode, layerCount, lastResults,
+  overwriteMode, layerCount, historyBusy = false,
   onSelectPrompt, onQueueActive, onRange,
   onPromptTool, onSaveProgress, onPromptBrushSize, onPromptEraserSize,
   onClearSeed, onRemovePrompt,
   onPromptUndo, onPromptRedo, onOverwriteMode, onPropagateAll, onPropagateSelected, onReview,
 }: {
-  hidden: boolean; disabled: boolean; activeId: number; activeColorCss: string;
+  hidden: boolean; disabled: boolean; activeId: number;
+  /** Fresh id Add will mint — same rule as Select → New. Defaults to activeId. */
+  queueClassId?: number;
+  activeColorCss: string;
   tracking: boolean; trackingParentIds: number[];
   promptEditing: boolean; promptTool: TrackingPromptTool | null;
   savingProgress: boolean; progressSaved: boolean;
@@ -112,8 +62,8 @@ export default function TrackRail({
   overwriteMode: OverwriteMode;
   /** Volume depth in layers; 0 while the volume metadata is still loading. */
   layerCount: number;
-  /** Groups returned by the most recent propagation, for the preview summary. */
-  lastResults: TrackResult[];
+  /** True while a prompt Undo/Redo round-trip is in flight — never blanks the rail. */
+  historyBusy?: boolean;
   onSelectPrompt: (parentId: number) => void;
   /** Commit an explicit inclusive range, in 0-based API z. */
   onRange: (parentId: number, startZ: number | null, endZ: number | null) => void;
@@ -131,6 +81,7 @@ export default function TrackRail({
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const blocked = disabled || !axisIsZ;
+  const addClassId = queueClassId ?? activeId;
   const selected = prompts.find((p) => p.parent_id === selectedParentId) ?? null;
   const canEdit = Boolean(selected);
   // Start/End are the annotator's explicit inclusive bounds, never derived
@@ -188,8 +139,8 @@ export default function TrackRail({
       <div className="row spread labels-3d-header">
         <h3 style={{ margin: 0 }}>Track (SAM2)</h3>
         <div className="track-history-actions" aria-label="Track prompt history">
-          <button type="button" className="secondary" title={`Undo prompt (${promptUndoCount} available)`} disabled={blocked || reviewLocked || promptUndoCount === 0} onClick={onPromptUndo}>Undo</button>
-          <button type="button" className="secondary" title={`Redo prompt (${promptRedoCount} available)`} disabled={blocked || reviewLocked || promptRedoCount === 0} onClick={onPromptRedo}>Redo</button>
+          <button type="button" className="secondary" title={`Undo prompt (${promptUndoCount} available)`} disabled={blocked || reviewLocked || historyBusy || promptUndoCount === 0} onClick={onPromptUndo}>Undo</button>
+          <button type="button" className="secondary" title={`Redo prompt (${promptRedoCount} available)`} disabled={blocked || reviewLocked || historyBusy || promptRedoCount === 0} onClick={onPromptRedo}>Redo</button>
         </div>
       </div>
       <fieldset className="track-rail-shell" disabled={blocked}>
@@ -247,7 +198,7 @@ export default function TrackRail({
             })}
             {!prompts.length && <p className="muted track-queue-empty">No classes queued. Choose an active class, add it below, then select a seed tool and draw on the image.</p>}
           </div>
-          <button type="button" className="track-add-class" onClick={onQueueActive} disabled={reviewLocked}>Add class {activeId} to queue</button>
+          <button type="button" className="track-add-class" onClick={onQueueActive} disabled={reviewLocked} title="Mint a fresh class id (same as Select → New), set it Active, and add it to the Track queue">Add class {addClassId} to queue</button>
           {/* The range belongs to the selected class, so with nothing selected
               these are a placeholder rather than an editable "1" that would
               read as a real value the annotator had chosen. */}
@@ -325,7 +276,6 @@ export default function TrackRail({
           propagate un-reviewable (a disabled fieldset disables every control
           nested under it, not just its direct children). */}
       <div className="track-rail-footer">
-        <TrackInferenceSummary results={lastResults} />
         <section className="track-review-panel" aria-label="Pending Track preview review">
           <div className="track-review-actions">
             <button type="button" className="track-review-confirm" title={reviewing ? `Confirm pending Track preview for classes ${pendingParentIds.join(", ")}` : "No pending Track preview to confirm"} disabled={tracking || reviewAction != null || !reviewing} onClick={() => onReview("confirm")}>{reviewAction === "confirm" ? "Confirming…" : "Confirm"}</button>

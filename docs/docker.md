@@ -45,7 +45,8 @@ git clone https://github.com/BoyuShen2004/mito-data-studio.git
 cd mito-data-studio
 
 cp .env.docker.example .env.docker
-# Now edit .env.docker — see "Required settings" below.
+ops/docker/detect-hardware.sh --apply .env.docker
+# Now edit secrets/hosts in .env.docker — see "Required settings" below.
 
 docker compose --env-file .env.docker up -d --build
 ```
@@ -159,6 +160,73 @@ the model — three workers means three times the VRAM. Drop `GUNICORN_WORKERS`
 to 1–2 on a single GPU.
 
 ---
+
+## Hardware auto-tuning
+
+Track batch propagation and SAM2 are sensitive to CPU cores, system RAM, GPU
+count, and VRAM. Rather than hard-coding one host's numbers, use the probe
+script and env-driven settings.
+
+### Probe script
+
+```bash
+ops/docker/detect-hardware.sh                    # human-readable report
+ops/docker/detect-hardware.sh --apply .env.docker
+ops/docker/detect-hardware.sh --apply .env.docker.dev
+```
+
+It suggests (without overwriting existing values):
+
+| Variable | Purpose |
+| --- | --- |
+| `GUNICORN_WORKERS` / `GUNICORN_THREADS` | Web concurrency; keep workers low on single-GPU hosts |
+| `MITO_SAM2_CUDA_DEVICE` | GPU index for SAM2 Track |
+| `MITO_AI_CUDA_DEVICE` | Second GPU for EfficientSAM when `nvidia-smi -L` shows 2+ devices |
+| `MITO_TRACK_PLAN_MAX_VOXELS` | Max slab size for Propagate all |
+| `MITO_SAM2_XY_PAD` / `MITO_SAM2_XY_MIN` / `MITO_SAM2_XY_MAX` | SAM2 crop padding and window bounds (VRAM vs speed tradeoff) |
+| `OMP_NUM_THREADS` | CPU threads for merge/contact steps between GPU passes |
+| `MITO_DEPS` | Build profile hint (`core` / `ai-cpu` / `ai-gpu`) |
+
+### Runtime auto-tune
+
+Set `MITO_HARDWARE_AUTO_TUNE=1` in `.env.docker` or `.env.docker.dev`. On each
+container start the entrypoint runs the probe and exports any **unset** sizing
+variables. Explicit values in the env file always win.
+
+Development stack defaults enable this and deliberately leave probe-managed
+settings commented out (`.env.docker.dev.example`). Production deployments
+should run `--apply` once, review the output, then set
+MITO_HARDWARE_AUTO_TUNE=0 when values are stable.
+
+### Track batch execution and profiling
+
+Propagate all stays on the read-only plan endpoint: it copies only the combined
+z slab, reads labels as one contiguous slab (including pending browser planes),
+then applies classes in request order so the first class still wins collisions.
+The SAM2 adapter owns mutable inference state and a process-local lock, so a
+single worker intentionally runs parents serially. Do not raise gunicorn worker
+count as a substitute for intra-batch parallelism on one GPU: every process
+loads another model copy and can exhaust VRAM. Multi-GPU parent sharding needs a
+dedicated process-isolated worker and ordered CPU merge; it is not enabled by
+the current synchronous API.
+
+Use `docker compose logs -f app-gpu` while profiling. The
+`mito.track.timing` logger records image copy, contiguous label load, each
+class's position and wall time, diff encoding, SAM2 initialization/propagation,
+and total plan time. The browser shows the queued class count and a live elapsed
+timer for the entire request; Confirm/Reject remains a single batch review.
+
+### Deployment profiles (manual reference)
+
+| Host shape | Starting point |
+| --- | --- |
+| Laptop, 16 GB RAM, no GPU | `MITO_DEPS=core`, workers 3–4, skip Track GPU |
+| Workstation, 1× 12 GB GPU | `MITO_DEPS=ai-gpu`, `GUNICORN_WORKERS=1`, `MITO_SAM2_XY_MAX=1536` |
+| Server, 1× 24 GB GPU | `GUNICORN_WORKERS=2`, `MITO_TRACK_PLAN_MAX_VOXELS=256000000` |
+| Server, 2× GPU (24 GB each) | `MITO_SAM2_CUDA_DEVICE=0`, `MITO_AI_CUDA_DEVICE=1`, workers 2 |
+| Large RAM (64 GB+), big EM planes | Raise `MITO_TRACK_PLAN_MAX_VOXELS` and `MITO_SAM2_XY_MAX` after profiling |
+
+Re-run the probe after hardware changes.
 
 ## Upgrade profiles
 

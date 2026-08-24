@@ -29,6 +29,7 @@ from annotation.tracking.interfaces import (
 )
 from annotation.tracking.services import (
     assert_seeds_within_range,
+    reseed_after_merges,
     run_branch_tracking,
     validate_z_range,
 )
@@ -576,18 +577,21 @@ class OrchestrationTests(TestCase):
 
     def test_merged_children_leave_a_continuous_parent_mask(self):
         def script(seed_slices, z):
-            left = np.any(seed_slices[0][:, :20])
+            sample = seed_slices[min(seed_slices)]
+            left = np.any(sample[:, :20])
             if left:
                 return blob(2, 12, 2, 12)
             return blob(4, 8, 12, 16) if z >= 3 else blob(4, 8, 26, 30)
 
-        volume, result, _ = self._run(
+        volume, result, provider = self._run(
             script=script,
             branch_seeds={1: {0: blob(2, 12, 2, 12) | blob(4, 8, 26, 30)}},
         )
         events = result["group"]["merge_events"]
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["contact_z"], 3)
+        # Initial propagate plus one reseed-from-merge continue.
+        self.assertGreaterEqual(len(provider.seen_seeds), 2)
         # The survivor is continuous through End...
         for z in range(6):
             self.assertTrue(volume[z][2:12, 2:12].all())
@@ -596,6 +600,52 @@ class OrchestrationTests(TestCase):
         # ...and nothing of it survives past it.
         self.assertFalse(volume[4][4:8, 12:16].any())
         self.assertFalse(volume[5][4:8, 12:16].any())
+
+    def test_reseed_after_merge_uses_merged_contact_as_new_prompt(self):
+        """Post-merge continue must seed from the OR'd contact mask, not either branch alone."""
+        by_branch = {
+            1: {z: blob(2, 12, 2, 12) for z in range(6)},
+            2: {
+                0: blob(4, 8, 26, 30),
+                1: blob(4, 8, 26, 30),
+                2: blob(4, 8, 26, 30),
+                3: blob(4, 8, 12, 16),
+                4: blob(4, 8, 12, 16),
+                5: blob(4, 8, 12, 16),
+            },
+        }
+        # Stale separate-lineage tip on the survivor after contact — must be replaced.
+        by_branch[1][4] = blob(2, 4, 2, 4)
+        by_branch[1][5] = blob(2, 4, 2, 4)
+        from annotation.tracking.contact import MergeEvent
+
+        event = MergeEvent(
+            loser_branch=2,
+            survivor_branch=1,
+            contact_z=3,
+            reason="smaller_branch",
+            metrics={},
+        )
+        provider = ScriptedProvider(carry_seed)
+        reseed_after_merges(
+            provider,
+            image=bright(6),
+            by_branch=by_branch,
+            events=[event],
+            end_z=5,
+            original_branch_seeds={1: {0: blob(2, 12, 2, 12)}, 2: {0: blob(4, 8, 26, 30)}},
+            provider_ids={1: 17, 2: 18},
+        )
+        self.assertEqual(len(provider.seen_seeds), 1)
+        continued = provider.seen_seeds[0][17]
+        self.assertIn(3, continued)
+        # Merged contact includes both the survivor body and the loser tip.
+        self.assertTrue(continued[3][2:12, 2:12].all())
+        self.assertTrue(continued[3][4:8, 12:16].all())
+        # Later planes are re-carried from that merged prompt, not the speckled tip.
+        self.assertTrue(by_branch[1][4][2:12, 2:12].all())
+        self.assertTrue(by_branch[1][5][2:12, 2:12].all())
+        self.assertTrue(by_branch[1][4][4:8, 12:16].all())
 
     def test_the_final_label_never_contains_a_temporary_branch_id(self):
         volume, result, _ = self._run(

@@ -31,7 +31,7 @@ const report = {
           volumes: [
             { volume_id: 11, volume_name: "v-measured", tracked: true, seconds: 8040, display: "2h 14m" },
             { volume_id: 12, volume_name: "v-idle", tracked: true, seconds: 0, display: "0m" },
-            { volume_id: 13, volume_name: "v-legacy", tracked: false, seconds: null, display: "-" },
+            { volume_id: 13, volume_name: "v-legacy", tracked: false, seconds: null, display: "—" },
           ],
         },
       ],
@@ -95,7 +95,7 @@ describe("AnnotatorTimeSection", () => {
     // Measured but never opened: a genuine zero.
     expect(row("v-idle").textContent).toContain("0m");
     // Legacy: unknown, muted, and explained on hover — never counted as zero.
-    expect(row("v-legacy").textContent).toContain("-");
+    expect(row("v-legacy").textContent).toContain("—");
     expect(row("v-legacy").textContent).not.toContain("0m");
     const unknown = row("v-legacy").querySelector(".annotation-time-unknown")!;
     expect(unknown.getAttribute("title")).toMatch(/before time tracking/);

@@ -101,7 +101,8 @@ COPY --chown=app:app backend/ ./backend/
 COPY --chown=app:app manage.py ./manage.py
 COPY --chown=app:app --from=frontend /build/frontend/dist ./frontend/dist
 COPY --chown=app:app ops/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY --chown=app:app ops/docker/detect-hardware.sh /usr/local/bin/detect-hardware.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/detect-hardware.sh
 
 # Mount points, created up front so the container starts cleanly even when a
 # deployment mounts nothing:

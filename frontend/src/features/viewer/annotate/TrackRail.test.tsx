@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { TrackingPrompt, TrackResult } from "../../../api/viewer";
+import type { TrackingPrompt } from "../../../api/viewer";
 import TrackRail from "./TrackRail";
 
 function renderRail(
@@ -14,7 +14,6 @@ function renderRail(
   tracking = false,
   reviewAction: "confirm" | "reject" | null = null,
   layerCount = 20,
-  lastResults: TrackResult[] = [],
 ) {
   const onPromptTool = vi.fn();
   const onSaveProgress = vi.fn();
@@ -33,7 +32,7 @@ function renderRail(
     pendingReview={pendingReview} promptUndoCount={promptUndoCount} promptRedoCount={promptRedoCount}
     reviewAction={reviewAction}
     overwriteMode="overwrite_empty"
-    layerCount={layerCount} lastResults={lastResults} onRange={onRange}
+    layerCount={layerCount} onRange={onRange}
     onSelectPrompt={vi.fn()} onQueueActive={vi.fn()}
     onPromptTool={onPromptTool} onSaveProgress={onSaveProgress} onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()}
     onClearSeed={onClearSeed}
@@ -277,6 +276,25 @@ describe("TrackRail", () => {
     expect(range.querySelector("button")).toBeNull();
   });
 
+  it("labels Add with the fresh queue class id, not only the current Active", () => {
+    render(<TrackRail
+      hidden={false} disabled={false} activeId={50} queueClassId={61} activeColorCss="#fff"
+      tracking={false} trackingParentIds={[]} promptEditing={false} promptTool={null}
+      savingProgress={false} progressSaved={false}
+      promptBrushSize={8} promptEraserSize={12} trackError={null} axisIsZ prompts={[]}
+      selectedParentId={null} pendingReview={null}
+      reviewAction={null} promptUndoCount={0} promptRedoCount={0}
+      overwriteMode="overwrite_empty" layerCount={20} onRange={vi.fn()}
+      onSelectPrompt={vi.fn()} onQueueActive={vi.fn()} onPromptTool={vi.fn()}
+      onSaveProgress={vi.fn()} onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()}
+      onClearSeed={vi.fn()} onRemovePrompt={vi.fn()}
+      onPromptUndo={vi.fn()} onPromptRedo={vi.fn()} onOverwriteMode={vi.fn()}
+      onPropagateAll={vi.fn()} onPropagateSelected={vi.fn()} onReview={vi.fn()}
+    />);
+    expect(screen.getByRole("button", { name: "Add class 61 to queue" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add class 50 to queue" })).toBeNull();
+  });
+
   it("shows Track overwrite immediately above propagation and reports changes", () => {
     const onOverwriteMode = vi.fn();
     const { container } = render(<TrackRail
@@ -286,7 +304,7 @@ describe("TrackRail", () => {
       promptBrushSize={8} promptEraserSize={12} trackError={null} axisIsZ prompts={[]}
       selectedParentId={null} pendingReview={null}
       reviewAction={null} promptUndoCount={0} promptRedoCount={0}
-      overwriteMode="overwrite_empty" layerCount={20} lastResults={[]} onRange={vi.fn()}
+      overwriteMode="overwrite_empty" layerCount={20} onRange={vi.fn()}
       onSelectPrompt={vi.fn()} onQueueActive={vi.fn()} onPromptTool={vi.fn()}
       onSaveProgress={vi.fn()} onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()}
       onClearSeed={vi.fn()} onRemovePrompt={vi.fn()}
@@ -415,7 +433,7 @@ describe("TrackRail", () => {
     expect(all().textContent).toBe("Propagate all (1)");
   });
 
-  it("summarises inferred branches, merges and ambiguities before Confirm", () => {
+  it("does not render a post-propagate genealogy report", () => {
     renderRail(
       [{
         parent_id: 50,
@@ -424,49 +442,11 @@ describe("TrackRail", () => {
       }],
       null,
       { parent_ids: [50], status: "pending_review" },
-      0, 0, false, false, null, 20,
-      [{
-        final_id: 50,
-        branch_ids: [50, 91, 92],
-        group: {
-          group_id: 50,
-          branch_ids: [50, 91, 92],
-          final_id: 50,
-          seed_z: 0,
-          seed_zs: [0],
-          start_z: 0,
-          end_z: 5,
-          inferred_branches: [
-            { branch_key: 1, subclass_index: 1, seed_zs: [0, 4] },
-            { branch_key: 2, subclass_index: 1, seed_zs: [0] },
-          ],
-          merge_events: [
-            { loser_branch: 2, survivor_branch: 1, contact_z: 3, reason: "smaller_branch" },
-          ],
-          terminated_at: { "2": 3 },
-          warnings: [{ code: "ambiguous_child_merge", message: "Branches 1 and 2 are ambiguous." }],
-        },
-      }],
     );
-    const summary = screen.getByRole("region", { name: "Track propagation summary" });
-    expect(summary.textContent).toContain("2 branches");
-    expect(summary.textContent).toContain("layers 1–6");
-    // Seed layers and the merge layer are shown 1-based, like everything else.
-    expect(summary.textContent).toContain("Branch 1 seeded on layers 1, 5");
-    expect(summary.textContent).toContain("Branch 2 seeded on layer 1");
-    expect(summary.textContent).toContain("ends at layer 4");
-    expect(summary.textContent).toContain("Branch 2 merged into branch 1 at layer 4");
-    expect(summary.textContent).toContain("Branches 1 and 2 are ambiguous.");
-    // No family-tree vocabulary survives in the summary the annotator reads.
-    expect(summary.textContent).not.toMatch(/child|parent/i);
-    // The annotator is never asked to manage the temporary branch ids.
-    expect(summary.textContent).not.toContain("91");
-    expect(summary.textContent).not.toContain("92");
-  });
-
-  it("shows no summary before the first propagation", () => {
-    renderRail([]);
     expect(screen.queryByRole("region", { name: "Track propagation summary" })).toBeNull();
+    expect(screen.queryByText(/Branch .*merged/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
   });
 
   it("offers Confirm/Reject for a pending class preview and blocks propagation", () => {
@@ -667,7 +647,7 @@ describe("TrackRail", () => {
       pendingReview={{ parent_ids: [50], status: "pending_review" }}
       promptUndoCount={0} promptRedoCount={0} reviewAction={null}
       overwriteMode="overwrite_empty"
-      layerCount={20} lastResults={[]} onRange={vi.fn()}
+      layerCount={20} onRange={vi.fn()}
       onSelectPrompt={vi.fn()} onQueueActive={vi.fn()}
       onPromptTool={vi.fn()} onSaveProgress={vi.fn()}
       onPromptBrushSize={vi.fn()} onPromptEraserSize={vi.fn()} onClearSeed={vi.fn()}

@@ -63,6 +63,7 @@ htmlcov/
 # The container deployment's env template. `.env.docker` itself (the real one,
 # with the secret key and database password) stays ignored by `.env.*` above.
 !.env.docker.example
+!.env.docker.dev.example
 *.pem
 
 # Per-machine agent/tool overrides

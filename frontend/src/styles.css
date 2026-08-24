@@ -189,9 +189,12 @@ a:hover {
   width: 166px;
 }
 .task-table td.cell-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
 }
 .task-table td.volume-name-cell,
 td.volume-name-cell {
@@ -727,10 +730,12 @@ th {
 }
 /* Long volume / dataset / project names wrap instead of shoving Open off-screen. */
 td.cell-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 10rem;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
   max-width: 36rem;
 }
 th.col-open,
@@ -746,9 +751,11 @@ td.col-open {
 .task-actions {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
+  row-gap: 0.25rem;
 }
 .task-actions a {
   display: inline-flex;
@@ -1141,9 +1148,13 @@ button.dev-reset-btn:hover:not(:disabled) {
   border: 1px solid transparent;
 }
 
-.cell-badge { overflow: hidden; }
+.cell-badge { overflow: visible; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.compact-actions { white-space: nowrap; }
+.compact-actions { white-space: nowrap; overflow: visible; }
+.compact-actions .task-actions {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
 .compact-button { padding: 0.35rem 0.55rem; }
 .volume-meta-table { table-layout: fixed; min-width: 1160px; }
 .volume-meta-table.has-project { min-width: 1310px; }
@@ -1162,8 +1173,23 @@ button.dev-reset-btn:hover:not(:disabled) {
 .volume-meta-table .col-meta-assignee { width: 120px; }
 .volume-meta-table .col-meta-streaming { width: 170px; }
 .volume-meta-table .col-meta-details { width: 170px; }
-.volume-meta-table .col-meta-actions { width: 158px; }
-.volume-meta-table td { overflow: hidden; }
+.volume-meta-table .col-meta-actions { width: 158px; min-width: 9.5rem; }
+.volume-meta-table td {
+  overflow: visible;
+  white-space: normal;
+}
+.volume-meta-table .mono-cell {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.volume-meta-table .cell-name.truncate,
+.volume-meta-table td.truncate {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .volume-meta-table .cell-details { white-space: normal; }
 .volume-meta-action-content {
   display: flex;
@@ -1191,7 +1217,12 @@ button.dev-reset-btn:hover:not(:disabled) {
   min-width: 0;
   padding-inline: 0.45rem;
 }
-.task-table-annotator td.cell-name { min-width: 0; }
+.task-table-annotator td.cell-name,
+.task-table-annotator td.mono-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .task-table-annotator .col-meta-project { width: 11%; }
 .task-table-annotator .col-meta-volume { width: 15%; }
 .task-table-annotator .col-meta-format { width: 6%; }
@@ -1201,9 +1232,9 @@ button.dev-reset-btn:hover:not(:disabled) {
 .task-table-annotator .col-meta-label { width: 8%; }
 .task-table-annotator .col-meta-status { width: 9%; }
 .task-table-annotator .col-meta-details { width: 8%; }
-.task-table-annotator .col-meta-actions { width: 10%; }
+.task-table-annotator .col-meta-actions { width: 12%; min-width: 9.5rem; }
 @media (max-width: 1100px) {
-  .task-table-annotator { min-width: 1050px !important; }
+  .task-table-annotator { min-width: 0 !important; }
 }
 .cell-streaming { white-space: normal; }
 .task-lock { margin-left: 0.3rem; }
@@ -2154,31 +2185,7 @@ button.dev-reset-btn:hover:not(:disabled) {
   margin: 0.2rem 0 0;
   font-size: 0.68rem;
 }
-/* The propagation summary lives in the always-enabled footer beside
-   Confirm/Reject: it is what the annotator reads to decide between them, so it
-   must stay legible even when the rest of the rail is disabled. */
-.track-inference-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 0.35rem;
-  background: var(--surface);
-  max-height: 11rem;
-  overflow-y: auto;
-}
-.track-inference-class {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  font-size: 0.68rem;
-}
-.track-inference-branch,
-.track-inference-merge,
-.track-inference-warning {
-  line-height: 1.25;
-}
+/* Propagation status sits above Confirm/Reject in the footer. */
 .track-review-panel {
   flex: 0 0 auto;
   padding: 0.3rem;

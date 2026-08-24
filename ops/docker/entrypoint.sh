@@ -40,8 +40,22 @@ except Exception:
   return 1
 }
 
+apply_hardware_auto_tune() {
+  if [ "${MITO_HARDWARE_AUTO_TUNE:-0}" != "1" ]; then
+    return 0
+  fi
+  if [ ! -x /usr/local/bin/detect-hardware.sh ]; then
+    log "MITO_HARDWARE_AUTO_TUNE=1 but detect-hardware.sh is missing; skipping"
+    return 0
+  fi
+  # shellcheck disable=SC1091
+  eval "$(/usr/local/bin/detect-hardware.sh --export)"
+  log "hardware auto-tune: workers=${GUNICORN_WORKERS:-?} threads=${GUNICORN_THREADS:-?} track_voxels=${MITO_TRACK_PLAN_MAX_VOXELS:-?} sam2_xy_max=${MITO_SAM2_XY_MAX:-?} sam2_cuda=${MITO_SAM2_CUDA_DEVICE:-?}"
+}
+
 prepare() {
   wait_for_db
+  apply_hardware_auto_tune
 
   # Idempotent, and cheap when there is nothing to do. Set MITO_SKIP_MIGRATE=1
   # if you run migrations as a separate deploy step (e.g. several app replicas

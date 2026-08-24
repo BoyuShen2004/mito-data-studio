@@ -1,0 +1,102 @@
+# Mito Data Studio — full development stack in Docker.
+#
+# For contributors who want a running instance without conda/CUDA on the host.
+# Same image as production (`Dockerfile`), but dev-friendly defaults:
+#   DEBUG on, mock login optional, legacy upgrade profile, hardware auto-tune.
+#
+#   cp .env.docker.dev.example .env.docker.dev
+#   ops/docker/detect-hardware.sh --apply .env.docker.dev   # optional
+#   docker compose -f docker-compose.dev-stack.yml --env-file .env.docker.dev up -d --build
+#
+# GPU (needs NVIDIA Container Toolkit):
+#   docker compose -f docker-compose.dev-stack.yml --env-file .env.docker.dev \
+#     --profile gpu up -d --build app-gpu
+#
+# This stack is separate from:
+#   docker-compose.dev.yml      — postgres only, for host conda + `make dev`
+#   docker-compose.yml          — production-shaped deployment (.env.docker)
+#
+# Do not run more than one of these app stacks on the same host port.
+
+name: mito-dev-stack
+
+x-app-base: &app-base
+  restart: unless-stopped
+  env_file:
+    - ${MITO_CONTAINER_ENV_FILE:-.env.docker.dev}
+  environment:
+    MITO_DB_ENGINE: postgres
+    MITO_DB_HOST: postgres
+    MITO_DB_PORT: "5432"
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env.docker.dev}
+    MITO_DB_PASSWORD: ${MITO_DB_PASSWORD:?set MITO_DB_PASSWORD in .env.docker.dev}
+    DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
+    MITO_UPGRADE_PROFILE: legacy
+  volumes:
+    - ${MITO_HOST_DATA_DIR:-./data}:/data
+    - mito-dev-stack-media:/app/backend/media
+    - mito-dev-stack-state:/state
+    - ${MITO_HOST_VENDOR_DIR:-./vendor}:/vendor:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MITO_DB_NAME:-mito_dev}
+      POSTGRES_USER: ${MITO_DB_USER:-mito}
+      POSTGRES_PASSWORD: ${MITO_DB_PASSWORD:?set MITO_DB_PASSWORD in .env.docker.dev}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - mito-dev-stack-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${MITO_DB_USER:-mito} -d ${MITO_DB_NAME:-mito_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  app:
+    <<: *app-base
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MITO_DEPS: ${MITO_DEPS:-core}
+        FRONTEND_BUILD_SCRIPT: ${FRONTEND_BUILD_SCRIPT:-build}
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    image: mito-data-studio:dev-stack
+    ports:
+      - "127.0.0.1:${MITO_HOST_PORT:-8000}:8000"
+
+  app-gpu:
+    <<: *app-base
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MITO_DEPS: ai-gpu
+        FRONTEND_BUILD_SCRIPT: ${FRONTEND_BUILD_SCRIPT:-build}
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    image: mito-data-studio:dev-stack-gpu
+    ports:
+      - "127.0.0.1:${MITO_HOST_PORT:-8000}:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  mito-dev-stack-pgdata:
+  mito-dev-stack-media:
+  mito-dev-stack-state:

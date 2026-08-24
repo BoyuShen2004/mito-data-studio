@@ -25,6 +25,31 @@ Open <http://localhost:5173>. Django runs on `127.0.0.1:8000`; Vite proxies API
 requests to it. `docker-compose.dev.yml` starts only PostgreSQL on port 5433.
 It is not the full application stack in `docker-compose.yml`.
 
+### Docker development stack (no conda on the host)
+
+If you prefer a containerized dev instance instead of conda + `make dev`:
+
+```bash
+cp .env.docker.dev.example .env.docker.dev
+# edit DJANGO_SECRET_KEY and MITO_DB_PASSWORD
+ops/docker/detect-hardware.sh --apply .env.docker.dev   # optional hardware tuning
+git lfs pull                                            # if using SAM2 / ai-gpu
+make docker-dev-up
+```
+
+Open <http://localhost:8000>. The compiled SPA is served by gunicorn inside the
+container (no Vite hot reload). For GPU Track:
+
+```bash
+docker compose -f docker-compose.dev-stack.yml --env-file .env.docker.dev \
+  --profile gpu up -d --build app-gpu
+```
+
+See [Hardware-adaptive development deployment](hardware-adaptive-deployment.md)
+for a complete human/LLM-agent procedure, or
+[Docker deployment](docker.md#hardware-auto-tuning) for the sizing variables.
+Stop with `make docker-dev-down`.
+
 `scripts/dev/setup.sh` creates `.env` only when it is missing, checks the environment,
 installs frontend packages when needed, runs Django checks, and applies additive
 migrations. It does not modify an existing `.env` or reshape a conda environment.

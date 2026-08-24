@@ -19,7 +19,10 @@ from annotation.tracking.branching import (
     split_binary_mask_components,
 )
 from annotation.tracking.services import run_branch_tracking
-from annotation.tracking.interfaces import TrackingProvider
+from annotation.tracking.interfaces import (
+    PropagationResult,
+    TrackingProvider,
+)
 from annotation.visualization import slice_io
 from core.choices import LabelType, TaskStatus, TaskType, UserRole
 from projects.services import create_project
@@ -60,6 +63,37 @@ class TrackingProviderRegistryTests(TestCase):
             self.assertIs(get_tracking_provider(), get_tracking_provider())
         finally:
             reset_tracking_providers()
+
+
+class LazyPlanLabelSlabTests(TestCase):
+    def test_contiguous_slab_uses_one_source_read_and_overlays_pending_z(self):
+        from annotation.services import _LazyPlanLabels
+
+        class CountingSource:
+            def __init__(self, array):
+                self.array = array
+                self.keys = []
+
+            def __getitem__(self, key):
+                self.keys.append(key)
+                return self.array[key]
+
+        source_array = np.arange(6 * 4 * 5, dtype=np.uint16).reshape(6, 4, 5)
+        source = CountingSource(source_array)
+        pending = np.full((4, 5), 99, dtype=np.int32)
+        reader = _LazyPlanLabels.__new__(_LazyPlanLabels)
+        reader.shape = source_array.shape
+        reader.axis = "z"
+        reader.source = source
+        reader.pending = {2: pending}
+
+        slab = reader.read_z_slab(1, 4)
+
+        self.assertEqual(source.keys, [slice(1, 4, None)])
+        self.assertEqual(slab.dtype, np.int32)
+        np.testing.assert_array_equal(slab[0], source_array[1])
+        np.testing.assert_array_equal(slab[1], pending)
+        np.testing.assert_array_equal(slab[2], source_array[3])
 
 
 class Sam2AutocastContractTests(TestCase):
@@ -473,6 +507,54 @@ class RoleGatingApiTests(TestCase):
         self.assertEqual(statuses[18], "ready")
         self.assertEqual(statuses[19], "ready")
         self.assertNotIn("tracking_pending_review", self.volume.metadata)
+
+    def test_batch_calls_one_provider_in_request_order_and_first_class_wins(self):
+        """The throughput path must not trade away deterministic collisions."""
+        from annotation.services import plan_track_task_batch
+        from annotation.visualization.slice_io import decode_label_rle
+
+        class RecordingProvider(TrackingProvider):
+            name = "recording"
+            requires_gpu = False
+
+            def __init__(self):
+                self.calls = []
+
+            def propagate(self, request):
+                self.calls.append(request)
+                return PropagationResult(masks={
+                    int(branch): {
+                        int(z): np.asarray(mask, dtype=bool).copy()
+                        for z, mask in per_z.items()
+                    }
+                    for branch, per_z in request.seeds.items()
+                })
+
+        seed = np.zeros((10, 10), dtype=bool)
+        seed[4:6, 4:6] = True
+        groups = [
+            {
+                "parent_id": parent_id,
+                "branch_seeds": {1: {2: seed}},
+                "z_range": [2, 2],
+            }
+            for parent_id in (18, 17)
+        ]
+        provider = RecordingProvider()
+        with mock.patch(
+            "annotation.tracking.registry.get_tracking_provider",
+            return_value=provider,
+        ):
+            planned = plan_track_task_batch(self.task, groups)
+
+        self.assertEqual(len(provider.calls), 2)
+        self.assertEqual(
+            [result["group"]["group_id"] for result in planned["results"]],
+            [18, 17],
+        )
+        changed = next(item for item in planned["slices"] if item["index"] == 2)
+        after = decode_label_rle(changed["runs"], tuple(changed["shape"]))
+        self.assertTrue(np.all(after[seed] == 18))
 
     def test_propagating_selected_parent_keeps_sibling_prompt_and_seeds(self):
         client = self._client(self.annotator)

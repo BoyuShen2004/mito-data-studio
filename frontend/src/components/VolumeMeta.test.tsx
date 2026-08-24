@@ -25,7 +25,7 @@ describe("shared volume metadata", () => {
       "Imaging instrument / microscope", "Experimental condition", "Sample condition",
       "Dataset source", "Publication / reference", "Notes",
     ]) expect(screen.getByText(label)).toBeTruthy();
-    expect(screen.getAllByText("-")).toHaveLength(10);
+    expect(screen.getAllByText("—")).toHaveLength(12);
     const labels = Array.from(document.querySelectorAll("dt")).map((node) => node.textContent);
     expect(labels.indexOf("Region coverage")).toBe(labels.indexOf("Label type") + 1);
   });

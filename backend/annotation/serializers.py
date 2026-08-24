@@ -90,7 +90,7 @@ class AnnotationTaskSerializer(serializers.ModelSerializer):
 
     #: Rendering a list must cost one timing query, not one per row.
     _UNKNOWN_TIME = {
-        "tracked": False, "seconds": None, "display": "-", "eligibility": "",
+        "tracked": False, "seconds": None, "display": "—", "eligibility": "",
     }
 
     def _annotation_time_map(self) -> dict[int, dict]:
@@ -346,7 +346,7 @@ class AssignmentPlanTaskSerializer(serializers.ModelSerializer):
         if mapped is not None:
             return mapped
         return timing.safely(timing.task_time, obj) or {
-            "tracked": False, "seconds": None, "display": "-", "eligibility": "",
+            "tracked": False, "seconds": None, "display": "—", "eligibility": "",
         }
 
     class Meta:

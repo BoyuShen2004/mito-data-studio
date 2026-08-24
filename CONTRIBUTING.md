@@ -21,7 +21,8 @@ mixing formatting-only work with behavioral changes.
 
 - Django apps and tests live under `backend/`; use the root `manage.py`.
 - React code and tests live under `frontend/`.
-- User, developer, and deployment documentation lives under `docs/`.
+- Established operational guides and product invariants live under `docs/`;
+  release- and publication-facing material lives under `documentation/`.
 - Reusable developer automation lives under `scripts/`; host-specific assets
   live under `ops/`.
 - Update `CHANGELOG.md` for changes visible to users or operators.
@@ -30,4 +31,3 @@ mixing formatting-only work with behavioral changes.
 
 The repository currently grants no license for first-party code. Review
 `LICENSE` before copying, distributing, or submitting material.
-

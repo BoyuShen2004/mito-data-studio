@@ -14,7 +14,9 @@ lives here and in the pure modules beside it:
 3. all branches stay under one :class:`~annotation.tracking.branching.TrackGroup`;
 4. after propagation the branches are walked in canonical ``start_z -> end_z``
    order and merged children are terminated
-   (:mod:`annotation.tracking.contact`);
+   (:mod:`annotation.tracking.contact`); each survivor is then **re-seeded from
+   the merged contact mask** and re-propagated for the remainder of the range
+   so post-merge layers stay continuous instead of speckled separate lineages;
 5. every surviving branch is **auto-merged into one final instance id**, so a
    propagation never leaves a temporary branch id in the volume.
 
@@ -86,6 +88,73 @@ def assert_seeds_within_range(
             f"Seed layer(s) {listed} fall outside the selected range "
             f"{start_z}–{end_z} (inclusive). Widen the range or clear those seeds."
         )
+
+
+def reseed_after_merges(
+    provider,
+    *,
+    image: np.ndarray,
+    by_branch: dict[int, dict[int, np.ndarray]],
+    events,
+    end_z: int,
+    original_branch_seeds: dict[int, dict[int, np.ndarray]],
+    provider_ids: dict[int, int],
+) -> None:
+    """Re-propagate each survivor from its merge contact as a new prompt.
+
+    Mutates ``by_branch`` in place. Events are applied in ascending contact_z
+    order so a chain of merges re-seeds from the latest consolidated mask.
+    """
+    if not events:
+        return
+    ordered = sorted(events, key=lambda event: (int(event.contact_z), int(event.survivor_branch)))
+    for event in ordered:
+        survivor = int(event.survivor_branch)
+        loser = int(event.loser_branch)
+        contact_z = int(event.contact_z)
+        survivor_planes = by_branch.setdefault(survivor, {})
+        merged = np.asarray(
+            survivor_planes.get(contact_z, np.zeros(image.shape[1:], dtype=bool)),
+            dtype=bool,
+        ).copy()
+        loser_plane = by_branch.get(loser, {}).get(contact_z)
+        if loser_plane is not None:
+            merged |= np.asarray(loser_plane, dtype=bool)
+        if not np.any(merged):
+            continue
+        survivor_planes[contact_z] = merged
+        if contact_z >= end_z:
+            continue
+        # Drop stale post-contact predictions from the separate-lineage run.
+        for later in [z for z in list(survivor_planes) if z > contact_z]:
+            del survivor_planes[later]
+        reseed: dict[int, np.ndarray] = {contact_z: merged}
+        for z, mask in original_branch_seeds.get(survivor, {}).items():
+            z_i = int(z)
+            if contact_z < z_i <= end_z and np.any(mask):
+                reseed[z_i] = np.asarray(mask, dtype=bool)
+                survivor_planes[z_i] = reseed[z_i]
+        provider_id = int(provider_ids[survivor])
+        continued = provider.propagate(
+            PropagationRequest(
+                image=image,
+                seeds={provider_id: reseed},
+                z_range=(contact_z, end_z),
+            )
+        )
+        for z, mask in continued.masks.get(provider_id, {}).items():
+            z_i = int(z)
+            if z_i < contact_z or z_i > end_z:
+                continue
+            plane = np.asarray(mask, dtype=bool)
+            if z_i == contact_z:
+                # Never shrink the merged contact prompt.
+                survivor_planes[z_i] = merged | plane
+            elif z_i in reseed and z_i > contact_z:
+                # Keep annotator seeds; fill only if propagate returned something.
+                survivor_planes[z_i] = reseed[z_i] | plane
+            else:
+                survivor_planes[z_i] = plane
 
 
 def run_branch_tracking(
@@ -227,6 +296,27 @@ def run_branch_tracking(
     group.merge_events = [event.to_dict() for event in resolution.events]
     group.terminated_at = dict(resolution.terminated_at)
     group.warnings = list(group.warnings) + list(resolution.warnings)
+
+    # 4b. After a confirmed merge, the survivor's later planes were predicted
+    #     as a *separate* lineage and look 碎 / speckled. Fold the contact
+    #     layer into one mask and re-propagate that as a new prompt for the
+    #     remainder of the range (plus any survivor seeds past the contact).
+    original_branch_seeds = {
+        branch.branch_key: {
+            int(z): np.asarray(mask, dtype=bool)
+            for z, mask in branch.seeds.items()
+        }
+        for branch in inference.branches
+    }
+    reseed_after_merges(
+        provider,
+        image=image,
+        by_branch=by_branch,
+        events=resolution.events,
+        end_z=end_z,
+        original_branch_seeds=original_branch_seeds,
+        provider_ids=branch_provider_ids,
+    )
 
     # 5. Write each surviving branch plane with its temporary id.
     for key, per_z in by_branch.items():

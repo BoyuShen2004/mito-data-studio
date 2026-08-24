@@ -3,7 +3,7 @@ NPM ?= npm
 COMPOSE ?= docker compose
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev db-up db-down migrate check test test-backend test-frontend build check-git
+.PHONY: help setup dev db-up db-down docker-dev-up docker-dev-down docker-detect migrate check test test-backend test-frontend build check-git
 
 help: ## Show the available development commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -19,6 +19,16 @@ db-up: ## Start the development PostgreSQL service.
 
 db-down: ## Stop the development PostgreSQL service without deleting data.
 	$(COMPOSE) -f docker-compose.dev.yml down
+
+docker-detect: ## Print hardware-based gunicorn/Track tuning recommendations.
+	bash ops/docker/detect-hardware.sh
+
+docker-dev-up: ## Start the full development stack in Docker (app + postgres).
+	@test -f .env.docker.dev || (echo "Copy .env.docker.dev.example to .env.docker.dev first." >&2; exit 1)
+	$(COMPOSE) -f docker-compose.dev-stack.yml --env-file .env.docker.dev up -d --build
+
+docker-dev-down: ## Stop the Docker development stack.
+	$(COMPOSE) -f docker-compose.dev-stack.yml --env-file .env.docker.dev down
 
 migrate: ## Apply Django migrations.
 	$(PYTHON) manage.py migrate

@@ -97,11 +97,11 @@ For Track:
 
 Disconnected pieces of a seed are followed as separate branches and merged back
 into the class label, so drawing two separate blobs is how you ask for two
-branches — there is nothing to create or select by hand. Track reports the
-inferred branches, merges, terminations, and ambiguous matches. Track prompt
-Undo/Redo changes prompt geometry only; queue actions are not part of that
-history. Propagation is a compound pending edit and does not write the working
-draft.
+branches — there is nothing to create or select by hand. The annotator reviews
+the canvas preview and chooses Confirm or Reject; the rail does not display a
+branch-genealogy report. Track prompt Undo/Redo changes prompt geometry only;
+queue actions are not part of that history. Propagation is a compound pending
+edit and does not write the working draft.
 
 ## Annotation time
 

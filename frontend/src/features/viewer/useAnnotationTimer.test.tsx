@@ -197,7 +197,7 @@ describe("useAnnotationTimer", () => {
 
   it("reports a legacy-exempt task as not tracked and never heartbeats it", async () => {
     api.startTaskTiming.mockResolvedValue(
-      status({ tracking: false, eligible: false, reason: "legacy_exempt", session_id: null, total_seconds: null, display: "-" }),
+      status({ tracking: false, eligible: false, reason: "legacy_exempt", session_id: null, total_seconds: null, display: "—" }),
     );
     const view = render(<Harness />);
     await settle();

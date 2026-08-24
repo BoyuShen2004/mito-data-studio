@@ -14,6 +14,7 @@ and PostgreSQL; Python, Node, and conda are not required on the host.
 git clone https://github.com/BoyuShen2004/mito-data-studio.git
 cd mito-data-studio
 cp .env.docker.example .env.docker
+ops/docker/detect-hardware.sh --apply .env.docker
 ```
 
 Open `.env.docker` and set the four values in its `REQUIRED` section:
@@ -49,6 +50,10 @@ host conda checkout. Do not run them as if they were the same deployment.
 
 ## Documentation
 
+- [Release and publication documentation portal](documentation/README.md) —
+  product scope, complete workflows, architecture, microscopy data contract,
+  AI models, reference hardware, manuscript Methods, reproducibility, and
+  release readiness
 - [Documentation index](docs/index.md)
 - [User guide](docs/user-guide.md) — current requester, manager, annotator, sharing,
   tracking, timing, and review workflows
@@ -56,6 +61,8 @@ host conda checkout. Do not run them as if they were the same deployment.
   data safety
 - [Docker deployment](docs/docker.md) — portable setup, persistence, GPU, backup,
   and troubleshooting
+- [Hardware-adaptive development deployment](docs/hardware-adaptive-deployment.md)
+  — executable instructions for human operators and LLM coding agents
 - [This-host deployment](docs/deployment.md) — maintainer-specific systemd runbook
 - [Product invariants](docs/product-invariants.md) — behaviors contributors
   must preserve

@@ -254,7 +254,7 @@ class EligibilityAndPermissionTests(TimingFixture, TestCase):
         summary = timing.task_time(task)
         self.assertFalse(summary["tracked"])
         self.assertIsNone(summary["seconds"])
-        self.assertEqual(summary["display"], "-")
+        self.assertEqual(summary["display"], "—")
 
     def test_legacy_exempt_task_cannot_start_a_session(self):
         exempt = self.make_volume("legacy", eligible=False)
@@ -765,7 +765,7 @@ class ReportingTests(TimingFixture, TestCase):
         # Legacy: unknown, and emphatically not zero.
         self.assertFalse(volumes["v-legacy"]["tracked"])
         self.assertIsNone(volumes["v-legacy"]["seconds"])
-        self.assertEqual(volumes["v-legacy"]["display"], "-")
+        self.assertEqual(volumes["v-legacy"]["display"], "—")
 
     def test_a_mixed_total_declares_that_it_is_incomplete(self):
         clock = FrozenClock()
@@ -825,7 +825,7 @@ class ReportingTests(TimingFixture, TestCase):
 
     def test_format_duration_is_compact_at_every_scale(self):
         cases = {
-            None: "-", 0: "0m", 59: "0m", 60: "1m", 2220: "37m",
+            None: "—", 0: "0m", 59: "0m", 60: "1m", 2220: "37m",
             3600: "1h", 8040: "2h 14m", 86400: "1d", 273600: "3d 4h",
         }
         for seconds, expected in cases.items():
@@ -851,7 +851,7 @@ class ResilienceTests(TimingFixture, TestCase):
                 f"/api/tasks/{self.task.id}/"
             )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["annotation_time"]["display"], "-")
+        self.assertEqual(response.json()["annotation_time"]["display"], "—")
 
     def test_submit_still_runs_when_closing_the_interval_explodes(self):
         """The Submit path calls timing through ``safely``, so it cannot inherit
@@ -964,4 +964,4 @@ class ResilienceTests(TimingFixture, TestCase):
         task = self.make_task(legacy, assigned_to=self.annotator)
         with self.assertNumQueries(0):
             mapped = timing.task_time_map([task])
-        self.assertEqual(mapped[task.id]["display"], "-")
+        self.assertEqual(mapped[task.id]["display"], "—")

@@ -7,7 +7,7 @@ import { durationTitle, formatDuration, preciseDuration } from "./time";
  * the only way they cannot drift is for both to be pinned to one list.
  */
 const CASES: Array<[number | null, string]> = [
-  [null, "-"],
+  [null, "—"],
   [0, "0m"],
   [59, "0m"],
   [60, "1m"],
@@ -26,13 +26,13 @@ describe("formatDuration", () => {
   it("treats unknown and zero as different answers", () => {
     // The whole point of the legacy exemption: `-` says "we do not know",
     // `0m` says "we measured, and it was nothing".
-    expect(formatDuration(null)).toBe("-");
+    expect(formatDuration(null)).toBe("—");
     expect(formatDuration(0)).toBe("0m");
     expect(formatDuration(null)).not.toBe(formatDuration(0));
   });
 
   it("treats undefined as unknown too", () => {
-    expect(formatDuration(undefined)).toBe("-");
+    expect(formatDuration(undefined)).toBe("—");
   });
 
   it("never renders a negative duration", () => {

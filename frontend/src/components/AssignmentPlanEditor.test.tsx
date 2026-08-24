@@ -249,11 +249,11 @@ describe("AssignmentPlanEditor annotation time column", () => {
   });
 
   it("shows `-` for a legacy-exempt volume rather than a fabricated zero", async () => {
-    withTime({ tracked: false, seconds: null, display: "-" });
+    withTime({ tracked: false, seconds: null, display: "—" });
     const { container } = mount();
     await openDetails();
     const cell = container.querySelector(".plan-detail-time .annotation-time")!;
-    expect(cell.textContent).toBe("-");
+    expect(cell.textContent).toBe("—");
     expect(cell.className).toContain("annotation-time-unknown");
     expect(cell.getAttribute("title")).toMatch(/before time tracking/);
   });

@@ -99,13 +99,13 @@ describe("annotation time on the task Details card", () => {
     expect(screen.getByText("2h 14m")).toBeTruthy();
   });
 
-  it("shows `-` for a legacy-exempt task, not a fabricated zero", () => {
+  it("shows — for a legacy-exempt task, not a fabricated zero", () => {
     const legacy = {
       ...task,
-      annotation_time: {tracked: false, seconds: null, display: "-"},
+      annotation_time: {tracked: false, seconds: null, display: "—"},
     } as unknown as AnnotationTask;
     render(<MemoryRouter><TaskDetailsCard task={legacy}/></MemoryRouter>);
-    const cell = screen.getByText("-");
+    const cell = screen.getByText("—", {selector: ".annotation-time-unknown"});
     expect(cell.className).toContain("annotation-time-unknown");
     expect(cell.getAttribute("title")).toMatch(/before time tracking/);
     expect(screen.queryByText("0m")).toBeNull();
@@ -125,7 +125,7 @@ describe("annotation time on the task Details card", () => {
   it("degrades to the honest unknown when the server sent no time at all", () => {
     const missing = {...task} as unknown as AnnotationTask;
     render(<MemoryRouter><TaskDetailsCard task={missing}/></MemoryRouter>);
-    expect(screen.getByText("-")).toBeTruthy();
+    expect(screen.getByText("—", {selector: ".annotation-time-unknown"})).toBeTruthy();
   });
 
   it("does not let the timer dominate the card", () => {
