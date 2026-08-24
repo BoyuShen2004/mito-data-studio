@@ -79,7 +79,7 @@ const api = {
   fetchLabels3DMesh: vi.fn(),
 };
 
-function mount() {
+function mount(mode: "view" | "annotate" = "view") {
   // Region only lives in the page topbar, which the canvas drives through
   // this handle — the same one `RegionOnlyButton` uses.
   let controls: AxisControls | null = null;
@@ -89,7 +89,8 @@ function mount() {
       volumeId={3}
       zStart={0}
       zEnd={5}
-      editable={false}
+      mode={mode}
+      editable={mode === "annotate"}
       api={api as never}
       onAxisControls={(next) => {
         controls = next ?? controls;
@@ -113,6 +114,8 @@ describe("AnnotationCanvas region features", () => {
     });
     canvas.decodeRegionMask.mockReset().mockResolvedValue(new Uint8Array(64).fill(1));
     canvas.fetchObjectUrl.mockReset().mockImplementation(async (path: string) => `blob:${path}`);
+    api.getLabelIds.mockClear();
+    api.getRegionLabelIds.mockClear();
   });
 
   it("puts Jump to region immediately left of Fit window", async () => {
@@ -139,6 +142,23 @@ describe("AnnotationCanvas region features", () => {
       const image = document.querySelector(".canvas-stage img") as HTMLImageElement;
       expect(image?.getAttribute("src")).toBe("blob:/image/3/z/0");
     });
+  });
+
+  it("assigns the source plane without waiting for the region overlay", async () => {
+    canvas.fetchObjectUrl.mockImplementation((path: string) => {
+      if (path.startsWith("/region/")) {
+        return new Promise<string>(() => undefined);
+      }
+      return Promise.resolve(`blob:${path}`);
+    });
+
+    mount();
+
+    await waitFor(() => {
+      const image = document.querySelector(".canvas-stage img") as HTMLImageElement;
+      expect(image?.getAttribute("src")).toBe("blob:/image/3/z/0");
+    });
+    expect(document.querySelector('.canvas-stage img[aria-hidden="true"]')).toBeNull();
   });
 
   it("jumps the current axis to the nearest slice that has region", async () => {
@@ -188,4 +208,36 @@ describe("AnnotationCanvas region features", () => {
     await waitFor(() => expect(overlayCanvas()?.style.maskImage).toBe(""));
     view.unmount();
   });
+
+  it.each(["view", "annotate"] as const)(
+    "keeps Region-only membership and overlay decode stable while changing layers in %s",
+    async (mode) => {
+      const { view, regionOnly } = mount(mode);
+      await screen.findByRole("button", { name: "Fit window" });
+      regionOnly(true);
+
+      await waitFor(() =>
+        expect(canvas.decodeRegionMask).toHaveBeenLastCalledWith("blob:/region/3/z/0", 8, 8),
+      );
+      expect(overlayCanvas()?.style.maskImage).toBe("");
+
+      for (const layer of [1, 2, 3]) {
+        await userEvent.click(screen.getByTitle("Next layer"));
+        await waitFor(() =>
+          expect(canvas.decodeRegionMask).toHaveBeenLastCalledWith(
+            `blob:/region/3/z/${layer}`,
+            8,
+            8,
+          ),
+        );
+        await waitFor(() => expect(overlayCanvas()?.style.maskImage).toBe(""));
+      }
+
+      expect(api.getRegionLabelIds).toHaveBeenCalled();
+      expect(
+        (document.querySelector('input[title^="Go to z layer"]') as HTMLInputElement).value,
+      ).toBe("4");
+      view.unmount();
+    },
+  );
 });

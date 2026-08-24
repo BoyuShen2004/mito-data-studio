@@ -571,16 +571,22 @@ export default function LabelsPanel({
                   className="row"
                   style={{ gap: 6, alignItems: "center", cursor: "pointer" }}
                   title={`${row.voxel_count} voxels · z ${displayLayerRange(row.z_start, row.z_end)} · ${row.state} (${row.origin})`}
-                  onClick={() => {
-                    onSetActiveId(row.id);
-                    onJumpToZ(row.z_start);
-                  }}
+                  onClick={() => onSetActiveId(row.id)}
                 >
                   <Swatch id={row.id} />
                   {row.id}
                   <StateDot row={row} />
                   <span className="muted labels-row-size">{formatVoxelCount(row.voxel_count)}</span>
-                  <span className="muted" style={{ fontSize: "0.68rem" }}>
+                  <span
+                    className="muted labels-row-z"
+                    style={{ fontSize: "0.68rem" }}
+                    title={`Go to layer ${displayLayerRange(row.z_start, row.z_start)} (start of this label)`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSetActiveId(row.id);
+                      onJumpToZ(row.z_start);
+                    }}
+                  >
                     z{displayLayerRange(row.z_start, row.z_end)}
                   </span>
                 </span>

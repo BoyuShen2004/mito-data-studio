@@ -10,6 +10,15 @@
  */
 
 import "fake-indexeddb/auto";
+import { beforeEach } from "vitest";
+
+// Viewer navigation now intentionally persists in the real address bar. Each
+// test still needs a fresh browser URL unless it explicitly creates a deep
+// link of its own; otherwise one canvas test can make the next look as though
+// it was opened from a saved layer.
+beforeEach(() => {
+  window.history.replaceState({}, "", "/");
+});
 
 // --- working Web Storage ----------------------------------------------------
 // This environment exposes `window.localStorage`/`sessionStorage` as bare

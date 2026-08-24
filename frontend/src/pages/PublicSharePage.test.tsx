@@ -82,6 +82,7 @@ function rowAction(label: string, action: string) {
 
 describe("PublicSharePage", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/share/public/tok");
     canvasProps.mockClear();
     axisChanged.mockClear();
     regionOnlyChanged.mockClear();
@@ -128,6 +129,21 @@ describe("PublicSharePage", () => {
     // Breadcrumb climbs back to the dataset index.
     fireEvent.click(screen.getByRole("button", {name: "Cortex EM"}));
     expect(screen.getByRole("heading", {name: "Datasets"})).toBeTruthy();
+  });
+
+  it("restores an opened project-share volume after a browser refresh", async () => {
+    const first = renderPage();
+    await screen.findByRole("heading", {name: "Datasets"});
+    fireEvent.click(rowAction("Dataset A", "Open"));
+    fireEvent.click(rowAction("crop-a", "View"));
+    expect(window.location.search).toContain("volume=101");
+
+    first.unmount();
+    renderPage();
+    expect(await screen.findByTestId("annotation-canvas")).toBeTruthy();
+    expect(canvasProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({volumeId: 101, editable: false}),
+    );
   });
 
   it("shows a dataset share's volumes without a dataset index", async () => {

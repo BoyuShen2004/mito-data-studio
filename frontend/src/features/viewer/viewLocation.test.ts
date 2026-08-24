@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseViewLocation, withViewLocation } from "./viewLocation";
+import { parseViewLocation, replaceViewLocation, withViewLocation } from "./viewLocation";
 
 describe("viewer share location", () => {
   it("round-trips xyz, axis, and active label on a public share URL", () => {
@@ -13,5 +13,19 @@ describe("viewer share location", () => {
     const url = withViewLocation("/share/public/token?z=99&label=42", {z: 1, y: 2, x: 3, axis: "z"});
     expect(new URL(url).searchParams.get("label")).toBeNull();
     expect(parseViewLocation(new URL(url).search)).toEqual({z: 1, y: 2, x: 3, axis: "z"});
+  });
+
+  it("replaces the current URL so refresh restores the latest plane", () => {
+    window.history.replaceState({}, "", "/viewer/tasks/30?keep=yes&submission=9");
+    replaceViewLocation({z: 29, y: 14, x: 9, axis: "z", label: 6});
+    expect(window.location.pathname + window.location.search).toBe(
+      "/viewer/tasks/30?keep=yes&submission=9&z=29&y=14&x=9&axis=z&label=6",
+    );
+  });
+
+  it("does not treat label-only search as a saved plane", async () => {
+    const { hasViewCoordinates } = await import("./viewLocation");
+    expect(hasViewCoordinates("?label=1292&feedback=11&submission=9")).toBe(false);
+    expect(hasViewCoordinates("?z=40&label=1292")).toBe(true);
   });
 });

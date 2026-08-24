@@ -16,7 +16,12 @@ import JumpToRegionButton from "./JumpToRegionButton";
 import { displayFilter } from "./displayAdjust";
 import { panCanvasHorizontally, panCanvasVertically } from "./canvasPan";
 import { useAuth } from "../../auth/AuthContext";
-import { hasViewLocation, parseViewLocation, type ViewLocation } from "./viewLocation";
+import {
+  hasViewLocation,
+  parseViewLocation,
+  replaceViewLocation,
+  type ViewLocation,
+} from "./viewLocation";
 import {
   ChunkRenderedImageSource,
   chunkFallbackMessage,
@@ -174,13 +179,15 @@ export default function SliceViewer({ volumeId, onViewLocation }: { volumeId: nu
   }, [meta.data, axis]);
 
   useEffect(() => {
-    if (!meta.data || !onViewLocation) return;
+    if (!meta.data) return;
     const center = {
       z: Math.floor(meta.data.shape.z / 2),
       y: Math.floor(meta.data.shape.y / 2),
       x: Math.floor(meta.data.shape.x / 2),
     };
-    onViewLocation({...center, [axis]: index, axis});
+    const location = {...center, [axis]: index, axis};
+    replaceViewLocation(location);
+    onViewLocation?.(location);
   }, [axis, index, meta.data, onViewLocation]);
 
   const loadImage = useCallback(

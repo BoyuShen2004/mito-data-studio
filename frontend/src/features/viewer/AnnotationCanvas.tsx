@@ -114,7 +114,12 @@ import { labelIdsForCache } from "./workingLabelRevision";
 import { SliceHistory, type CompoundSliceEdit } from "./sliceHistory";
 import { stageIntersectsViewport as canvasStageIntersectsViewport } from "./canvasRecovery";
 import type { Axis } from "../../api/viewer";
-import { hasViewLocation, parseViewLocation, type ViewLocation } from "./viewLocation";
+import {
+  hasViewLocation,
+  parseViewLocation,
+  replaceViewLocation,
+  type ViewLocation,
+} from "./viewLocation";
 import {
   ChunkRenderedImageSource,
   chunkFallbackMessage,
@@ -122,7 +127,8 @@ import {
 } from "../rendering";
 
 // Shared canvas for View + Annotate. Annotate-only chrome (tool strip,
-// Track/SAM2) lives under `./annotate/` and mounts only when `editable`.
+// Track/SAM2) lives under `./annotate/` and mounts only in `mode="annotate"`;
+// `editable` separately answers whether that chrome may mutate labels.
 // Labels / 3D Labels sit on the right in both modes (resize / collapse).
 //
 // Tool set mirrors Cellable's left tool rail (app.py's `mode_actions` /
@@ -524,28 +530,40 @@ export type AxisControls = {
   hasRegion: boolean;
   regionOnly: boolean;
   changeRegionOnly: (enabled: boolean) => void;
+  /** False on every View surface. Region-only remains a display filter there,
+   * but edit-policy controls such as Overwrite must not be offered. */
+  canMutateLabels: boolean;
   /** How edits made outside the region are presented once Region only is
    * switched off — same policy Interpolate and Flood fill use. */
   regionOverwriteMode: OverwriteMode;
   changeRegionOverwriteMode: (mode: OverwriteMode) => void;
 };
 
+/** View and Annotate are two chrome modes over one canvas/navigation stack. */
+export type AnnotationCanvasMode = "view" | "annotate";
+
 export default function AnnotationCanvas({
   taskId,
   volumeId,
   zStart,
-  editable = true,
+  editable: editPermission = true,
+  mode,
   api = authedViewerApi,
   initialActiveId,
   initialSoloId = null,
+  onCommentLabel,
   onAxisControls,
 }: {
   taskId: number;
   volumeId: number;
   zStart: number;
   zEnd: number;
-  /** Annotate mounts tool strip / Track / Labels; View shares this canvas without them. */
+  /** Whether this user may mutate labels. This is a permission, not the UI mode. */
   editable?: boolean;
+  /** Surface contract: View is the same navigation/ROI/Labels/3D stack with
+   * Track and paint chrome removed. Defaults from `editable` for legacy
+   * callers; route-level callers pass it explicitly. */
+  mode?: AnnotationCanvasMode;
   /** Read API surface — defaults to the authed task/volume endpoints; the
    * public "hard case" share page passes token-backed public endpoints so the
    * same canvas renders without an account (see `publicHardCaseApi`). */
@@ -554,19 +572,40 @@ export default function AnnotationCanvas({
    * the recipient soloed on the shared label; canvas + 3D both respect it). */
   initialActiveId?: number;
   initialSoloId?: number | null;
+  /** Manager-only View affordance supplied by the review-aware task page.
+   * Its presence enables only the small label-comment context action; View
+   * never receives paint, Track, or lifecycle commands. */
+  onCommentLabel?: (labelId: number) => void;
   /** Publish axis state so the page topbar can render AxisSelect. */
   onAxisControls?: (controls: AxisControls | null) => void;
 }) {
+  const surfaceMode: AnnotationCanvasMode = mode ?? (editPermission ? "annotate" : "view");
+  const annotateMode = surfaceMode === "annotate";
+  // A View route stays read-only even if a caller accidentally supplies edit
+  // permission. Annotate may still be read-only when the task is locked.
+  const editable = annotateMode && editPermission;
   const meta = useAsync<VolumeMeta>(() => api.getVolumeMeta(volumeId), [volumeId]);
   const labelState = useAsync(() => api.getLabelState(taskId), [taskId]);
 
 
+  // Seed navigation synchronously from the URL. Applying it in an effect lets
+  // the default first layer render once and race the URL-sync effect, which can
+  // erase the deep link before a refresh has restored it.
+  const initialViewLocationRef = useRef<ViewLocation | null>(
+    hasViewLocation(window.location.search)
+      ? parseViewLocation(window.location.search)
+      : null,
+  );
+  const initialAxis = initialViewLocationRef.current?.axis ?? DEFAULT_VIEW_AXIS;
+
   // View axis — Cellable Axial / Coronal / Sagittal. Default stays Axial (z).
-  const [axis, setAxis] = useState<Axis>(DEFAULT_VIEW_AXIS);
+  const [axis, setAxis] = useState<Axis>(initialAxis);
   const axisRef = useRef(axis);
   axisRef.current = axis;
 
-  const [index, setIndex] = useState(zStart);
+  const [index, setIndex] = useState(
+    initialViewLocationRef.current?.[initialAxis] ?? zStart,
+  );
   const indexRef = useRef(index);
   indexRef.current = index;
   // Default Annotate mode is Select (V) — not Brush/Point Mask — so opening
@@ -581,7 +620,9 @@ export default function AnnotationCanvas({
     setCursorStyle(style);
     saveBrushCursorStyle(style);
   }, []);
-  const [activeId, setActiveId] = useState(initialActiveId ?? 1);
+  const [activeId, setActiveId] = useState(
+    initialViewLocationRef.current?.label ?? initialActiveId ?? 1,
+  );
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const [brightness, setBrightness] = useState(50);
@@ -592,9 +633,24 @@ export default function AnnotationCanvas({
   // stays at its own fixed ~0.5 regardless (#26 look, not user-tunable).
   const [labelOpacity, setLabelOpacity] = useState(100);
   const [regionOpacity, setRegionOpacity] = useState(45);
-  const [roiOnly, setRoiOnly] = useState(false);
+  const regionOnlyStorageKey = `mito-region-only:${taskId}:${volumeId}`;
+  const [roiOnly, setRoiOnly] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(regionOnlyStorageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
   const roiOnlyRef = useRef(roiOnly);
   roiOnlyRef.current = roiOnly;
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(regionOnlyStorageKey, roiOnly ? "1" : "0");
+    } catch {
+      // Storage may be unavailable in a locked-down browser; the in-memory
+      // display filter still works for this mount.
+    }
+  }, [regionOnlyStorageKey, roiOnly]);
   const [regionMaskUrl, setRegionMaskUrl] = useState<string | null>(null);
   // Region only shows whole instances, so the overlay needs the ROI as *data*
   // (which ids touch it) rather than as a mask image (which pixels are in it).
@@ -648,6 +704,17 @@ export default function AnnotationCanvas({
   const [fitMode, setFitMode] = useState<"window" | "width">("window");
   const [status, setStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
   const [sliceLoading, setSliceLoading] = useState(true);
+  // Critical-path gate for cold opens. The browser's image load event is the
+  // first reliable point at which the viewport has useful pixels; expensive
+  // whole-volume/3D/Track work waits behind it instead of racing the plane.
+  const openImageKey = `${taskId}:${volumeId}`;
+  const [paintedImageKey, setPaintedImageKey] = useState<string | null>(null);
+  const firstImagePainted = paintedImageKey === openImageKey;
+  // The source bytes have arrived and its object URL is assigned. Summary may
+  // stream from this point (important for hard cases without stored z), while
+  // CPU-heavy work still waits for `firstImagePainted`.
+  const [readyImageKey, setReadyImageKey] = useState<string | null>(null);
+  const firstImageReady = readyImageKey === openImageKey;
   // Every slice the user has edited but not yet saved. Navigating z freezes
   // only the actually edited slice here and restores it on return; clean
   // slices must never enter this buffer (one full raster each).
@@ -738,6 +805,7 @@ export default function AnnotationCanvas({
   // preview that can never be confirmed.
   const [interpolationEnabled, setInterpolationEnabled] = useState(false);
   useEffect(() => {
+    if (!annotateMode || !firstImageReady) return;
     let alive = true;
     getDeploymentIdentity().then((identity) => {
       if (!alive) return;
@@ -752,16 +820,7 @@ export default function AnnotationCanvas({
     return () => {
       alive = false;
     };
-  }, []);
-
-  // Position parameters refine an already-authorized route/public-share URL.
-  useEffect(() => {
-    if (!hasViewLocation(window.location.search)) return;
-    const location = parseViewLocation(window.location.search);
-    setAxis(location.axis);
-    setIndex(location[location.axis]);
-    if (location.label) setActiveId(location.label);
-  }, []);
+  }, [annotateMode, firstImageReady]);
 
   // Split 3D (connected components) — click a label or Split Active.
   const [splitRunning, setSplitRunning] = useState(false);
@@ -817,7 +876,7 @@ export default function AnnotationCanvas({
   }, [resolveTrackingPendingReview, taskId]);
 
   useEffect(() => {
-    if (!editable) return;
+    if (!annotateMode || !firstImageReady) return;
     let live = true;
     getTrackingPrompts(taskId)
       .then((queue) => {
@@ -834,7 +893,7 @@ export default function AnnotationCanvas({
       })
       .catch((e) => live && setTrackError(e instanceof Error ? e.message : "Could not load Track prompts"));
     return () => { live = false; };
-  }, [editable, resolveTrackingPendingReview, taskId]);
+  }, [annotateMode, firstImageReady, resolveTrackingPendingReview, taskId]);
 
   // Minimal right-click context menu (#29 item U15) — screen position to
   // place it at, plus the label id under the cursor (if any) so Verify/Solo
@@ -859,8 +918,7 @@ export default function AnnotationCanvas({
   // Labels panel: whole-volume lifecycle summary (state/origin per id,
   // shared with 2D "Hide Verified" rendering) + 3D panel pinned ids.
   const [labelsSummaryRows, setLabelsSummaryRows] = useState<LabelSummaryRow[]>([]);
-  /** Which Labels list is showing. Lives here, not in `LabelsPanel`, because
-   * the Select tool follows the same This layer / All rule (see `selectLabel`). */
+  /** Which Labels list is showing (This layer / All). */
   const [labelsScope, setLabelsScope] = useState<LabelsScope>("all");
   const labelsScopeRef = useRef(labelsScope);
   labelsScopeRef.current = labelsScope;
@@ -965,14 +1023,14 @@ export default function AnnotationCanvas({
   /** Set when layoutStage just forced a fit-center (skip restoring an old pan). */
   const justForcedCenterRef = useRef(false);
 
-  // View ↔ Annotate remounts usually, but if `editable` flips in place, re-run
-  // the one-shot open center for the new chrome width.
+  // View ↔ Annotate remounts usually, but if mode flips in place, re-run the
+  // one-shot open center for the new chrome width.
   useEffect(() => {
     needsOpenCenterRef.current = true;
     fitBaseRef.current = { w: 0, h: 0, padX: 0, padY: 0 };
     lastShellRef.current = { w: 0, h: 0 };
     setFitEpoch((e) => e + 1);
-  }, [editable]);
+  }, [surfaceMode]);
   /** Bumped on every Fit click so re-fitting at zoom=1 / same mode still relayouts. */
   const [fitEpoch, setFitEpoch] = useState(0);
   const [stageLayout, setStageLayout] = useState<{
@@ -1131,9 +1189,10 @@ export default function AnnotationCanvas({
   }, [taskId]);
 
   useEffect(() => {
+    if (!firstImageReady) return;
     refreshLabelsSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshLabelsSummary, labelsSummaryToken]);
+  }, [firstImageReady, refreshLabelsSummary, labelsSummaryToken]);
 
   // After the first slice decode, refresh "All" once more. Summary can race
   // ahead of the working-copy seed that getLabelIds triggers; without this,
@@ -1143,6 +1202,7 @@ export default function AnnotationCanvas({
     summaryReseededRef.current = false;
   }, [taskId]);
   useEffect(() => {
+    if (!firstImageReady) return;
     if (summaryReseededRef.current) return;
     if (instances.length === 0) return;
     if (labelsSummaryRows.length > 0) {
@@ -1152,7 +1212,7 @@ export default function AnnotationCanvas({
     if (labelsSummaryLoading) return;
     summaryReseededRef.current = true;
     refreshLabelsSummary();
-  }, [instances, labelsSummaryRows.length, labelsSummaryLoading, refreshLabelsSummary]);
+  }, [firstImageReady, instances, labelsSummaryRows.length, labelsSummaryLoading, refreshLabelsSummary]);
 
   // Volume-wide "which instances reach the ROI". Fetched only when something
   // actually filters by it.
@@ -2003,10 +2063,14 @@ export default function AnnotationCanvas({
       if (opts?.forceServer) invalidateSliceLabelCache();
       setSliceLoading(true);
       try {
-        const [imgUrl, regionUrl] = await Promise.all([
-          sliceImageUrl(i, signal),
-          sliceRegionUrl(i, signal),
-        ]);
+        // Labels can travel alongside the source plane, but neither labels nor
+        // the ROI may gate its display. In particular, the fallback ROI is a
+        // second full-plane PNG and used to hold the grayscale image hostage.
+        const labelResult = labelRunsFor(i, signal).then(
+          (response) => ({ response, error: null as unknown }),
+          (error: unknown) => ({ response: null, error }),
+        );
+        const imgUrl = await sliceImageUrl(i, signal);
         if (signal?.aborted) return;
         // Drop stale responses after z OR axis moved on — including the image,
         // which must never be swapped in for a slice/view the user already left.
@@ -2015,11 +2079,24 @@ export default function AnnotationCanvas({
         // layer is temporarily unavailable. Coupling all three requests in one
         // Promise.all used to leave the black viewport background on screen
         // whenever a label lock/read failed.
+        setRegionMaskUrl(null);
         if (imgRef.current) imgRef.current.src = imgUrl;
-        setRegionMaskUrl(regionUrl);
+        setReadyImageKey(openImageKey);
+
+        // Start the non-critical ROI only after the source URL is assigned.
+        // Stale/aborted responses are dropped just like the foreground plane.
+        void sliceRegionUrl(i, signal)
+          .then((regionUrl) => {
+            if (signal?.aborted) return;
+            if (i !== indexRef.current || loadAxis !== axisRef.current) return;
+            setRegionMaskUrl(regionUrl);
+          })
+          .catch(() => undefined);
         let resp: LabelIdsResponse;
+        const labels = await labelResult;
         try {
-          resp = await labelRunsFor(i, signal);
+          if (labels.error) throw labels.error;
+          resp = labels.response as LabelIdsResponse;
           setLabelLoadError(null);
         } catch (error) {
           if (signal?.aborted) return;
@@ -2132,6 +2209,7 @@ export default function AnnotationCanvas({
       syncHistoryCounts,
       clearAllHistory,
       restoreHistoryForZ,
+      openImageKey,
     ],
   );
 
@@ -2171,7 +2249,7 @@ export default function AnnotationCanvas({
   }, [axis]);
 
   useEffect(() => {
-    if (!meta.data) return;
+    if (!meta.data || !firstImageReady) return;
     const signal = prefetchAbortRef.current.signal;
     const timer = setTimeout(() => {
       const direction = scrubDirectionRef.current;
@@ -2188,9 +2266,9 @@ export default function AnnotationCanvas({
           void sliceRegionUrl(z, signal).catch(() => {});
         }
       }
-    }, 35);
+    }, 200);
     return () => clearTimeout(timer);
-  }, [index, axis, axisLen, meta.data, sliceImageUrl, labelRunsFor, sliceRegionUrl]);
+  }, [index, axis, axisLen, meta.data, firstImageReady, sliceImageUrl, labelRunsFor, sliceRegionUrl]);
 
   // Warm the EfficientSAM embedding (encoder-only, see
   // `services.warm_ai_embedding`) whenever the slice settles while an AI
@@ -2558,10 +2636,19 @@ export default function AnnotationCanvas({
     setSharing(true);
     setShareError(null);
     try {
+      const [h, w] = shapeRef.current;
+      const [row, col] = hoverPosRef.current ?? [Math.floor(h / 2), Math.floor(w / 2)];
+      const voxel = voxelFromSlice(axisRef.current, indexRef.current, row, col);
+      const location = {
+        ...voxel,
+        axis: axisRef.current,
+        ...(activeIdRef.current > 0 ? { label: activeIdRef.current } : {}),
+      };
       const created = await createHardCase(
         taskId,
         activeIdRef.current,
         hardCaseNote.trim(),
+        location,
       );
       setShareCase(created);
       setShareStage("done");
@@ -2645,23 +2732,16 @@ export default function AnnotationCanvas({
     setIndex(clamped);
   }, [axisLen, index, stashCurrentSlice, stashHistoryForZ, syncHistoryCounts, markDirty, paintTool, rememberCommittedLabel]);
 
-  /** Make one label Active, following the Labels panel's own selection rule.
+  /** Make one label Active without changing the open layer.
    *
-   * Clicking a row in **All** jumps to where that label starts; clicking one in
-   * **This layer** does not (it is already here). The Select tool / View
-   * eyedropper go through the same rule — picking on the canvas and picking in
-   * the list share Active + (All-only) layer jump; only the canvas path also
-   * pins the Labels row to the top of the list. */
+   * Selecting (canvas Select / View eyedropper / Labels row) must not yank the
+   * viewer to that mitochondria's first layer — managers and annotators are
+   * often mid-stack reviewing. Jump to ``z_start`` only when the user asks
+   * (click the Labels z-range, search Enter, or hard-case focus on open). */
   const selectLabel = useCallback((id: number) => {
     if (id <= 0) return;
     setActiveId(id);
-    if (labelsScopeRef.current !== "all") return;
-    const row = labelsSummaryRowsRef.current.find((candidate) => candidate.id === id);
-    // Nothing to jump to for a label the summary has not seen yet (unsaved
-    // paint) — and nothing to do when it already starts on the open layer.
-    if (!row || row.z_start === indexRef.current) return;
-    requestIndex(row.z_start);
-  }, [requestIndex]);
+  }, []);
 
   /** Canvas / View pick: select + scroll that row to the top of Labels. */
   const [pinActiveToTopToken, setPinActiveToTopToken] = useState(0);
@@ -2695,6 +2775,12 @@ export default function AnnotationCanvas({
   useEffect(() => {
     if (focusJumpDoneRef.current) return;
     if (focusLabelId == null || focusLabelId <= 0) return;
+    // An explicit URL is the user's saved position from navigation/refresh;
+    // it outranks the hard-case page's one-time default focus jump.
+    if (initialViewLocationRef.current) {
+      focusJumpDoneRef.current = true;
+      return;
+    }
     // `axisLength` answers 1 while the volume meta is still in flight, which
     // would clamp any jump down to layer 0 — exactly the bug being fixed.
     if (!meta.data) return;
@@ -2782,6 +2868,15 @@ export default function AnnotationCanvas({
     };
   }, []);
 
+  // Replace rather than push: scrubbing hundreds of layers must not turn the
+  // browser Back button into hundreds of nearly identical history entries.
+  // Every page that mounts AnnotationCanvas (View, Annotate, public shares,
+  // and hard cases) inherits refresh-stable navigation from this one effect.
+  useEffect(() => {
+    if (!meta.data) return;
+    replaceViewLocation(currentViewLocation());
+  }, [axis, index, activeId, meta.data, currentViewLocation]);
+
   const changeRegionOnly = useCallback((enabled: boolean) => {
     if (enabled === roiOnlyRef.current) return;
     // A toggle boundary deliberately ends the temporary visibility exception.
@@ -2806,6 +2901,7 @@ export default function AnnotationCanvas({
       hasRegion: Boolean(meta.data?.has_region_mask),
       regionOnly: roiOnly,
       changeRegionOnly,
+      canMutateLabels: editable,
       regionOverwriteMode,
       changeRegionOverwriteMode: setRegionOverwriteMode,
     });
@@ -4055,6 +4151,7 @@ export default function AnnotationCanvas({
   // the active label. The Box path also remembers the gesture when prediction
   // is still in flight and commits as soon as its preview arrives.
   const onDoubleClick = useCallback(() => {
+    if (!editable) return;
     if (AI_POINT_TOOLS.includes(paintTool)) {
       finalizeAiPoints();
       return;
@@ -4067,7 +4164,7 @@ export default function AnnotationCanvas({
         finalizeBoxWhenReadyRef.current = true;
       }
     }
-  }, [paintTool, hasAiPreview, finalizeAiPoints, commitAiPreview]);
+  }, [editable, paintTool, hasAiPreview, finalizeAiPoints, commitAiPreview]);
 
   // Minimal right-click context menu (#29 item U15) — mode switches always,
   // plus Verify/Solo when right-clicking on an actual label. Deliberately
@@ -4075,8 +4172,8 @@ export default function AnnotationCanvas({
   // full command palette).
   const onContextMenu = useCallback(
     (e: React.MouseEvent) => {
+      if ((!editable && !onCommentLabel) || swapped) return;
       e.preventDefault();
-      if (!editable || swapped) return;
       const pt = pixelFromEvent(e);
       const ids = idsRef.current;
       let labelId: number | null = null;
@@ -4085,13 +4182,16 @@ export default function AnnotationCanvas({
         const v = ids[pt[0] * w + pt[1]];
         if (v > 0) labelId = v;
       }
+      // Review View comments attach to a concrete instance only. Background
+      // right-clicks do nothing rather than opening an empty editor.
+      if (!editable && labelId == null) return;
       setContextMenu({
         x: Math.max(8, Math.min(e.clientX, window.innerWidth - 176)),
         y: Math.max(8, Math.min(e.clientY, window.innerHeight - 480)),
         labelId,
       });
     },
-    [editable, swapped, pixelFromEvent],
+    [editable, onCommentLabel, swapped, pixelFromEvent],
   );
 
   // Close the context menu on any click outside it (or Escape, handled in
@@ -6319,9 +6419,10 @@ export default function AnnotationCanvas({
           onClose={() => setShareNotesOpen(false)}
         />
       )}
-      {editable && (
+      {annotateMode && (
         <AnnotateToolChrome
           disabled={
+            !editable ||
             swapped ||
             status === "saving" ||
             wsRunning ||
@@ -6404,18 +6505,19 @@ export default function AnnotationCanvas({
       <div
         className="canvas-main-row"
         data-swapped={swapped ? "true" : "false"}
-        data-mode={editable ? "annotate" : "view"}
+        data-mode={surfaceMode}
         style={{
-          gridTemplateColumns: editable
+          gridTemplateColumns: annotateMode
             ? `${gridLeftW}px ${SIDE_RAIL_W}px minmax(0, 1fr) ${SIDE_RAIL_W}px ${gridRightW}px`
             : `minmax(0, 1fr) ${SIDE_RAIL_W}px ${gridRightW}px`,
         }}
       >
-        {editable && (
+        {annotateMode && (
           <TrackRail
             hidden={!leftPanelOpen}
             axisIsZ={axis === "z"}
             disabled={
+              !editable ||
               swapped ||
               status === "saving" ||
               wsRunning ||
@@ -6462,7 +6564,7 @@ export default function AnnotationCanvas({
           />
         )}
 
-        {editable && (
+        {annotateMode && (
           <div
             className={`side-rail side-rail-left${leftPanelOpen ? "" : " side-rail-collapsed"}`}
             title={leftPanelOpen ? "Drag to resize · click to hide Track" : "Click to show Track · drag to open"}
@@ -6517,6 +6619,7 @@ export default function AnnotationCanvas({
                   <img
                     ref={imgRef}
                     onLoad={() => {
+                      setPaintedImageKey(openImageKey);
                       setCanvasRecoveryNotice(null);
                       updateIntensityCanvas();
                       // Preserve pan across slice swaps: capture scroll before
@@ -6606,7 +6709,7 @@ export default function AnnotationCanvas({
                       pointerEvents: "none",
                     }}
                   />
-                  <canvas
+                  {annotateMode && <canvas
                     ref={trackPromptCanvasRef}
                     aria-label="SAM tracking prompt overlay"
                     onPointerDown={onTrackPromptPointerDown}
@@ -6643,13 +6746,24 @@ export default function AnnotationCanvas({
                       touchAction: "none",
                       pointerEvents: trackPromptTool ? "auto" : "none",
                     }}
-                  />
+                  />}
                 </div>
               </div>
             </div>
             <div className="canvas-status-overlay">
               <span ref={statusReadoutRef} />
             </div>
+            {!firstImagePainted && (
+              <div className="canvas-first-load" role="status" aria-live="polite">
+                <span className="canvas-first-load-spinner" aria-hidden="true" />
+                Loading layer {index + 1}…
+              </div>
+            )}
+            {firstImagePainted && sliceLoading && (
+              <div className="canvas-layer-loading" role="status">
+                Loading layer {index + 1}…
+              </div>
+            )}
             {(canvasRecoveryNotice || rendererNotice) && (
               <div className="canvas-renderer-notice" role="status">
                 {canvasRecoveryNotice || rendererNotice}
@@ -6679,6 +6793,7 @@ export default function AnnotationCanvas({
         />
 
         <Labels3DPanel
+          enabled={firstImagePainted}
           taskId={taskId}
           labelIds={label3DIds}
           refreshKey={labels3DRefreshKey}
@@ -6971,6 +7086,23 @@ export default function AnnotationCanvas({
               </div>
             </>
           )}
+        </div>
+      )}
+      {!editable && onCommentLabel && contextMenu?.labelId != null && (
+        <div
+          ref={contextMenuRef}
+          className="canvas-context-menu canvas-review-comment-menu"
+          style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onCommentLabel(contextMenu.labelId as number);
+              setContextMenu(null);
+            }}
+          >
+            Comment on label #{contextMenu.labelId}
+          </button>
         </div>
       )}
     </div>

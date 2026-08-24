@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AnnotationCanvas, { type AxisControls } from "./AnnotationCanvas";
 
@@ -163,5 +163,19 @@ describe("hard case open focuses the shared label's layer", () => {
     await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
 
     expect(layerInput().value).toBe("1");
+  });
+
+  it("writes navigation to the URL and restores it on refresh", async () => {
+    window.history.replaceState({}, "", "/hard-cases/8?z=77&y=2&x=2&axis=z&label=6");
+    const first = mountHardCase();
+    await waitFor(() => expect(layerInput().value).toBe("78"));
+
+    fireEvent.change(layerInput(), { target: { value: "80" } });
+    fireEvent.blur(layerInput());
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("z")).toBe("79"));
+
+    first.unmount();
+    mountHardCase();
+    await waitFor(() => expect(layerInput().value).toBe("80"));
   });
 });

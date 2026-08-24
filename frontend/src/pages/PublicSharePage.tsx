@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getPublicShare } from "../api/shares";
 import { publicScopedShareApi } from "../api/viewer";
@@ -9,6 +9,7 @@ import ShareViewerActions, {
   useShareAxisControls,
 } from "../features/viewer/ShareViewerActions";
 import { useAsync } from "../hooks/useAsync";
+import { withViewLocation } from "../features/viewer/viewLocation";
 
 /**
  * Anonymous `/share/public/:token` surface. Three browse states on top of one
@@ -26,7 +27,10 @@ export default function PublicSharePage() {
   const {token = ""} = useParams();
   const share = useAsync(() => getPublicShare(token), [token]);
   const [openDataset, setOpenDataset] = useState<DatasetKey | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelectedState] = useState<number | null>(() => {
+    const requested = Number(new URLSearchParams(window.location.search).get("volume"));
+    return Number.isSafeInteger(requested) && requested > 0 ? requested : null;
+  });
   const data = share.data;
   // A volume-scope share carries exactly the shared volume, so it opens itself.
   const volume = data
@@ -34,6 +38,17 @@ export default function PublicSharePage() {
     : null;
   const readApi = useMemo(() => volume ? publicScopedShareApi(token, volume.id) : undefined, [token, volume]);
   const {controls: axisControls, onAxisControls} = useShareAxisControls();
+  const setSelected = useCallback((volumeId: number | null) => {
+    const cleared = new URL(withViewLocation(window.location.href, null));
+    if (volumeId == null) cleared.searchParams.delete("volume");
+    else cleared.searchParams.set("volume", String(volumeId));
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${cleared.pathname}${cleared.search}${cleared.hash}`,
+    );
+    setSelectedState(volumeId);
+  }, []);
 
   if (share.loading) return <ViewerShellMessage standalone>Loading shared data…</ViewerShellMessage>;
   if (share.error) return <PublicShareChrome>
@@ -51,7 +66,12 @@ export default function PublicSharePage() {
 
   const datasetName = data.datasets.find(row => row.id === volume.dataset_id)?.name;
   return <ViewerShell standalone topbar={<div className="share-public-banner">
-    {data.scope !== "volume" && <button className="secondary" type="button" onClick={() => setSelected(null)}>← Browse</button>}
+    {data.scope !== "volume" && <button className="secondary" type="button" onClick={() => {
+      if (data.scope === "project" && volume.dataset_id != null) {
+        setOpenDataset(volume.dataset_id);
+      }
+      setSelected(null);
+    }}>← Browse</button>}
     <strong className="public-share-volume-name" title={volume.name}>{volume.name}</strong>
     <span className="muted">{data.project_title}{datasetName ? ` › ${datasetName}` : ""}</span>
     <span className="spacer"/>
@@ -63,6 +83,7 @@ export default function PublicSharePage() {
       volumeId={volume.id}
       zStart={0}
       zEnd={Math.max((volume.shape[0] ?? 1) - 1, 0)}
+      mode="view"
       editable={false}
       api={readApi}
       onAxisControls={onAxisControls}

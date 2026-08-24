@@ -28,6 +28,7 @@ export interface Submission {
   qc_status: QCStatus;
   qc_report: Record<string, unknown>;
   reviews: ReviewRecord[];
+  label_comment_count: number;
   round_number: number;
   superseded_at: string | null;
   is_current: boolean;

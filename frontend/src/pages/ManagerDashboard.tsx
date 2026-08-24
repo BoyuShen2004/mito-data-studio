@@ -157,20 +157,39 @@ function ApprovalsPanel({ rows }: { rows: Project[] }) {
 }
 
 function ReviewsPanel({ rows, loading }: { rows: Submission[]; loading: boolean }) {
+  const groups = Array.from(rows.reduce((grouped, submission) => {
+    const project = submission.task_detail.project_title || "Untitled project";
+    const dataset = submission.task_detail.dataset || "Ungrouped volumes";
+    const key = `${submission.task_detail.project}\u0000${dataset}`;
+    const group = grouped.get(key) ?? { project, dataset, rows: [] as Submission[] };
+    group.rows.push(submission);
+    grouped.set(key, group);
+    return grouped;
+  }, new Map<string, { project: string; dataset: string; rows: Submission[] }>()).values());
+
   return <>
     <div className="section-heading"><h2>Reviews</h2><p className="muted">Submitted annotations waiting for a decision.</p></div>
     {loading ? <p className="muted">Loading…</p> : rows.length === 0 ? (
       <div className="empty-state">Nothing to review.</div>
-    ) : <div className="table-wrap"><table>
-      <thead><tr><th>Submission</th><th>Channel</th><th>Task</th><th>Annotator</th><th>QC</th><th>Submitted</th><th /></tr></thead>
-      <tbody>{rows.map((submission) => <tr key={submission.id}>
-        <td>#{submission.id}</td>
-        <td>{submissionChannelLabel(submission.source)}</td>
-        <td className="cell-name">{submission.task_detail.volume_name} z{displayTaskLayerRange(submission.task_detail.z_start, submission.task_detail.z_end)}</td>
-        <td>{submission.annotator_username}</td><td><StatusBadge value={submission.qc_status} /></td>
-        <td>{new Date(submission.submitted_at).toLocaleString()}</td>
-        <td><Link to={`/submissions/${submission.id}/review`}>Review</Link></td>
-      </tr>)}</tbody>
-    </table></div>}
+    ) : <div className="dataset-review-groups">{groups.map((group) => (
+      <section className="dataset-group-card" key={`${group.project}/${group.dataset}`}>
+        <div className="dataset-group-heading">
+          <div><span className="eyebrow">{group.project}</span><h3>{group.dataset}</h3></div>
+          <span className="dataset-group-count">{group.rows.length} waiting</span>
+        </div>
+        <div className="table-wrap"><table>
+          <thead><tr><th>Submission</th><th>Channel</th><th>Task</th><th>Annotator</th><th>QC</th><th>Label comments</th><th>Submitted</th><th /></tr></thead>
+          <tbody>{group.rows.map((submission) => <tr key={submission.id}>
+            <td>#{submission.task}</td>
+            <td>{submissionChannelLabel(submission.source)}</td>
+            <td className="cell-name">{submission.task_detail.volume_name} z{displayTaskLayerRange(submission.task_detail.z_start, submission.task_detail.z_end)}</td>
+            <td>{submission.annotator_username}</td><td><StatusBadge value={submission.qc_status} /></td>
+            <td>{submission.label_comment_count ? `${submission.label_comment_count} commented` : "—"}</td>
+            <td>{new Date(submission.submitted_at).toLocaleString()}</td>
+            <td><Link to={`/submissions/${submission.id}/review`}>Review</Link></td>
+          </tr>)}</tbody>
+        </table></div>
+      </section>
+    ))}</div>}
   </>;
 }

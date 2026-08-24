@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   getHardCase,
   setHardCaseRevoked,
@@ -13,6 +13,7 @@ import AnnotationCanvas, {
 import AxisSelect from "../features/viewer/AxisSelect";
 import RegionOnlyButton from "../features/viewer/RegionOnlyButton";
 import HardCaseNotesModal from "../components/HardCaseNotesModal";
+import { hasViewCoordinates } from "../features/viewer/viewLocation";
 
 /**
  * One hard case, opened by a project member at `/hard-cases/:id`.
@@ -30,6 +31,7 @@ import HardCaseNotesModal from "../components/HardCaseNotesModal";
 export default function HardCaseDetailPage() {
   const { id } = useParams();
   const caseId = Number(id);
+  const navigate = useNavigate();
   const { data: hardCase, loading, error, reload } = useAsync(
     () => getHardCase(caseId),
     [caseId],
@@ -91,9 +93,27 @@ export default function HardCaseDetailPage() {
     }
   };
 
+  // Bare `/hard-cases/:id` (no z/y/x) should still open on the plane captured
+  // at record time. `app_url` already carries those params when present.
+  const needsViewRedirect = Boolean(
+    hardCase &&
+      hardCase.view_z != null &&
+      hardCase.view_y != null &&
+      hardCase.view_x != null &&
+      !hasViewCoordinates(window.location.search),
+  );
+
+  useEffect(() => {
+    if (!hardCase || !needsViewRedirect) return;
+    navigate(hardCase.app_url, { replace: true });
+  }, [needsViewRedirect, hardCase, navigate]);
+
   if (loading) return <ViewerShellMessage>Loading hard case…</ViewerShellMessage>;
   if (error) return <ViewerShellMessage tone="error">{error}</ViewerShellMessage>;
   if (!hardCase) return null;
+  if (needsViewRedirect) {
+    return <ViewerShellMessage>Opening recorded layer…</ViewerShellMessage>;
+  }
 
   return (
     <ViewerShell
@@ -180,6 +200,7 @@ export default function HardCaseDetailPage() {
         volumeId={hardCase.volume ?? 0}
         zStart={hardCase.z_start}
         zEnd={hardCase.z_end}
+        mode={hardCase.can_annotate ? "annotate" : "view"}
         editable={hardCase.can_annotate}
         initialActiveId={hardCase.label_id}
         initialSoloId={hardCase.label_id}

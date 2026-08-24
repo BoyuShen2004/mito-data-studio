@@ -100,6 +100,8 @@ export type AssignmentPlanTask = Pick<AnnotationTask,
   "task_type" | "status" | "priority" | "difficulty" | "instructions" |
   "deadline" | "annotation_locked" | "annotation_time"
 > & {
+  dataset_id: number | null;
+  dataset_name: string;
   file_format: string;
   shape_z: number | null;
   shape_y: number | null;

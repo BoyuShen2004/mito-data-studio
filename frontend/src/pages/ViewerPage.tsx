@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getTask, listProjectTasks } from "../api/tasks";
 import { getVolume } from "../api/volumes";
 import { submitInappTask } from "../api/submissions";
@@ -14,8 +14,13 @@ import AnnotationCanvas, {
 import AxisSelect from "../features/viewer/AxisSelect";
 import SliceViewer from "../features/viewer/SliceViewer";
 import ShareControl from "../components/ShareControl";
-import type { ViewLocation } from "../features/viewer/viewLocation";
+import { withViewLocation, type ViewLocation } from "../features/viewer/viewLocation";
 import RegionOnlyButton from "../features/viewer/RegionOnlyButton";
+import {
+  listReviewLabelComments,
+  saveReviewLabelComment,
+} from "../api/reviewLabelComments";
+import type { ReviewLabelComment } from "../types/reviewLabelComment";
 
 /**
  * Volume View — same AnnotationCanvas as task View (canvas + Labels + 3D)
@@ -98,6 +103,7 @@ export function VolumeViewerPage() {
           volumeId={volumeId}
           zStart={task.z_start}
           zEnd={task.z_end}
+          mode="view"
           editable={false}
           onAxisControls={onAxisControls}
         />
@@ -149,6 +155,8 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
   const { id } = useParams();
   const taskId = Number(id);
   const { user, isManager } = useAuth();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { data: fetchedTask, loading, error } = useAsync(
     () => getTask(taskId),
     [taskId],
@@ -161,6 +169,18 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
   // annotator's in-memory slice history.
   const [submittedTask, setSubmittedTask] = useState<AnnotationTask | null>(null);
   const [axisControls, setAxisControls] = useState<AxisControls | null>(null);
+  const [commentLabelId, setCommentLabelId] = useState<number | null>(null);
+  const [commentLocation, setCommentLocation] = useState<ViewLocation | null>(null);
+  const reviewSubmissionId = Number(searchParams.get("submission"));
+  const canCommentOnReview = Boolean(
+    !editable && isManager && Number.isInteger(reviewSubmissionId) && reviewSubmissionId > 0,
+  );
+  const reviewComments = useAsync(
+    () => canCommentOnReview && commentLabelId != null
+      ? listReviewLabelComments(reviewSubmissionId)
+      : Promise.resolve([] as ReviewLabelComment[]),
+    [canCommentOnReview, commentLabelId, reviewSubmissionId],
+  );
   const onAxisControls = useCallback((c: AxisControls | null) => {
     setAxisControls(c);
   }, []);
@@ -171,9 +191,32 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
     submittedTask && submittedTask.id === taskId ? submittedTask : fetchedTask;
   if (!task) return null;
 
+  const focusedLabel = Number(searchParams.get("label"));
+  const shouldFocusFeedback = Boolean(
+    searchParams.get("feedback") && Number.isInteger(focusedLabel) && focusedLabel > 0,
+  );
+  const editingComment = commentLabelId == null
+    ? undefined
+    : Array.isArray(reviewComments.data)
+      ? reviewComments.data.find((row) => row.label_id === commentLabelId)
+      : undefined;
+
   const mayOpenEditor = isManager || task.assigned_to === user?.id;
   const mayPaint = task.can_annotate;
   const locked = task.annotation_locked;
+  const switchMode = (path: string) => {
+    // Mode is presentation state, so review context must survive alongside
+    // the live axis/layer/label location. Dropping feedback/submission here
+    // turned a focused review into an ordinary task open.
+    const target = new URL(path, window.location.origin);
+    searchParams.forEach((value, key) => target.searchParams.set(key, value));
+    const withLocation = withViewLocation(
+      `${target.pathname}${target.search}`,
+      axisControls?.currentLocation(),
+    );
+    const url = new URL(withLocation, window.location.origin);
+    navigate(`${url.pathname}${url.search}`);
+  };
 
   const submitForReview = async () => {
     setSubmitting(true);
@@ -253,17 +296,22 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
               <div className="editor-mode-slot">
                 {mayOpenEditor &&
                   (editable ? (
-                    <Link to={`/viewer/tasks/${task.id}`}>
-                      <button type="button" className="secondary">
-                        View only
-                      </button>
-                    </Link>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => switchMode(`/viewer/tasks/${task.id}`)}
+                    >
+                      View only
+                    </button>
                   ) : (
-                    <Link to={`/editor/tasks/${task.id}`}>
-                      <button type="button" disabled={locked} title={locked ? "Approved and closed for further annotation." : undefined}>
-                        Annotate
-                      </button>
-                    </Link>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      title={locked ? "Approved and closed for further annotation." : undefined}
+                      onClick={() => switchMode(`/editor/tasks/${task.id}`)}
+                    >
+                      Annotate
+                    </button>
                   ))}
               </div>
             </div>
@@ -286,11 +334,124 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
           volumeId={task.volume}
           zStart={task.z_start}
           zEnd={task.z_end}
+          mode={editable ? "annotate" : "view"}
           editable={Boolean(editable && mayPaint)}
+          initialActiveId={shouldFocusFeedback ? focusedLabel : undefined}
+          initialSoloId={shouldFocusFeedback ? focusedLabel : null}
+          onCommentLabel={
+            canCommentOnReview
+              ? (labelId) => {
+                  setCommentLocation(axisControls?.currentLocation() ?? null);
+                  setCommentLabelId(labelId);
+                }
+              : undefined
+          }
           onAxisControls={onAxisControls}
         />
+        {commentLabelId != null && (
+          <ReviewLabelCommentModal
+            key={`${reviewSubmissionId}-${commentLabelId}-${editingComment?.id ?? "new"}`}
+            submissionId={reviewSubmissionId}
+            taskId={task.id}
+            labelId={commentLabelId}
+            existing={editingComment}
+            location={
+              commentLocation ??
+              ({
+                ...({ z: 0, y: 0, x: 0, axis: "z" } as const),
+                label: commentLabelId,
+              })
+            }
+            onClose={() => {
+              setCommentLabelId(null);
+              setCommentLocation(null);
+            }}
+            onSaved={() => {
+              reviewComments.reload();
+              setCommentLabelId(null);
+              setCommentLocation(null);
+            }}
+          />
+        )}
       </>
     </ViewerShell>
+  );
+}
+
+function ReviewLabelCommentModal({
+  submissionId,
+  taskId,
+  labelId,
+  existing,
+  location,
+  onClose,
+  onSaved,
+}: {
+  submissionId: number;
+  taskId: number;
+  labelId: number;
+  existing?: ReviewLabelComment;
+  location?: ViewLocation | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [body, setBody] = useState(existing?.body ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (!body.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await saveReviewLabelComment(
+        submissionId,
+        taskId,
+        labelId,
+        body.trim(),
+        location ?? null,
+      );
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save label comment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="share-modal-backdrop" onMouseDown={onClose}>
+      <div
+        className="share-modal review-label-comment-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-label-comment-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <h3 id="review-label-comment-title">Comment on label #{labelId}</h3>
+        <label className="field">
+          <span>Manager feedback</span>
+          <textarea
+            autoFocus
+            rows={4}
+            maxLength={1000}
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="What should the annotator review on this mitochondrion?"
+          />
+        </label>
+        {error && <div className="error" role="alert">{error}</div>}
+        <div className="row spread">
+          <span className="muted">{body.length}/1000</span>
+          <div className="row">
+            <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="button" onClick={() => void save()} disabled={busy || !body.trim()}>
+              {busy ? "Saving…" : existing ? "Save changes" : "Save comment"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

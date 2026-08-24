@@ -27,7 +27,7 @@ export default function RegionOnlyButton({ controls }: { controls: AxisControls 
       >
         Region only
       </button>
-      <span className="tool-overwrite-control region-overwrite-control">
+      {controls.canMutateLabels && <span className="tool-overwrite-control region-overwrite-control">
         <label className="muted" htmlFor="region-overwrite-policy">
           Overwrite
         </label>
@@ -43,7 +43,7 @@ export default function RegionOnlyButton({ controls }: { controls: AxisControls 
           <option value="overwrite_empty">Empty voxels only</option>
           <option value="overwrite_all">All voxels</option>
         </select>
-      </span>
+      </span>}
     </>
   );
 }

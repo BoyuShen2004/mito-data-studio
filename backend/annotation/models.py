@@ -323,6 +323,12 @@ class HardCase(models.Model):
     # default to soloing this id (canvas + 3D), but may reveal others.
     label_id = models.PositiveIntegerField()
     note = models.TextField(max_length=1000, blank=True)
+    # Camera at record time so open/share lands on the plane the creator saw,
+    # not only the label's first voxel layer / task z_start.
+    view_z = models.PositiveIntegerField(null=True, blank=True)
+    view_y = models.PositiveIntegerField(null=True, blank=True)
+    view_x = models.PositiveIntegerField(null=True, blank=True)
+    view_axis = models.CharField(max_length=1, blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -361,12 +367,21 @@ class HardCase(models.Model):
     @property
     def path(self) -> str:
         """Public share route (relative; the client prepends origin)."""
-        return f"/share/hard-case/{self.token}"
+        return self._path_with_view(f"/share/hard-case/{self.token}")
 
     @property
     def app_path(self) -> str:
         """In-app route for project members (no token)."""
-        return f"/hard-cases/{self.pk}"
+        return self._path_with_view(f"/hard-cases/{self.pk}")
+
+    def _path_with_view(self, base: str) -> str:
+        if self.view_z is None or self.view_y is None or self.view_x is None:
+            return base
+        axis = self.view_axis if self.view_axis in {"x", "y", "z"} else "z"
+        return (
+            f"{base}?z={int(self.view_z)}&y={int(self.view_y)}"
+            f"&x={int(self.view_x)}&axis={axis}&label={int(self.label_id)}"
+        )
 
 
 class HardCaseMessage(models.Model):
@@ -390,6 +405,67 @@ class HardCaseMessage(models.Model):
 
     def __str__(self) -> str:
         return f"HardCaseMessage #{self.pk} on case #{self.hard_case_id}"
+
+
+class ReviewLabelComment(models.Model):
+    """Manager feedback on one concrete label in one submission round.
+
+    This is deliberately separate from :class:`HardCase`: hard cases are a
+    project discussion workflow, while these rows are review feedback for the
+    annotator who submitted this exact round.  Submission history is durable,
+    so the foreign key also preserves comments after a later resubmission.
+    ``task`` is denormalized for the annotator Feedback inbox.
+    """
+
+    submission = models.ForeignKey(
+        AnnotationSubmission,
+        on_delete=models.CASCADE,
+        related_name="label_comments",
+    )
+    task = models.ForeignKey(
+        AnnotationTask,
+        on_delete=models.CASCADE,
+        related_name="review_label_comments",
+    )
+    label_id = models.PositiveIntegerField()
+    body = models.TextField(max_length=1000)
+    # Plane where the manager wrote the comment (View camera). Opening the
+    # commented-instance link restores this layer instead of the task start
+    # or the label's first voxel layer.
+    view_z = models.PositiveIntegerField(null=True, blank=True)
+    view_y = models.PositiveIntegerField(null=True, blank=True)
+    view_x = models.PositiveIntegerField(null=True, blank=True)
+    view_axis = models.CharField(max_length=1, blank=True, default="")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="review_label_comments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "label_id"],
+                name="unique_review_comment_per_submission_label",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["task", "-updated_at"],
+                name="idx_review_comment_task_time",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"ReviewLabelComment #{self.pk} submission #{self.submission_id} "
+            f"label {self.label_id}"
+        )
 
 
 class ReviewRecord(models.Model):

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import HardCaseDetailPage from "./HardCaseDetailPage";
 import HardCaseSharePage from "./HardCaseSharePage";
@@ -13,6 +13,8 @@ const harness = vi.hoisted(() => ({
   reviewSubmission: vi.fn(),
   submitInappTask: vi.fn(),
   listHardCaseMessages: vi.fn(),
+  saveReviewLabelComment: vi.fn(),
+  isManager: false,
 }));
 
 vi.mock("../hooks/useAsync", () => ({
@@ -27,7 +29,7 @@ vi.mock("../hooks/useAsync", () => ({
 vi.mock("../auth/AuthContext", () => ({
   useAuth: () => ({
     user: { id: 12, username: "alice" },
-    isManager: false,
+    isManager: harness.isManager,
   }),
 }));
 
@@ -42,6 +44,11 @@ vi.mock("../api/submissions", () => ({
   getSubmission: vi.fn(),
   reviewSubmission: harness.reviewSubmission,
   submitInappTask: harness.submitInappTask,
+}));
+
+vi.mock("../api/reviewLabelComments", () => ({
+  listReviewLabelComments: vi.fn(),
+  saveReviewLabelComment: harness.saveReviewLabelComment,
 }));
 
 vi.mock("../api/tasks", () => ({
@@ -75,6 +82,11 @@ const task = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
+}
+
 describe("collaboration workflow pages", () => {
   beforeEach(() => {
     harness.asyncData = null;
@@ -83,6 +95,8 @@ describe("collaboration workflow pages", () => {
     harness.reviewSubmission.mockReset().mockResolvedValue({});
     harness.submitInappTask.mockReset();
     harness.listHardCaseMessages.mockReset().mockResolvedValue([]);
+    harness.saveReviewLabelComment.mockReset().mockResolvedValue({});
+    harness.isManager = false;
   });
 
   it("keeps the task canvas mounted and exposes another submit round", async () => {
@@ -157,6 +171,7 @@ describe("collaboration workflow pages", () => {
       hasRegion: false,
       regionOnly: false,
       changeRegionOnly,
+      canMutateLabels: true,
       regionOverwriteMode: "overwrite_empty",
       changeRegionOverwriteMode,
     };
@@ -210,6 +225,72 @@ describe("collaboration workflow pages", () => {
     expect(changeRegionOverwriteMode).toHaveBeenCalledWith("overwrite_all");
   });
 
+  it("preserves axis, layer, and Active label when switching Annotate to View", async () => {
+    harness.asyncData = task();
+    render(
+      <MemoryRouter initialEntries={["/editor/tasks/7"]}>
+        <Routes>
+          <Route path="/editor/tasks/:id" element={<TaskViewerPage editable />} />
+          <Route path="/viewer/tasks/:id" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const canvasProps = harness.canvasProps.mock.lastCall?.[0] as {
+      onAxisControls: (controls: unknown) => void;
+    };
+    act(() => canvasProps.onAxisControls({
+      axis: "y",
+      changeAxis: vi.fn(),
+      disabled: false,
+      currentLocation: () => ({ z: 3, y: 5, x: 7, axis: "y", label: 11 }),
+      hasRegion: false,
+      regionOnly: true,
+      changeRegionOnly: vi.fn(),
+      canMutateLabels: true,
+      regionOverwriteMode: "overwrite_empty",
+      changeRegionOverwriteMode: vi.fn(),
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "View only" }));
+    expect((await screen.findByTestId("location")).textContent).toBe(
+      "/viewer/tasks/7?z=3&y=5&x=7&axis=y&label=11",
+    );
+  });
+
+  it("preserves feedback and submission context while switching modes", async () => {
+    harness.asyncData = task();
+    render(
+      <MemoryRouter initialEntries={["/editor/tasks/7?feedback=11&submission=5&z=2&label=6"]}>
+        <Routes>
+          <Route path="/editor/tasks/:id" element={<TaskViewerPage editable />} />
+          <Route path="/viewer/tasks/:id" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const canvasProps = harness.canvasProps.mock.lastCall?.[0] as {
+      onAxisControls: (controls: unknown) => void;
+    };
+    act(() => canvasProps.onAxisControls({
+      axis: "z",
+      changeAxis: vi.fn(),
+      disabled: false,
+      currentLocation: () => ({ z: 2, y: 0, x: 0, axis: "z", label: 6 }),
+      hasRegion: false,
+      regionOnly: false,
+      changeRegionOnly: vi.fn(),
+      canMutateLabels: true,
+      regionOverwriteMode: "overwrite_empty",
+      changeRegionOverwriteMode: vi.fn(),
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "View only" }));
+    expect((await screen.findByTestId("location")).textContent).toBe(
+      "/viewer/tasks/7?feedback=11&submission=5&z=2&y=0&x=0&axis=z&label=6",
+    );
+  });
+
   it("uses the server lock gates for both painting and submitting", () => {
     harness.asyncData = task({
       status: "approved",
@@ -247,6 +328,10 @@ describe("collaboration workflow pages", () => {
       can_comment: true,
       message_count: 0,
       note: "Needs a second look",
+      view_z: null,
+      view_y: null,
+      view_x: null,
+      view_axis: "",
       z_start: 2,
       z_end: 6,
       project_title: "Project A",
@@ -350,5 +435,66 @@ describe("collaboration workflow pages", () => {
     await waitFor(() =>
       expect(harness.reviewSubmission).toHaveBeenCalledWith(5, "approved", "", true),
     );
+  });
+
+  it("offers view-only and annotate routes before an in-app review decision", () => {
+    harness.asyncData = {
+      id: 5,
+      task: 7,
+      task_detail: task({ submission_count: 1 }),
+      annotator_username: "alice",
+      source: "inapp",
+      submitted_at: "2026-07-30T12:00:00Z",
+      label_file: "",
+      notes: "",
+      qc_status: "passed",
+      qc_report: {},
+      reviews: [],
+    };
+
+    render(
+      <MemoryRouter initialEntries={["/submissions/5/review"]}>
+        <Routes>
+          <Route path="/submissions/:id/review" element={<ReviewSubmissionPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Review submission #7" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View" }).closest("a")?.getAttribute("href"))
+      .toBe("/viewer/tasks/7?submission=5");
+    expect(screen.getByRole("button", { name: "Annotate" }).closest("a")?.getAttribute("href"))
+      .toBe("/editor/tasks/7");
+    expect(screen.getByRole("heading", { name: "Commented instances" })).toBeTruthy();
+  });
+
+  it("lets a manager save a label comment only from submission-aware View", async () => {
+    harness.isManager = true;
+    harness.asyncData = task();
+    render(
+      <MemoryRouter initialEntries={["/viewer/tasks/7?submission=5"]}>
+        <Routes>
+          <Route path="/viewer/tasks/:id" element={<TaskViewerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const props = harness.canvasProps.mock.lastCall?.[0] as {
+      onCommentLabel?: (labelId: number) => void;
+    };
+    expect(props.onCommentLabel).toBeTypeOf("function");
+    act(() => props.onCommentLabel?.(6));
+    fireEvent.change(screen.getByRole("textbox", { name: "Manager feedback" }), {
+      target: { value: "Reconnect this narrow branch." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save comment" }));
+    await waitFor(() => expect(harness.saveReviewLabelComment)
+      .toHaveBeenCalledWith(
+        5,
+        7,
+        6,
+        "Reconnect this narrow branch.",
+        { z: 0, y: 0, x: 0, axis: "z", label: 6 },
+      ));
   });
 });

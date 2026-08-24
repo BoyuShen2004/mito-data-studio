@@ -8,9 +8,19 @@ export interface ViewLocation {
   label?: number;
 }
 
-export function hasViewLocation(search: string): boolean {
+/** True when the URL carries an explicit plane coordinate (z/y/x).
+ *
+ * ``label`` / ``axis`` alone are not a saved camera position — treating them
+ * as one used to land on z=0 and skip the hard-case / feedback focus jump.
+ */
+export function hasViewCoordinates(search: string): boolean {
   const params = new URLSearchParams(search);
-  return ["z", "y", "x", "axis", "label"].some((key) => params.has(key));
+  return ["z", "y", "x"].some((key) => params.has(key));
+}
+
+/** Alias for {@link hasViewCoordinates} (plane coords only, not label alone). */
+export function hasViewLocation(search: string): boolean {
+  return hasViewCoordinates(search);
 }
 
 const coordinate = (params: URLSearchParams, key: "z" | "y" | "x") => {
@@ -29,7 +39,7 @@ export function parseViewLocation(search: string): ViewLocation {
     y: coordinate(params, "y"),
     x: coordinate(params, "x"),
     axis,
-    ...(Number.isFinite(label) && label > 0 ? {label: Math.floor(label)} : {}),
+    ...(Number.isFinite(label) && label > 0 ? { label: Math.floor(label) } : {}),
   };
 }
 
@@ -41,6 +51,25 @@ export function withViewLocation(rawUrl: string, location?: ViewLocation | null)
   url.searchParams.set("y", String(location.y));
   url.searchParams.set("x", String(location.x));
   url.searchParams.set("axis", location.axis);
-  if (location.label && location.label > 0) url.searchParams.set("label", String(location.label));
+  if (location.label && location.label > 0) {
+    url.searchParams.set("label", String(location.label));
+  }
   return url.toString();
+}
+
+/** Keep the current plane in the address bar without adding a history entry.
+ * A browser refresh can then reconstruct the exact axis/layer instead of
+ * remounting the shared canvas at its default first layer. */
+export function replaceViewLocation(location: ViewLocation): void {
+  const current = new URL(window.location.href);
+  const next = new URL(withViewLocation(window.location.href, location), window.location.origin);
+  for (const [key, value] of current.searchParams.entries()) {
+    if (["z", "y", "x", "axis", "label"].includes(key)) continue;
+    if (!next.searchParams.has(key)) next.searchParams.set(key, value);
+  }
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${next.pathname}${next.search}${next.hash}`,
+  );
 }

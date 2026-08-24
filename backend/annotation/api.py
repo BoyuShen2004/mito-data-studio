@@ -12,7 +12,13 @@ from core.choices import ACTIVE_TASK_STATUSES, TaskStatus
 from core.permissions import IsAnnotator, IsManager
 from projects.models import Project
 
-from .models import AssignmentWithdrawal, AnnotationSubmission, AnnotationTask, HardCase
+from .models import (
+    AssignmentWithdrawal,
+    AnnotationSubmission,
+    AnnotationTask,
+    HardCase,
+    ReviewLabelComment,
+)
 from .region_mask import request_roi_only
 from .serializers import (
     AnnotationSubmissionSerializer,
@@ -20,6 +26,7 @@ from .serializers import (
     AssignmentPlanSerializer,
     HardCaseSerializer,
     HardCaseMessageSerializer,
+    ReviewLabelCommentSerializer,
     ReviewSerializer,
     SubmitInappTaskSerializer,
     SubmitTaskSerializer,
@@ -97,6 +104,7 @@ TASK_PREFETCH_RELATED = (
     "submissions__annotator",
     "submissions__supersedes",
     "submissions__reviews__reviewer",
+    "submissions__label_comments",
 )
 
 
@@ -586,7 +594,7 @@ class SubmissionListView(generics.ListAPIView):
     def get_queryset(self):
         qs = AnnotationSubmission.objects.select_related(
             "task", "task__volume", "annotator"
-        ).filter(id__in=latest_submission_ids())
+        ).prefetch_related("label_comments").filter(id__in=latest_submission_ids())
         if not is_manager(self.request.user):
             qs = qs.filter(annotator=self.request.user)
         task_status = self.request.query_params.get("task_status")
@@ -602,7 +610,7 @@ class SubmissionDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         qs = AnnotationSubmission.objects.select_related(
             "task", "task__volume", "annotator"
-        )
+        ).prefetch_related("label_comments")
         if not is_manager(self.request.user):
             qs = qs.filter(annotator=self.request.user)
         return qs
@@ -641,6 +649,155 @@ class ReviewSubmissionView(APIView):
                 "submission": AnnotationSubmissionSerializer(submission, context={"request": request}).data,
             }
         )
+
+
+class ReviewLabelCommentListCreateView(APIView):
+    """List review-label feedback, or let a manager upsert one label note.
+
+    Managers can inspect comments while a submission is pending. Annotators
+    only see feedback for their own tasks after that submission has an actual
+    review decision, which keeps draft review notes private until the manager
+    commits the decision.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _queryset():
+        return ReviewLabelComment.objects.select_related(
+            "submission",
+            "task",
+            "task__project",
+            "task__volume",
+            "author",
+        )
+
+    def get(self, request):
+        qs = self._queryset()
+        submission_id = request.query_params.get("submission")
+        if submission_id:
+            try:
+                qs = qs.filter(submission_id=int(submission_id))
+            except (TypeError, ValueError):
+                return Response({"detail": "submission must be an integer."}, status=400)
+
+        if is_manager(request.user):
+            return Response(ReviewLabelCommentSerializer(qs, many=True).data)
+        if is_annotator(request.user):
+            qs = qs.filter(
+                task__assigned_to=request.user,
+                submission__reviews__isnull=False,
+            ).distinct()
+            return Response(ReviewLabelCommentSerializer(qs, many=True).data)
+        return Response([], status=200)
+
+    def post(self, request):
+        if not is_manager(request.user):
+            return Response(
+                {"detail": "Only managers may comment on review labels."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = ReviewLabelCommentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        submission = serializer.validated_data["submission"]
+        label_id = serializer.validated_data["label_id"]
+        body = serializer.validated_data["body"].strip()
+        if label_id <= 0:
+            return Response(
+                {"label_id": ["Select a concrete label greater than zero."]},
+                status=400,
+            )
+        try:
+            requested_task_id = int(request.data.get("task"))
+        except (TypeError, ValueError):
+            return Response({"task": ["This field is required."]}, status=400)
+        if requested_task_id != submission.task_id:
+            return Response(
+                {"detail": "The submission does not belong to this task."}, status=400
+            )
+        if not body:
+            return Response({"body": ["This field may not be blank."]}, status=400)
+        if submission.review_status != "pending" or submission.superseded_at is not None:
+            return Response(
+                {"detail": "Label comments can only be edited before the review decision."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        existing = ReviewLabelComment.objects.filter(
+            submission=submission, label_id=label_id
+        ).first()
+        if existing and existing.author_id != request.user.id:
+            return Response(
+                {"detail": "Only the manager who wrote this comment may edit it."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if existing:
+            existing.body = body
+            update_fields = ["body", "updated_at"]
+            view = _parse_optional_view_location(request.data)
+            if view is not None:
+                existing.view_z = view["z"]
+                existing.view_y = view["y"]
+                existing.view_x = view["x"]
+                existing.view_axis = view["axis"]
+                update_fields.extend(["view_z", "view_y", "view_x", "view_axis"])
+            existing.save(update_fields=update_fields)
+            row = existing
+            response_status = status.HTTP_200_OK
+        else:
+            view = _parse_optional_view_location(request.data) or {}
+            row = ReviewLabelComment.objects.create(
+                submission=submission,
+                task=submission.task,
+                label_id=label_id,
+                body=body,
+                author=request.user,
+                view_z=view.get("z"),
+                view_y=view.get("y"),
+                view_x=view.get("x"),
+                view_axis=view.get("axis", ""),
+            )
+            response_status = status.HTTP_201_CREATED
+        row = self._queryset().get(pk=row.pk)
+        return Response(
+            ReviewLabelCommentSerializer(row).data,
+            status=response_status,
+        )
+
+
+class ReviewLabelCommentDetailView(APIView):
+    """``DELETE /api/review-label-comments/<pk>/`` — managers only."""
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        if not is_manager(request.user):
+            return Response(
+                {"detail": "Only managers may delete review label comments."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        row = get_object_or_404(ReviewLabelComment, pk=pk)
+        row.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _parse_optional_view_location(data) -> dict | None:
+    """Return ``{z,y,x,axis}`` when the client sent a complete plane, else None."""
+    try:
+        z = data.get("view_z", data.get("z"))
+        y = data.get("view_y", data.get("y"))
+        x = data.get("view_x", data.get("x"))
+        if z is None or y is None or x is None:
+            return None
+        z_i, y_i, x_i = int(z), int(y), int(x)
+    except (TypeError, ValueError):
+        return None
+    if min(z_i, y_i, x_i) < 0:
+        return None
+    axis = str(data.get("view_axis") or data.get("axis") or "z").strip().lower()
+    if axis not in {"x", "y", "z"}:
+        axis = "z"
+    return {"z": z_i, "y": y_i, "x": x_i, "axis": axis}
 
 
 class TaskAnnotationLockView(APIView):
@@ -1926,7 +2083,20 @@ class HardCaseCreateView(APIView):
                 status=400,
             )
         case = create_hard_case(
-            task=task, user=request.user, label_id=label_id, note=note
+            task=task,
+            user=request.user,
+            label_id=label_id,
+            note=note,
+            **(
+                {
+                    "view_z": view["z"],
+                    "view_y": view["y"],
+                    "view_x": view["x"],
+                    "view_axis": view["axis"],
+                }
+                if (view := _parse_optional_view_location(request.data))
+                else {}
+            ),
         )
         return Response(
             HardCaseSerializer(case, context={"request": request}).data,

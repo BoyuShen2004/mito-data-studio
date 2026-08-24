@@ -58,7 +58,7 @@ export default function HardCaseList({
         >
           <div className="row spread">
             <div>
-              <Link to={`/hard-cases/${c.id}`}>
+              <Link to={c.app_url}>
                 <strong>Label #{c.label_id}</strong>
               </Link>
               {c.revoked && (
@@ -92,7 +92,7 @@ export default function HardCaseList({
               >
                 Note{c.message_count ? ` (${c.message_count})` : ""}
               </button>
-              <Link to={`/hard-cases/${c.id}`}>
+              <Link to={c.app_url}>
                 <button type="button" className="secondary">
                   {c.can_annotate ? "Open" : "View"}
                 </button>

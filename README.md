@@ -55,8 +55,8 @@ host conda checkout. Do not run them as if they were the same deployment.
   AI models, reference hardware, manuscript Methods, reproducibility, and
   release readiness
 - [Documentation index](docs/index.md)
-- [User guide](docs/user-guide.md) — current requester, manager, annotator, sharing,
-  tracking, timing, and review workflows
+- [User guide](docs/user-guide.md) — linked, module-by-module instructions for
+  requester, manager, annotator, viewing, editing, tracking, review, and sharing
 - [Development](docs/development.md) — host setup, daily run, accounts, tests, and
   data safety
 - [Docker deployment](docs/docker.md) — portable setup, persistence, GPU, backup,

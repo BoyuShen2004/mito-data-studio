@@ -1,13 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import AnnotatorDashboard from "./AnnotatorDashboard";
 
 const api = vi.hoisted(() => ({
   listMyTasks: vi.fn(),
   listMyCompletedTasks: vi.fn(),
 }));
+const reviewApi = vi.hoisted(() => ({ listReviewLabelComments: vi.fn() }));
 vi.mock("../api/tasks", () => api);
+vi.mock("../api/reviewLabelComments", () => reviewApi);
 vi.mock("../auth/AuthContext", () => ({
   useAuth: () => ({ user: { id: 7, role: "annotator" }, isManager: false }),
 }));
@@ -31,6 +33,9 @@ const task = (id: number, volume_name: string) => ({
 });
 
 describe("AnnotatorDashboard", () => {
+  beforeEach(() => {
+    reviewApi.listReviewLabelComments.mockReset().mockResolvedValue([]);
+  });
   it("shows classic My Tasks with only manager-assigned work", async () => {
     api.listMyTasks.mockResolvedValue([task(1, "Assigned volume")]);
     api.listMyCompletedTasks.mockResolvedValue([task(2, "Finished volume")]);
@@ -89,5 +94,44 @@ describe("AnnotatorDashboard", () => {
     expect(screen.getByText("transferred")).toBeTruthy();
     expect(screen.getByText("Transferred")).toBeTruthy();
     expect(screen.queryByRole("button", {name: "View"})).toBeNull();
+  });
+
+  it("places manager label feedback between To do and Done and opens focused View", async () => {
+    api.listMyTasks.mockResolvedValue([]);
+    api.listMyCompletedTasks.mockResolvedValue([]);
+    reviewApi.listReviewLabelComments.mockResolvedValue([{
+      id: 11,
+      submission: 9,
+      task: 3,
+      label_id: 42,
+      body: "Separate this contact from its neighbor.",
+      author: 1,
+      author_username: "manager",
+      project_title: "Project",
+      volume_name: "Feedback volume",
+      view_z: 40,
+      view_y: 10,
+      view_x: 12,
+      view_axis: "z",
+      z_start: 0,
+      z_end: 4,
+      round_number: 1,
+      submission_source: "inapp",
+      submission_review_status: "revision_requested",
+      created_at: "2026-08-24T12:00:00Z",
+      updated_at: "2026-08-24T12:00:00Z",
+    }]);
+
+    render(<MemoryRouter initialEntries={["/?tab=feedback"]}><AnnotatorDashboard /></MemoryRouter>);
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(tabs[0]).toContain("To do");
+    expect(tabs[1]).toContain("Feedback");
+    expect(tabs[2]).toContain("Done");
+    expect(await screen.findByText("Separate this contact from its neighbor.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Label #42/ }).getAttribute("href"))
+      .toBe("/viewer/tasks/3?feedback=11&submission=9&z=40&y=10&x=12&axis=z&label=42");
+    expect(screen.getByRole("button", { name: "Annotate" }).closest("a")?.getAttribute("href"))
+      .toBe("/editor/tasks/3?feedback=11&submission=9&z=40&y=10&x=12&axis=z&label=42");
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 });

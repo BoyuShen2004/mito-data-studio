@@ -6,9 +6,8 @@ import AnnotationCanvas from "./AnnotationCanvas";
 
 /**
  * Picking a label with the **Select** tool must behave like clicking its row in
- * the Labels list: it sets Active, and in the **All** scope it also jumps to
- * where that label starts. Before this, the canvas half only set Active — the
- * same gesture did less depending on where you performed it.
+ * the Labels list: set Active only. Auto-jumping to ``z_start`` was yanking
+ * managers/annotators off the layer they were reviewing.
  */
 
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: 4 } }) }));
@@ -29,6 +28,8 @@ const hoisted = vi.hoisted(() => ({
   listHardCaseMessages: vi.fn(),
   updateHardCaseNote: vi.fn(),
   addHardCaseMessage: vi.fn(),
+  getTrackingPrompts: vi.fn(),
+  trackTaskBatch: vi.fn(),
 }));
 
 vi.mock("../../api/hardCases", () => ({
@@ -43,7 +44,8 @@ vi.mock("../../api/viewer", async (importOriginal) => ({
   fetchObjectUrl: hoisted.fetchObjectUrl,
   putLabelIds: hoisted.putLabelIds,
   setLabelLifecycle: hoisted.setLabelLifecycle,
-  getTrackingPrompts: vi.fn(async () => ({ version: 1, items: [], pending_review: null })),
+  getTrackingPrompts: hoisted.getTrackingPrompts,
+  trackTaskBatch: hoisted.trackTaskBatch,
 }));
 
 const meta = {
@@ -89,10 +91,23 @@ const api = {
   fetchLabels3DMesh: vi.fn(),
 };
 
-function mount() {
+function mount(
+  mode: "view" | "annotate" = "annotate",
+  editPermission = mode === "annotate",
+  onCommentLabel?: (labelId: number) => void,
+) {
   return render(
     <MemoryRouter>
-      <AnnotationCanvas taskId={5} volumeId={3} zStart={0} zEnd={7} editable api={api as never} />
+      <AnnotationCanvas
+        taskId={5}
+        volumeId={3}
+        zStart={0}
+        zEnd={7}
+        mode={mode}
+        editable={editPermission}
+        api={api as never}
+        onCommentLabel={onCommentLabel}
+      />
     </MemoryRouter>,
   );
 }
@@ -110,7 +125,8 @@ const overlay = () =>
 async function selectOnCanvas() {
   await screen.findByRole("button", { name: "Fit window" });
   await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
-  await userEvent.click(screen.getByRole("button", { name: "Select" }));
+  const select = screen.queryByRole("button", { name: "Select" });
+  if (select) await userEvent.click(select);
   const target = overlay();
   // jsdom lays nothing out, so the component's pixel mapping needs a real box.
   target.getBoundingClientRect = () =>
@@ -152,6 +168,10 @@ describe("Select tool label picking", () => {
       project_title: "Project",
       volume: 3,
       volume_name: "Volume",
+      view_z: null,
+      view_y: null,
+      view_x: null,
+      view_axis: "",
       z_start: 0,
       z_end: 7,
       status: "open",
@@ -172,17 +192,25 @@ describe("Select tool label picking", () => {
       message_count: 0,
     });
     hoisted.listHardCaseMessages.mockReset().mockResolvedValue([]);
+    hoisted.getTrackingPrompts.mockReset().mockResolvedValue({
+      version: 1,
+      items: [],
+      pending_review: null,
+    });
+    hoisted.trackTaskBatch.mockReset();
     api.getLabelIds.mockClear();
     api.getLabelsSummary.mockClear();
   });
 
-  it("jumps to where the label starts while the list is scoped to All", async () => {
+  it("stays on the open layer when selecting under All", async () => {
     mount();
     await selectOnCanvas();
 
-    // z_start 4 is layer 5 to a human (`layerIndex.displayLayer`).
-    await waitFor(() => expect(layerInput().value).toBe("5"));
-    expect((screen.getByTitle("Active label id") as HTMLInputElement).value).toBe("6");
+    await waitFor(() =>
+      expect((screen.getByTitle("Active label id") as HTMLInputElement).value).toBe("6"),
+    );
+    // Still on the task open layer (display layer 1), not the label's z_start.
+    expect(layerInput().value).toBe("1");
   });
 
   it("stays on the open layer while the list is scoped to This layer", async () => {
@@ -192,11 +220,51 @@ describe("Select tool label picking", () => {
 
     await selectOnCanvas();
 
-    // Same rule as clicking a "This layer" row: select, do not navigate.
     await waitFor(() =>
       expect((screen.getByTitle("Active label id") as HTMLInputElement).value).toBe("6"),
     );
     expect(layerInput().value).toBe("1");
+  });
+
+  it("keeps View on the shared navigation/select stack without Track or paint side effects", async () => {
+    // Even an accidentally over-permissive caller cannot turn View into an
+    // editing surface: mode is the authoritative chrome/write contract.
+    mount("view", true);
+    await selectOnCanvas();
+
+    await waitFor(() => {
+      const activeRow = document.querySelector(".labels-list li.labels-row-active");
+      expect(activeRow?.textContent?.trim().startsWith("6")).toBe(true);
+    });
+    expect(layerInput().value).toBe("1");
+    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
+    expect(screen.queryByText("Track (SAM2)")).toBeNull();
+    expect(document.querySelector('canvas[aria-label="SAM tracking prompt overlay"]')).toBeNull();
+    expect(hoisted.getTrackingPrompts).not.toHaveBeenCalled();
+    expect(hoisted.trackTaskBatch).not.toHaveBeenCalled();
+
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "d" })));
+    await waitFor(() => expect(layerInput().value).toBe("2"));
+    fireEvent.change(layerInput(), { target: { value: "4" } });
+    fireEvent.keyDown(layerInput(), { key: "Enter" });
+    await waitFor(() => expect(layerInput().value).toBe("4"));
+  });
+
+  it("offers only the manager label-comment action on review View", async () => {
+    const onCommentLabel = vi.fn();
+    mount("view", false, onCommentLabel);
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    const target = overlay();
+    target.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 4, height: 4, right: 4, bottom: 4, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+
+    fireEvent.contextMenu(target, { clientX: 2, clientY: 2 });
+    const action = await screen.findByRole("button", { name: "Comment on label #6" });
+    expect(screen.queryByRole("button", { name: "Verify" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
+    fireEvent.click(action);
+    expect(onCommentLabel).toHaveBeenCalledWith(6);
   });
 
   it("has no Shift+R lifecycle action while keeping Undo and Redo", async () => {
@@ -272,6 +340,7 @@ describe("Select tool label picking", () => {
         5,
         6,
         "membrane is ambiguous",
+        { z: 0, y: 2, x: 2, axis: "z", label: 6 },
       );
     });
     expect(await screen.findByText("Hard case recorded")).toBeTruthy();

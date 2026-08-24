@@ -4467,7 +4467,15 @@ def _render_voxel_size(volume) -> tuple[float, float, float]:
 #     403s, since a case's edits are ordinary edits to the task's working copy.
 
 def create_hard_case(
-    *, task: AnnotationTask, user, label_id: int, note: str = ""
+    *,
+    task: AnnotationTask,
+    user,
+    label_id: int,
+    note: str = "",
+    view_z: int | None = None,
+    view_y: int | None = None,
+    view_x: int | None = None,
+    view_axis: str = "",
 ) -> HardCase:
     """Record ``label_id`` on ``task`` as a hard case for the whole project.
 
@@ -4481,12 +4489,19 @@ def create_hard_case(
     cleaned_note = (note or "").strip()
     if len(cleaned_note) > 1000:
         raise ValueError("Hard-case notes must be 1,000 characters or fewer.")
+    axis = (view_axis or "").strip().lower()
+    if axis not in {"", "x", "y", "z"}:
+        axis = "z"
     return HardCase.objects.create(
         task=task,
         project=task.project,
         volume=task.volume,
         label_id=int(label_id),
         note=cleaned_note,
+        view_z=view_z,
+        view_y=view_y,
+        view_x=view_x,
+        view_axis=axis,
         created_by=user,
     )
 

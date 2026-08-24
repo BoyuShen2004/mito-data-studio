@@ -22,6 +22,8 @@ const row = {
   project: 7,
   volume: 9,
   volume_name: "mito-volume",
+  dataset_id: 2,
+  dataset_name: "Dataset A",
   file_format: "tiff",
   shape_z: 20,
   shape_y: 256,
@@ -97,6 +99,7 @@ describe("AssignmentPlanEditor team-first assignment", () => {
     expect(screen.getByText("4 × 1.5 × 1.5")).toBeTruthy();
     expect(screen.getByText("25%")).toBeTruthy();
     expect(screen.queryByLabelText("Instructions")).toBeNull();
+    expect(screen.getByText("Dataset A")).toBeTruthy();
 
     // Cells line up with those headers, Details being the last one in the row.
     const cells = screen.getAllByRole("cell");

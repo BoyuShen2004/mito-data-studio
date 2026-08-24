@@ -6,12 +6,19 @@ import { useAsync } from "../hooks/useAsync";
 import StatusBadge from "../components/StatusBadge";
 import type { ReviewDecision } from "../types";
 import { submissionChannelLabel } from "../components/TaskDetailsCards";
+import { listReviewLabelComments, deleteReviewLabelComment } from "../api/reviewLabelComments";
+import ReviewLabelCommentList from "../components/ReviewLabelCommentList";
+import type { ReviewLabelComment } from "../types/reviewLabelComment";
 
 export default function ReviewSubmissionPage() {
   const { id } = useParams();
   const submissionId = Number(id);
   const navigate = useNavigate();
   const sub = useAsync(() => getSubmission(submissionId), [submissionId]);
+  const labelComments = useAsync(
+    () => listReviewLabelComments(submissionId),
+    [submissionId],
+  );
 
   const [comments, setComments] = useState("");
   // Approve-only. Default off: approving means "done" unless the manager
@@ -34,6 +41,16 @@ export default function ReviewSubmissionPage() {
     }
   };
 
+  const removeLabelComment = async (comment: ReviewLabelComment) => {
+    setError(null);
+    try {
+      await deleteReviewLabelComment(comment.id);
+      labelComments.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete label comment");
+    }
+  };
+
   if (sub.loading) return <p className="muted">Loading…</p>;
   if (sub.error) return <div className="error">{sub.error}</div>;
   if (!sub.data) return null;
@@ -47,8 +64,18 @@ export default function ReviewSubmissionPage() {
 
   return (
     <>
-      <h1>Review submission #{s.id}</h1>
-      <div className="card">
+      <h1>Review submission #{s.task}</h1>
+      <div className="card review-submission-card">
+        {s.source === "inapp" && (
+          <div className="review-submission-actions task-actions">
+            <Link to={`/viewer/tasks/${s.task}?submission=${submissionId}`}>
+              <button type="button" className="secondary">View</button>
+            </Link>
+            <Link to={`/editor/tasks/${s.task}`}>
+              <button type="button">Annotate</button>
+            </Link>
+          </div>
+        )}
         <table>
           <tbody>
             <tr>
@@ -71,17 +98,9 @@ export default function ReviewSubmissionPage() {
             <tr>
               <th>Source</th>
               <td>
-                {s.source === "inapp" ? (
-                  <>
-                    {submissionChannelLabel(s.source)} — inspect the submitted
-                    snapshot before deciding:{" "}
-                    <Link to={`/editor/tasks/${s.task}`}>
-                      <button className="secondary">Annotate</button>
-                    </Link>
-                  </>
-                ) : (
-                  submissionChannelLabel(s.source)
-                )}
+                {s.source === "inapp"
+                  ? `${submissionChannelLabel(s.source)} — inspect the submitted snapshot before deciding.`
+                  : submissionChannelLabel(s.source)}
               </td>
             </tr>
             {s.source !== "inapp" && (
@@ -143,6 +162,27 @@ export default function ReviewSubmissionPage() {
           ))}
         </div>
       )}
+
+      <div className="card">
+        {labelComments.loading ? (
+          <>
+            <h3>Commented instances</h3>
+            <p className="muted">Loading…</p>
+          </>
+        ) : labelComments.error ? (
+          <>
+            <h3>Commented instances</h3>
+            <div className="error">{labelComments.error}</div>
+          </>
+        ) : (
+          <ReviewLabelCommentList
+            title="Commented instances"
+            comments={Array.isArray(labelComments.data) ? labelComments.data : []}
+            canDelete
+            onDelete={removeLabelComment}
+          />
+        )}
+      </div>
 
       <div className="card">
         <h3>Decision</h3>

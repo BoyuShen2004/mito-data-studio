@@ -32,6 +32,7 @@ function Harness({
   onLifecycleAction = vi.fn(),
   pinnedIds = new Set<number>(),
   onClearPins = vi.fn(),
+  onJumpToZ = vi.fn(),
   pinActiveToTopToken = 0,
 }: {
   initialScope?: LabelsScope;
@@ -44,6 +45,7 @@ function Harness({
   onLifecycleAction?: (id: number, action: "verify" | "unverify" | "revert" | "reject") => void;
   pinnedIds?: Set<number>;
   onClearPins?: () => void;
+  onJumpToZ?: (z: number) => void;
   pinActiveToTopToken?: number;
 }) {
   const [scope, setScope] = useState<LabelsScope>(initialScope);
@@ -53,7 +55,7 @@ function Harness({
     sliceInstances={data.map((row) => row.id)} rows={data} rowsLoading={false}
     hiddenIds={new Set()} soloId={soloId} onToggleHidden={vi.fn()} onToggleSolo={vi.fn()}
     onResetVisibility={onResetVisibility} pinnedIds={pinnedIds} onTogglePinned={vi.fn()}
-    onPinMany={vi.fn()} onClearPins={onClearPins} onJumpToZ={vi.fn()} hideVerified={false}
+    onPinMany={vi.fn()} onClearPins={onClearPins} onJumpToZ={onJumpToZ} hideVerified={false}
     onHideVerifiedChange={vi.fn()} hasRegionMask={region} hideOutsideRegion={false}
     onHideOutsideRegionChange={vi.fn()} regionMemberIds={new Set(data.map((row) => row.id))}
     onLifecycleAction={onLifecycleAction} onRefresh={onRefresh} readOnly={readOnly}
@@ -223,5 +225,16 @@ describe("LabelsPanel list chrome and selection", () => {
     const renderedIds = rowIds(container).filter(Number.isFinite);
     expect(renderedIds).toContain(900);
     expect(renderedIds).toEqual([...renderedIds].sort((a, b) => a - b));
+  });
+
+  it("jumps to z_start only when the All-list z-range is clicked", () => {
+    const onJumpToZ = vi.fn();
+    const { container } = render(<Harness initialScope="all" onJumpToZ={onJumpToZ} />);
+    const row2 = Array.from(container.querySelectorAll(".labels-list li"))
+      .find((element) => element.textContent?.trim().startsWith("2"))!;
+    fireEvent.click(row2.querySelector("span")!);
+    expect(onJumpToZ).not.toHaveBeenCalled();
+    fireEvent.click(row2.querySelector(".labels-row-z")!);
+    expect(onJumpToZ).toHaveBeenCalledWith(2);
   });
 });

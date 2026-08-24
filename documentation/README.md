@@ -11,7 +11,7 @@ or an experimental result.
 | Audience | Document |
 | --- | --- |
 | New user or evaluator | [Product overview](product/OVERVIEW.md) |
-| Requester, manager, or annotator | [End-to-end workflows](user/WORKFLOWS.md) |
+| Requester, manager, or annotator | [User guide](../docs/user-guide.md) and [end-to-end workflows](user/WORKFLOWS.md) |
 | Developer or reviewer | [System architecture](technical/ARCHITECTURE.md) |
 | Microscopy data specialist | [Data and storage contract](technical/DATA_AND_STORAGE.md) |
 | AI/model reviewer | [AI models and algorithms](technical/AI_AND_ALGORITHMS.md) |

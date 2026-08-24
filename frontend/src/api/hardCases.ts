@@ -1,11 +1,28 @@
 import type { HardCase, HardCaseMessage, HardCaseStatus } from "../types/hardCase";
+import type { ViewLocation } from "../features/viewer/viewLocation";
 import { api } from "./client";
 
 /** Record the Active label on `taskId` as a hard case for its project.
  * Returns the full row — including `app_url` (in-app, for project members)
  * and `url`/`token` (the optional public copyable link). */
-export const createHardCase = (taskId: number, labelId: number, note = "") =>
-  api.post<HardCase>(`/tasks/${taskId}/hard-cases/`, { label_id: labelId, note });
+export const createHardCase = (
+  taskId: number,
+  labelId: number,
+  note = "",
+  location?: ViewLocation | null,
+) =>
+  api.post<HardCase>(`/tasks/${taskId}/hard-cases/`, {
+    label_id: labelId,
+    note,
+    ...(location
+      ? {
+          view_z: location.z,
+          view_y: location.y,
+          view_x: location.x,
+          view_axis: location.axis,
+        }
+      : {}),
+  });
 
 /** The Hard Cases inbox, newest first. Server-scoped to what the caller may
  * see; `project`/`volume` narrow it for the per-project section. */

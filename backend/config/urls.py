@@ -46,6 +46,8 @@ from annotation.api import (
     HardCaseStatusView,
     MyCompletedTasksView,
     MyTasksView,
+    ReviewLabelCommentListCreateView,
+    ReviewLabelCommentDetailView,
     ProjectTasksView,
     PublicHardCaseLabelIdsView,
     PublicHardCaseLabelStateView,
@@ -670,6 +672,16 @@ urlpatterns = [
         "api/submissions/<int:pk>/review/",
         ReviewSubmissionView.as_view(),
         name="api-submission-review",
+    ),
+    path(
+        "api/review-label-comments/",
+        ReviewLabelCommentListCreateView.as_view(),
+        name="api-review-label-comments",
+    ),
+    path(
+        "api/review-label-comments/<int:pk>/",
+        ReviewLabelCommentDetailView.as_view(),
+        name="api-review-label-comment-detail",
     ),
     # --- Project CRUD + summary (router) -----------------------------------
     path("api/", include(router.urls)),

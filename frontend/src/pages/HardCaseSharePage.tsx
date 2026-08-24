@@ -68,6 +68,7 @@ export default function HardCaseSharePage() {
         volumeId={meta.volume_id}
         zStart={meta.z_start}
         zEnd={meta.z_end}
+        mode="view"
         editable={false}
         api={api}
         initialActiveId={meta.label_id}

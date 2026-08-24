@@ -188,6 +188,21 @@ export default function AssignmentPlanEditor({
     () => order.filter((id) => original[id] && !rowsEqual(draft[id], original[id])),
     [order, draft, original],
   );
+  const datasetGroups = useMemo(() => {
+    const grouped = new Map<string, { name: string; ids: number[] }>();
+    for (const id of order) {
+      const task = meta[id];
+      if (!task) continue;
+      const key = task.dataset_id == null ? "ungrouped" : String(task.dataset_id);
+      const group = grouped.get(key) ?? {
+        name: task.dataset_name || "Ungrouped volumes",
+        ids: [],
+      };
+      group.ids.push(id);
+      grouped.set(key, group);
+    }
+    return Array.from(grouped.entries()).map(([key, group]) => ({ key, ...group }));
+  }, [order, meta]);
 
   const patch = (id: number, changes: Partial<DraftRow>) => {
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...changes } }));
@@ -439,7 +454,16 @@ export default function AssignmentPlanEditor({
               </tr>
             </thead>
             <tbody>
-              {order.map((id) => {
+              {datasetGroups.map((group) => <Fragment key={group.key}>
+                <tr className="plan-dataset-heading-row">
+                  <th colSpan={10} scope="rowgroup">
+                    <span>{group.name}</span>
+                    <span className="dataset-group-count">
+                      {group.ids.length} task{group.ids.length === 1 ? "" : "s"}
+                    </span>
+                  </th>
+                </tr>
+                {group.ids.map((id) => {
                 const t = meta[id];
                 const row = draft[id];
                 if (!t || !row) return null;
@@ -574,7 +598,8 @@ export default function AssignmentPlanEditor({
                     )}
                   </Fragment>
                 );
-              })}
+                })}
+              </Fragment>)}
             </tbody>
           </table>
         </div>

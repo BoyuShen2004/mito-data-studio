@@ -3,15 +3,19 @@ import { listMyCompletedTasks, listMyTasks } from "../api/tasks";
 import { useAsync } from "../hooks/useAsync";
 import TaskTable from "../components/TaskTable";
 import SectionTabs from "../components/SectionTabs";
+import { listReviewLabelComments } from "../api/reviewLabelComments";
+import ReviewLabelCommentList from "../components/ReviewLabelCommentList";
 
-type TaskTab = "todo" | "done";
+type TaskTab = "todo" | "feedback" | "done";
 
 /** Annotator home: manager-assigned work only (one volume ↔ one assignee). */
 export default function AnnotatorDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const myTasks = useAsync(listMyTasks, []);
   const completed = useAsync(listMyCompletedTasks, []);
-  const active: TaskTab = searchParams.get("tab") === "done" ? "done" : "todo";
+  const feedback = useAsync(() => listReviewLabelComments(), []);
+  const requested = searchParams.get("tab");
+  const active: TaskTab = requested === "feedback" || requested === "done" ? requested : "todo";
 
   return (
     <div className="role-home">
@@ -23,6 +27,7 @@ export default function AnnotatorDashboard() {
       <SectionTabs
         tabs={[
           { id: "todo", label: "To do", count: myTasks.data?.length ?? 0 },
+          { id: "feedback", label: "Feedback", count: feedback.data?.length ?? 0 },
           { id: "done", label: "Done", count: completed.data?.length ?? 0 },
         ]}
         active={active}
@@ -38,6 +43,22 @@ export default function AnnotatorDashboard() {
             loading={myTasks.loading}
             tasks={myTasks.data ?? []}
           />
+        ) : active === "feedback" ? (
+          <>
+            <div className="section-heading">
+              <h2>Manager feedback</h2>
+              <p className="muted">Commented mitochondria from reviewed submissions.</p>
+            </div>
+            {feedback.loading ? <p className="muted">Loading…</p> : feedback.error ? (
+              <div className="error">{feedback.error}</div>
+            ) : (
+              <ReviewLabelCommentList
+                comments={feedback.data ?? []}
+                showProject
+                emptyText="No manager label feedback yet."
+              />
+            )}
+          </>
         ) : (
           <TaskPane
             title="Submitted, completed & withdrawn"

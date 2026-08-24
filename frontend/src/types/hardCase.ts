@@ -16,6 +16,10 @@ export interface HardCase {
   volume_name: string;
   label_id: number;
   note: string;
+  view_z: number | null;
+  view_y: number | null;
+  view_x: number | null;
+  view_axis: string;
   z_start: number;
   z_end: number;
   status: HardCaseStatus;

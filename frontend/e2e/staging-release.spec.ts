@@ -133,7 +133,7 @@ test("integrated organization, team, assignment, review, and region workflows", 
   }, assignedTaskId);
 
   await managerPage.goto(`/submissions/${submissionId}/review`);
-  await expect(managerPage.getByRole("heading", { name: `Review submission #${submissionId}` }))
+  await expect(managerPage.getByRole("heading", { name: `Review submission #${assignedTaskId}` }))
     .toBeVisible();
   await managerPage.getByLabel("Comments").fill("v1.1 integrated staging review");
   await managerPage.getByRole("button", { name: "Request revision" }).click();

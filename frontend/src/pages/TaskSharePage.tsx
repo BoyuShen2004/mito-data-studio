@@ -52,6 +52,7 @@ export default function TaskSharePage() {
         volumeId={meta.data.volume_id}
         zStart={meta.data.z_start}
         zEnd={meta.data.z_end}
+        mode="view"
         editable={false}
         api={readApi}
         onAxisControls={onAxisControls}

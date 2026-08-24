@@ -1,5 +1,9 @@
 # End-to-end operating workflows
 
+For detailed control-level instructions, start with the linked
+[module-by-module user guide](../../docs/user-guide.md). This page remains the
+short end-to-end operating sequence.
+
 This guide describes the complete current workflow. Controls are permission
 aware, so a user may not see actions outside their role or project access.
 
@@ -150,4 +154,3 @@ handled explicitly; no submission overwrites registered source imagery.
   working draft and verification state and cannot be undone.
 - Treat public links as view access only.
 - Report errors with project, dataset, volume, axis, and layer identifiers.
-

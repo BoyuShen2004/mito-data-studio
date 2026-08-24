@@ -80,6 +80,7 @@ function effectiveVoxelZ(
 // `mesh.visible` on geometry that is already here — no refetch, no re-mesh.
 // Z-scale changes rebuild client-side from the cached mesh payload only.
 export default function Labels3DPanel({
+  enabled = true,
   taskId,
   labelIds,
   refreshKey,
@@ -89,6 +90,8 @@ export default function Labels3DPanel({
   onToggleSwap,
   fetchMesh = authedFetchLabels3DMesh,
 }: {
+  /** Delay WebGL + mesh work until the primary 2D plane has painted. */
+  enabled?: boolean;
   taskId: number;
   /** The 3D pin set — the ONLY thing (besides `refreshKey`) that rebuilds. */
   labelIds: number[];
@@ -126,6 +129,7 @@ export default function Labels3DPanel({
   // Scene / camera / renderer — once per mount (layout so groupRef is ready
   // before the fetch effect below runs on the same commit).
   useLayoutEffect(() => {
+    if (!enabled) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -220,11 +224,12 @@ export default function Labels3DPanel({
       groupRef.current = null;
       if (renderer.domElement.parentNode === el) el.removeChild(renderer.domElement);
     };
-  }, [rendererEpoch]);
+  }, [enabled, rendererEpoch]);
 
   // Fetch mesh payload. Z-scale does NOT belong here — changing it must not
   // re-hit the expensive server mesher.
   useEffect(() => {
+    if (!enabled) return;
     const ids = idsKey === "" ? [] : idsKey.split(",").map(Number);
     let cancelled = false;
     const controller = new AbortController();
@@ -260,7 +265,7 @@ export default function Labels3DPanel({
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId, idsKey, refreshKey]);
+  }, [enabled, taskId, idsKey, refreshKey]);
 
   // Build / rebuild Three.js meshes from the cached payload + current Z scale.
   useEffect(() => {
@@ -372,7 +377,9 @@ export default function Labels3DPanel({
   }, [focusLabelId, stats]);
 
   const statusText =
-    webglLost
+    !enabled
+      ? "Waiting for 2D…"
+      : webglLost
       ? "3D renderer lost — Retry"
       : phase === "fetching"
       ? "Meshing on server…"

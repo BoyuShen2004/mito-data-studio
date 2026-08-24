@@ -22,10 +22,20 @@ const project = {
 };
 const submission = {
   id: 9,
+  task: 30,
+  source: "inapp",
   annotator_username: "alice",
   qc_status: "passed",
   submitted_at: "2026-08-04T00:00:00Z",
-  task_detail: { volume_name: "volume-a", z_start: 0, z_end: 4 },
+  label_comment_count: 2,
+  task_detail: {
+    project: 1,
+    project_title: "Mito project",
+    dataset: "Dataset A",
+    volume_name: "volume-a",
+    z_start: 0,
+    z_end: 4,
+  },
 };
 
 describe("ManagerDashboard", () => {
@@ -49,7 +59,12 @@ describe("ManagerDashboard", () => {
   it("supports a reviews deep link and exposes attention counts", async () => {
     render(<MemoryRouter initialEntries={["/manager?tab=reviews"]}><ManagerDashboard /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Reviews" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Dataset A" })).toBeTruthy();
+    expect(screen.getByText("Mito project")).toBeTruthy();
     expect(await screen.findByText("volume-a z1–4")).toBeTruthy();
+    expect(screen.getByText("#30")).toBeTruthy();
+    expect(screen.getByText("2 commented")).toBeTruthy();
+    expect(screen.queryByText("#9")).toBeNull();
     expect(screen.getByText("Projects to approve")).toBeTruthy();
     expect(screen.getByText("Submissions to review")).toBeTruthy();
     expect(screen.queryByText("Manager workflow")).toBeNull();
