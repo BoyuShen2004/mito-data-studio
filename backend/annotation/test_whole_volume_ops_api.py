@@ -111,6 +111,25 @@ class WholeVolumeOpsApiTestCase(TestCase):
                     break
         return out
 
+    def _verified_pending_erase(self, label_id: int = 7) -> list[dict]:
+        """Seed a verified disk label and return a pending plane erasing it."""
+        from annotation.services import (
+            _load_label_metadata_store,
+            _save_label_metadata_store,
+        )
+        from annotation.visualization.slice_io import encode_label_rle
+
+        store, path = _load_label_metadata_store(self.volume)
+        store.verify(label_id)
+        _save_label_metadata_store(store, path)
+        pending = self._read_working()[-1].copy()
+        pending[pending == label_id] = 0
+        return [{
+            "index": SHAPE[0] - 1,
+            "shape": list(pending.shape),
+            "runs": encode_label_rle(pending),
+        }]
+
     @staticmethod
     def _apply_z_plan(before: np.ndarray, payload: dict) -> np.ndarray:
         from annotation.visualization.slice_io import decode_label_rle
@@ -457,6 +476,29 @@ class WatershedReturnsPendingPlan(WholeVolumeOpsApiTestCase):
         self.assertEqual(response.status_code, 200, response.content[:300])
         self.assertNotIn(1, response.json()["new_label_ids"])
 
+    def test_watershed_rejects_pending_that_already_erases_verified_disk_voxels(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            mask = self._two_blobs()
+            mask[-1, 0:2, 0:2] = 7
+            self._seed_working_copy(mask)
+            pending = self._verified_pending_erase()
+            response = self.client.post(
+                f"/api/tasks/{self.task.pk}/watershed/",
+                {
+                    "label": 5,
+                    "seeds": [
+                        {"z": 1, "y": 3, "x": 3},
+                        {"z": 1, "y": 6, "x": 6},
+                    ],
+                    "pending_slices": pending,
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 409, response.content[:300])
+        self.assertEqual(response.json()["reason"], "verified_label_locked")
+        self.assertIn("pending edits already touch verified labels", response.json()["detail"])
+
     def test_watershed_plan_saves_then_new_and_unrelated_labels_verify(self):
         with override_settings(MITO_DATA_ROOT=self.root.resolve()):
             self._seed_working_copy(self._two_blobs())
@@ -586,6 +628,22 @@ class WatershedReturnsPendingPlan(WholeVolumeOpsApiTestCase):
 
 @override_settings(MITO_TRACKING_PROVIDER="local")
 class MergeLabelsReturnsPendingPlan(WholeVolumeOpsApiTestCase):
+    def test_merge_rejects_pending_that_already_erases_verified_disk_voxels(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            mask = self._two_blobs()
+            mask[-1, 0:2, 0:2] = 7
+            self._seed_working_copy(mask)
+            pending = self._verified_pending_erase()
+            response = self.client.post(
+                f"/api/tasks/{self.task.pk}/merge-labels/",
+                {"a": 5, "b": 9, "pending_slices": pending},
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 409, response.content[:300])
+        self.assertEqual(response.json()["reason"], "verified_label_locked")
+        self.assertIn("pending edits already touch verified labels", response.json()["detail"])
+
     def test_merge_plan_removes_absorbed_label_without_touching_disk(self):
         with override_settings(MITO_DATA_ROOT=self.root.resolve()):
             path = self._seed_working_copy(self._two_blobs())

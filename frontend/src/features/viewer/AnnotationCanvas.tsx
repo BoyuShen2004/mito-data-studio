@@ -59,7 +59,7 @@ import {
   regionMembership,
 } from "./regionOverlap";
 import { OutsideRegionEditStore } from "./outsideRegionEdits";
-import { protectLabelIds } from "./labelProtection";
+import { applyProtectedLabelPlanDelta, protectLabelIds } from "./labelProtection";
 import {
   brushRadius,
   loadBrushCursorStyle,
@@ -2387,6 +2387,52 @@ export default function AnnotationCanvas({
   }, [api, clearAllHistory, invalidateSliceLabelCache, refreshInstances, renderOverlay,
     syncDirtyFromPending, syncHistoryCounts, taskId]);
 
+  /** Restore authoritative verified pixels after a verified-lock save 409,
+   * while retaining every unrelated local edit on the rejected plane. */
+  const recoverPendingAfterVerifiedLock = useCallback(async (
+    saveAxis: Axis,
+    sliceIndex: number,
+  ) => {
+    invalidateSliceLabelCache(sliceIndex, saveAxis);
+    const [response, summary] = await Promise.all([
+      api.getLabelIds(taskId, saveAxis, sliceIndex),
+      api.getLabelsSummary(taskId),
+    ]);
+    const [height, width] = response.shape;
+    const serverIds = decodeRuns(response.runs, height * width);
+    if (response.revision) workingLabelRevisionRef.current = response.revision;
+    const protectedIds = new Set(
+      (summary.labels ?? [])
+        .filter((row) => row.state === "verified")
+        .map((row) => row.id),
+    );
+    setLabelsSummaryRows(summary.labels ?? []);
+    const result = pendingSlicesRef.current.repairProtected(
+      sliceIndex, serverIds, protectedIds,
+    );
+    outsideEditsRef.current.rebase(sliceIndex, serverIds);
+    if (!result.pending) {
+      outsideEditsRef.current.delete(sliceIndex);
+      roiPlanSaveSlicesRef.current.delete(sliceIndex);
+    }
+    if (sliceIndex === idsIndexRef.current) {
+      baselineIdsRef.current = serverIds;
+      idsRef.current = pendingSlicesRef.current.get(sliceIndex)?.slice() ?? serverIds.slice();
+    }
+    clearAllHistory();
+    syncHistoryCounts();
+    const remaining = syncDirtyFromPending();
+    setStatus(remaining > 0 ? "dirty" : "idle");
+    setLifecycleError(null);
+    renderOverlay();
+    refreshInstances();
+    setLabelsSummaryToken((value) => value + 1);
+    setRegionMembershipToken((value) => value + 1);
+    setLabels3DRefreshKey((value) => value + 1);
+    return { ...result, remaining };
+  }, [api, clearAllHistory, invalidateSliceLabelCache, refreshInstances, renderOverlay,
+    syncDirtyFromPending, syncHistoryCounts, taskId]);
+
   /**
    * Write every pending slice to the working mask. Only an explicit Save click
    * calls this — annotate tools leave edits in memory until then.
@@ -2394,7 +2440,7 @@ export default function AnnotationCanvas({
   const saveLabels = useCallback(
     async (
       origin: "manual" | "ai" = "manual",
-      purpose: "save" | "verify" = "save",
+      _purpose: "save" | "verify" = "save",
     ): Promise<boolean> => {
       // A second click while the first request is still running joins it
       // instead of racing it into a duplicate write of the same plane.
@@ -2439,9 +2485,11 @@ export default function AnnotationCanvas({
       }
       const operation = (async () => {
         setStatus("saving");
+        let rejectedSliceIndex: number | null = null;
         try {
           let nextId = nextIdRef.current;
           for (const snapshot of snapshots) {
+            rejectedSliceIndex = snapshot.index;
             // Write what the annotator was shown: with Region only off and
             // "Empty voxels only" selected, an outside edit that landed on an
             // existing label was presented as that label, so that is what gets
@@ -2499,18 +2547,35 @@ export default function AnnotationCanvas({
             ? (error.data as { reason?: unknown }).reason
             : null;
           if (
-            purpose === "verify"
-            && error instanceof ApiError
+            error instanceof ApiError
             && error.status === 409
             && reason === "verified_label_locked"
+            && rejectedSliceIndex != null
           ) {
-            const message = `Save blocked: ${error.message} Unverify them (or Undo pending edits) `
-              + "before Verify. Pending watershed/paint was not discarded.";
-            syncDirtyFromPending();
-            setStatus("error");
-            setLifecycleError(message);
-            window.alert(message);
-            return false;
+            try {
+              const repaired = await recoverPendingAfterVerifiedLock(
+                saveAxis, rejectedSliceIndex,
+              );
+              window.alert(
+                `Repaired ${repaired.repaired} verified pixel`
+                + `${repaired.repaired === 1 ? "" : "s"} from the saved layer. `
+                + `${repaired.kept} unrelated pending edit`
+                + `${repaired.kept === 1 ? " was" : "s were"} kept. `
+                + (repaired.remaining > 0
+                  ? "Review the layer, then click Save again."
+                  : "The pending layer is now safe; there are no local edits left to save."),
+              );
+              return false;
+            } catch (recoveryError) {
+              syncDirtyFromPending();
+              setStatus("error");
+              window.alert(
+                `${error.message}\n\nAutomatic verified-label repair could not finish: `
+                + (recoveryError instanceof Error ? recoveryError.message : "unknown error")
+                + " Your unsaved edits are still kept in this tab.",
+              );
+              return false;
+            }
           }
           if (error instanceof ApiError && error.status === 409 && reason === "write_conflict") {
             try {
@@ -2562,6 +2627,7 @@ export default function AnnotationCanvas({
       stashCurrentSlice,
       invalidateSliceLabelCache,
       recoverPendingAfterConflict,
+      recoverPendingAfterVerifiedLock,
       syncDirtyFromPending,
     ],
   );
@@ -3781,6 +3847,18 @@ export default function AnnotationCanvas({
     }));
   }, []);
 
+  const blockToolForVerifiedPendingEdits = useCallback(() => {
+    const conflicts = pendingSlicesRef.current.protectedChangeCount(
+      verifiedIdsRef.current,
+    );
+    if (conflicts === 0) return false;
+    window.alert(
+      `${conflicts} pending pixel${conflicts === 1 ? "" : "s"} already touch `
+      + "verified labels. Undo or Revert pending edits before running this tool.",
+    );
+    return true;
+  }, []);
+
   /** Write one already-recorded compound into the live buffer + pending slices.
    * Split out of `applyPendingToolPlan` so Track's Reject can push the inverse
    * of a propagation through the identical path. */
@@ -3814,7 +3892,7 @@ export default function AnnotationCanvas({
   const applyPendingToolPlan = useCallback(async (
     plannedAxis: Axis,
     slices: PlannedLabelSlice[],
-    options: { preserveOutsideRoi?: boolean } = {},
+    options: { preserveOutsideRoi?: boolean; requireBefore?: boolean } = {},
   ): Promise<boolean> => {
     if (plannedAxis !== axisRef.current || idsIndexRef.current !== indexRef.current) return false;
     const liveIndex = idsIndexRef.current;
@@ -3826,27 +3904,40 @@ export default function AnnotationCanvas({
       }
       const slice = slices[sliceOffset];
       const [h, w] = slice.shape;
+      if (options.requireBefore && !slice.before_runs) {
+        throw new Error(`Tool plan for layer ${slice.index} is missing its before plane.`);
+      }
+      const serverAfter = decodeRuns(slice.runs, h * w);
       let before: Int32Array;
       if (slice.index === liveIndex && idsRef.current) {
         before = idsRef.current.slice();
       } else {
         const pending = pendingSlicesRef.current.get(slice.index);
         if (pending && pending.length === h * w) before = pending.slice();
-        else if (slice.before_runs) before = decodeRuns(slice.before_runs, h * w);
         else {
           const response = await labelRunsFor(slice.index, undefined, plannedAxis);
           if (plannedAxis !== axisRef.current || idsIndexRef.current !== indexRef.current) return false;
           before = decodeRuns(response.runs, h * w);
         }
       }
-      const after = decodeRuns(slice.runs, h * w);
+      const after = slice.before_runs
+        ? applyProtectedLabelPlanDelta(
+            before,
+            decodeRuns(slice.before_runs, h * w),
+            serverAfter,
+            verifiedIdsRef.current,
+          ).after
+        : serverAfter;
+      // Track's legacy response did not require before_runs. Keep its old
+      // absolute-plane protection fallback; destructive label tools opt into
+      // requireBefore and always use the delta path above.
+      if (!slice.before_runs) protectLabelIds(before, after, verifiedIdsRef.current);
       if (roiOnlyRef.current && !options.preserveOutsideRoi) {
         const regionUrl = await sliceRegionUrl(slice.index, undefined, plannedAxis);
         if (!regionUrl) return false;
         const region = await decodeRegionMask(regionUrl, w, h);
         protectHiddenRegionLabels(before, after, region, regionVisibleIdsFor(before, region));
       }
-      protectLabelIds(before, after, verifiedIdsRef.current);
       if (before.every((value, offset) => value === after[offset])) continue;
       if (roiOnlyRef.current && options.preserveOutsideRoi) {
         roiPlanSaveSlicesRef.current.add(slice.index);
@@ -3881,6 +3972,7 @@ export default function AnnotationCanvas({
         );
         await applyPendingToolPlan(result.axis, result.slices, {
           preserveOutsideRoi: true,
+          requireBefore: true,
         });
       } catch (e) {
         window.alert(e instanceof Error ? e.message : "Split failed");
@@ -3910,12 +4002,17 @@ export default function AnnotationCanvas({
     ) {
       return;
     }
+    // Merge plans against every pending plane, including paint still live in
+    // the current canvas buffer. Freeze it first, then refuse poisoned drafts
+    // before they can become a larger compound plan.
+    stashCurrentSlice();
+    if (blockToolForVerifiedPendingEdits()) return;
     setMergeRunning(true);
     try {
       const result = await runMergeLabels(
         taskId, a, b, axisRef.current, pendingToolSlices(),
       );
-      if (!(await applyPendingToolPlan(result.axis, result.slices))) return;
+      if (!(await applyPendingToolPlan(result.axis, result.slices, { requireBefore: true }))) return;
       setActiveId(result.kept_label);
       setMergeIdA(result.kept_label);
       // The removed label must never remain selected. Keep the surviving
@@ -3933,7 +4030,9 @@ export default function AnnotationCanvas({
     mergeIdB,
     mergeRunning,
     applyPendingToolPlan,
+    blockToolForVerifiedPendingEdits,
     pendingToolSlices,
+    stashCurrentSlice,
   ]);
 
   const onPointerDown = useCallback(
@@ -4613,10 +4712,11 @@ export default function AnnotationCanvas({
       );
       return;
     }
+    // Include live paint in the pending integrity preflight and server plan.
+    stashCurrentSlice();
+    if (blockToolForVerifiedPendingEdits()) return;
     setWsRunning(true);
     try {
-      // Include live paint in the same pending overlay the server plans from.
-      stashCurrentSlice();
       const seeds: WatershedSeed[] = wsSeeds.map(({ z, y, x }) => ({ z, y, x }));
       const result = await runWatershed(
         taskId,
@@ -4627,6 +4727,7 @@ export default function AnnotationCanvas({
       );
       if (!(await applyPendingToolPlan(result.axis, result.slices, {
         preserveOutsideRoi: true,
+        requireBefore: true,
       }))) return;
       setWsSeeds([]);
       setWsTargetLabel(null);
@@ -4635,7 +4736,8 @@ export default function AnnotationCanvas({
     } finally {
       setWsRunning(false);
     }
-  }, [taskId, wsTargetLabel, wsSeeds, applyPendingToolPlan, pendingToolSlices, stashCurrentSlice]);
+  }, [taskId, wsTargetLabel, wsSeeds, applyPendingToolPlan,
+    blockToolForVerifiedPendingEdits, pendingToolSlices, stashCurrentSlice]);
 
   // --- Track (SAM2): durable parent-class queue + local child classes -----
 
@@ -5509,7 +5611,9 @@ export default function AnnotationCanvas({
             axisRef.current,
             pendingToolSlices(),
           );
-          return await applyPendingToolPlan(result.axis, result.slices);
+          return await applyPendingToolPlan(result.axis, result.slices, {
+            requireBefore: true,
+          });
         }
         if (action === "verify") {
           // Verification describes saved geometry. Flush every pending plane

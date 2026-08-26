@@ -89,4 +89,33 @@ describe("PendingSliceBuffer", () => {
     });
     expect(pending.size).toBe(0);
   });
+
+  it("detects pending edits that touch or grow protected labels", () => {
+    const pending = new PendingSliceBuffer();
+    pending.markChanged(
+      2,
+      new Int32Array([0, 7, 8, 4]),
+      new Int32Array([7, 0, 8, 3]),
+    );
+
+    expect(pending.protectedChangeCount(new Set([7]))).toBe(2);
+  });
+
+  it("repairs verified pixels while retaining unrelated pending edits", () => {
+    const pending = new PendingSliceBuffer();
+    pending.markChanged(
+      4,
+      new Int32Array([0, 7, 8, 6]),
+      new Int32Array([7, 0, 8, 0]),
+    );
+
+    const result = pending.repairProtected(
+      4,
+      new Int32Array([7, 0, 8, 0]),
+      new Set([7]),
+    );
+
+    expect(result).toEqual({ repaired: 2, kept: 1, pending: true });
+    expect([...pending.get(4)!]).toEqual([7, 0, 8, 6]);
+  });
 });

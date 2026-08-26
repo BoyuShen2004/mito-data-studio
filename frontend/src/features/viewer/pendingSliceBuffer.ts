@@ -10,6 +10,12 @@ export type PendingSliceRebase = {
   pending: boolean;
 };
 
+export type PendingVerifiedRepair = {
+  repaired: number;
+  kept: number;
+  pending: boolean;
+};
+
 type PendingSliceEntry = {
   ids: Int32Array;
   /** Original server value only for pixels this tab has changed. */
@@ -118,6 +124,63 @@ export class PendingSliceBuffer {
       });
     }
     return { reapplied, conflicts, pending };
+  }
+
+  /** Count pending edits that remove, overwrite, or grow a protected id. */
+  protectedChangeCount(protectedIds: ReadonlySet<number>) {
+    if (protectedIds.size === 0) return 0;
+    let count = 0;
+    for (const entry of this.entries.values()) {
+      for (const [offset, baseline] of entry.baselines) {
+        if (protectedIds.has(baseline) || protectedIds.has(entry.ids[offset])) count += 1;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Rebase one rejected save onto disk, dropping only edits involving a
+   * protected id. This is the verified-lock escape hatch: unrelated pending
+   * edits remain staged for the annotator's next Save.
+   */
+  repairProtected(
+    index: number,
+    serverIds: Int32Array,
+    protectedIds: ReadonlySet<number>,
+  ): PendingVerifiedRepair {
+    const entry = this.entries.get(index);
+    if (!entry) return { repaired: 0, kept: 0, pending: false };
+    if (entry.ids.length !== serverIds.length) {
+      throw new Error(`Cannot repair layer ${index}: its shape changed.`);
+    }
+    const rebased = serverIds.slice();
+    const baselines = new Map<number, number>();
+    let repaired = 0;
+    let kept = 0;
+    for (const [offset] of entry.baselines) {
+      const local = entry.ids[offset];
+      const server = serverIds[offset];
+      if (protectedIds.has(server) || protectedIds.has(local)) {
+        if (local !== server) repaired += 1;
+        continue;
+      }
+      if (local !== server) {
+        rebased[offset] = local;
+        baselines.set(offset, server);
+        kept += 1;
+      }
+    }
+    const pending = baselines.size > 0;
+    if (!pending) {
+      this.entries.delete(index);
+    } else {
+      this.entries.set(index, {
+        ids: rebased,
+        baselines,
+        revision: this.nextRevision++,
+      });
+    }
+    return { repaired, kept, pending };
   }
 
   delete(index: number) {

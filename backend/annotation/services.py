@@ -3319,6 +3319,18 @@ class _LazyPlanLabels:
                 plane[:, x] = pending[index, :]
         return plane
 
+    def read_disk_axis(self, axis: str, index: int):
+        """Read one plane from the working volume without pending overlays."""
+        import numpy as np
+
+        if self.source is None:
+            z, y, x = self.shape
+            shape = {"z": (y, x), "y": (z, x), "x": (z, y)}[axis]
+            return np.zeros(shape, dtype=np.int32)
+        return _read_axis_slice(self.source, axis, index).astype(
+            np.int32, copy=False
+        )
+
     def read_z_slab(self, start: int, stop: int):
         """Read ``[start:stop]`` in one backend operation, then overlay drafts.
 
@@ -3370,6 +3382,27 @@ def _encode_planned_plane(index: int, before, after) -> dict | None:
         "before_runs": encode_label_rle(before),
         "runs": encode_label_rle(after),
     }
+
+
+def _assert_pending_verified_labels_unchanged(volume, reader: _LazyPlanLabels) -> None:
+    """Reject a tool plan when its browser overlay already breaks disk locks."""
+    protected = _verified_label_ids(volume)
+    if not protected:
+        return
+    for index, pending in reader.pending.items():
+        disk = reader.read_disk_axis(reader.axis, index)
+        try:
+            _assert_verified_labels_unchanged(
+                volume, disk, pending, protected=protected
+            )
+        except VerifiedLabelConflict as exc:
+            detail = str(exc)
+            locked = detail.split(" are locked.", 1)[0]
+            raise VerifiedLabelConflict(
+                f"{locked} are locked because pending edits already touch "
+                "verified labels. Undo or Revert pending edits before running "
+                "this tool."
+            ) from exc
 
 
 def _scan_label_bbox(
@@ -3506,6 +3539,7 @@ def plan_watershed_task(
     reader = _LazyPlanLabels(task, axis, pending_slices)
     _assert_labels_unverified(task.volume, [target_label])
     try:
+        _assert_pending_verified_labels_unchanged(task.volume, reader)
         try:
             bbox, max_label, used_labels = _scan_label_bbox(
                 reader, target_label, padding=padding, collect_label_ids=True
@@ -3565,6 +3599,7 @@ def plan_split_components_task(
     reader = _LazyPlanLabels(task, axis, pending_slices)
     _assert_labels_unverified(task.volume, [target_label])
     try:
+        _assert_pending_verified_labels_unchanged(task.volume, reader)
         try:
             bbox, max_label, _unused_ids = _scan_label_bbox(reader, target_label)
             if bbox is None:
@@ -3612,6 +3647,7 @@ def plan_merge_labels_task(
     kept_voxels = removed_voxels = 0
     protected = _verified_label_ids(task.volume)
     try:
+        _assert_pending_verified_labels_unchanged(task.volume, reader)
         axis_len = reader.shape[{"z": 0, "y": 1, "x": 2}[axis]]
         for index in range(axis_len):
             before = reader.read_axis(axis, index)
@@ -3662,6 +3698,7 @@ def plan_delete_label_task(
     voxels = 0
     protected = _verified_label_ids(task.volume)
     try:
+        _assert_pending_verified_labels_unchanged(task.volume, reader)
         axis_len = reader.shape[{"z": 0, "y": 1, "x": 2}[axis]]
         scan_indices = _delete_scan_indices(
             reader, label_id, axis, axis_len, volume=task.volume,

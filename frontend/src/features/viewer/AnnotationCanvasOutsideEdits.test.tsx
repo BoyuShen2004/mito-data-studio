@@ -342,6 +342,66 @@ describe("Region only and edits outside the region", () => {
     expect(harness.putLabelIds.mock.calls[1][7]).toBe("newer-server-revision");
   });
 
+  it("repairs verified pixels after a lock 409 and keeps unrelated pending edits", async () => {
+    let resolveSummary!: (value: unknown) => void;
+    const summary = new Promise((resolve) => {
+      resolveSummary = resolve;
+    });
+    api.getLabelsSummary.mockImplementation(() => summary as never);
+    harness.runSplitComponents.mockResolvedValue({
+      axis: "z",
+      slices: [{
+        index: 0,
+        shape: [H, W],
+        before_runs: storedRuns(),
+        runs: [[6, 1], [0, H * W - 1]],
+      }],
+    });
+    harness.putLabelIds
+      .mockRejectedValueOnce(new ApiError(409, "verified label locked", {
+        reason: "verified_label_locked",
+      }))
+      .mockResolvedValueOnce({ max_label_id: 6, next_label_id: 7 });
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    // Reproduce a poisoned plan installed before lifecycle metadata arrived:
+    // it clears disk label 5 and makes one unrelated ordinary edit.
+    fireEvent.change(screen.getByTitle("Active label id"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+    const splitButtons = await screen.findAllByRole("button", { name: "Split" });
+    fireEvent.click(splitButtons[splitButtons.length - 1]);
+    await waitFor(() => expect(harness.runSplitComponents).toHaveBeenCalled());
+    resolveSummary({
+      labels: [{
+        id: 5,
+        voxel_count: 1,
+        z_start: 0,
+        z_end: 0,
+        state: "verified",
+        origin: "manual",
+        verified_at: "2026-08-10T00:00:00Z",
+      }],
+      stats: { total: 1, proposed: 0, edited: 0, verified: 1 },
+    });
+    await screen.findByLabelText("Hide Verified");
+    await screen.findByText(/●1/);
+    alert.mockClear();
+
+    await act(async () => clickSave());
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(
+      expect.stringContaining("Repaired 1 verified pixel"),
+    ));
+    await act(async () => clickSave());
+    await waitFor(() => expect(harness.putLabelIds).toHaveBeenCalledTimes(2));
+
+    const saved = lastSavedPlane();
+    expect(saved[STORED_AT]).toBe(5);
+    expect(saved[0]).toBe(6);
+  });
+
   it("cannot paint through a verified label even while Hide Verified hides it", async () => {
     api.getLabelsSummary.mockResolvedValue({
       labels: [{
