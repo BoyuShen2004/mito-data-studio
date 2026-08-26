@@ -190,6 +190,31 @@ class SaveRejectsAnOutOfRangeSlice(WholeVolumeOpsApiTestCase):
         self.assertEqual(resp.status_code, 200, resp.content[:300])
         self.assertIn(21, set(int(v) for v in np.unique(after[SHAPE[0] - 1])))
 
+    def test_save_removes_metadata_after_the_last_voxel_is_deleted(self):
+        from annotation.services import (
+            _load_label_metadata_store,
+            set_label_slice_ids,
+        )
+        from annotation.visualization.slice_io import encode_label_rle
+
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(np.zeros(SHAPE, dtype=np.int32))
+            painted = np.zeros(SHAPE[1:], dtype=np.int32)
+            painted[2:5, 2:5] = 7
+            set_label_slice_ids(
+                self.volume, "z", 1, list(painted.shape), encode_label_rle(painted)
+            )
+            store, _path = _load_label_metadata_store(self.volume)
+            self.assertIn(7, store)
+
+            empty = np.zeros_like(painted)
+            set_label_slice_ids(
+                self.volume, "z", 1, list(empty.shape), encode_label_rle(empty)
+            )
+            store, _path = _load_label_metadata_store(self.volume)
+
+        self.assertNotIn(7, store)
+
     def test_stale_tab_gets_a_conflict_instead_of_overwriting_newer_work(self):
         from annotation.services import set_label_slice_ids
         from annotation.visualization.slice_io import encode_label_rle
@@ -261,6 +286,26 @@ class SaveRejectsAnOutOfRangeSlice(WholeVolumeOpsApiTestCase):
 
 @override_settings(MITO_TRACKING_PROVIDER="local")
 class SplitComponentsReturnsPendingPlan(WholeVolumeOpsApiTestCase):
+    def test_split_mints_above_all_sidecar_reserved_ids(self):
+        from annotation.services import (
+            _load_label_metadata_store,
+            _save_label_metadata_store,
+        )
+
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(self._two_blobs())
+            store, path = _load_label_metadata_store(self.volume)
+            store.verify(10)
+            _save_label_metadata_store(store, path)
+            response = self.client.post(
+                f"/api/tasks/{self.task.pk}/split-components/",
+                {"label": 5},
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.content[:300])
+        self.assertTrue(all(label_id > 10 for label_id in response.json()["new_label_ids"]))
+
     def test_split_refuses_a_verified_target_before_planning(self):
         with override_settings(MITO_DATA_ROOT=self.root.resolve()):
             self._seed_working_copy(self._two_blobs())
@@ -278,7 +323,8 @@ class SplitComponentsReturnsPendingPlan(WholeVolumeOpsApiTestCase):
             )
             after = self._read_working()
 
-        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["reason"], "verified_label_locked")
         self.assertIn("Unverify", response.json()["detail"])
         np.testing.assert_array_equal(after, before)
 
@@ -381,6 +427,120 @@ class SplitComponentsReturnsPendingPlan(WholeVolumeOpsApiTestCase):
 
 
 class WatershedReturnsPendingPlan(WholeVolumeOpsApiTestCase):
+    def _store_verified_orphan(self, label_id: int) -> None:
+        from annotation.services import (
+            _load_label_metadata_store,
+            _save_label_metadata_store,
+        )
+
+        store, path = _load_label_metadata_store(self.volume)
+        store.verify(label_id)
+        _save_label_metadata_store(store, path)
+
+    def test_watershed_never_mints_a_sidecar_verified_orphan_id(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(self._two_blobs())
+            self._store_verified_orphan(1)
+
+            response = self.client.post(
+                f"/api/tasks/{self.task.pk}/watershed/",
+                {
+                    "label": 5,
+                    "seeds": [
+                        {"z": 1, "y": 3, "x": 3},
+                        {"z": 1, "y": 6, "x": 6},
+                    ],
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.content[:300])
+        self.assertNotIn(1, response.json()["new_label_ids"])
+
+    def test_watershed_plan_saves_then_new_and_unrelated_labels_verify(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(self._two_blobs())
+            plan = self.client.post(
+                f"/api/tasks/{self.task.pk}/watershed/",
+                {
+                    "label": 5,
+                    "seeds": [
+                        {"z": 1, "y": 3, "x": 3},
+                        {"z": 1, "y": 6, "x": 6},
+                    ],
+                },
+                content_type="application/json",
+            )
+            self.assertEqual(plan.status_code, 200, plan.content[:300])
+            new_label = plan.json()["new_label_ids"][0]
+            for item in plan.json()["slices"]:
+                saved = self.client.put(
+                    f"/api/tasks/{self.task.pk}/label-ids/",
+                    {
+                        "axis": plan.json()["axis"],
+                        "index": item["index"],
+                        "shape": item["shape"],
+                        "runs": item["runs"],
+                    },
+                    content_type="application/json",
+                )
+                self.assertEqual(saved.status_code, 200, saved.content[:300])
+
+            verified_new = self.client.post(
+                f"/api/tasks/{self.task.pk}/labels/{new_label}/lifecycle/",
+                {"action": "verify"},
+                content_type="application/json",
+            )
+            verified_other = self.client.post(
+                f"/api/tasks/{self.task.pk}/labels/9/lifecycle/",
+                {"action": "verify"},
+                content_type="application/json",
+            )
+
+        self.assertEqual(verified_new.status_code, 200, verified_new.content[:300])
+        self.assertEqual(verified_other.status_code, 200, verified_other.content[:300])
+
+    def test_labels_summary_exposes_a_sidecar_verified_orphan(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            self._seed_working_copy(self._two_blobs())
+            self._store_verified_orphan(1)
+            response = self.client.get(f"/api/tasks/{self.task.pk}/labels-summary/")
+
+        self.assertEqual(response.status_code, 200, response.content[:300])
+        row = next(item for item in response.json()["labels"] if item["id"] == 1)
+        self.assertEqual(row["state"], "verified")
+        self.assertEqual(row["voxel_count"], 0)
+        self.assertEqual(response.json()["stats"]["verified"], 1)
+
+    def test_watershed_rejects_a_plan_that_would_grow_a_verified_id(self):
+        with override_settings(MITO_DATA_ROOT=self.root.resolve()):
+            path = self._seed_working_copy(self._two_blobs())
+            before = self._read_working().copy()
+            self._store_verified_orphan(1)
+            # Exercise the geometry guard independently of the reservation
+            # guard by simulating a stale allocator view that omits id 1.
+            with mock.patch(
+                "annotation.services._reserved_label_ids", return_value={5, 9}
+            ):
+                response = self.client.post(
+                    f"/api/tasks/{self.task.pk}/watershed/",
+                    {
+                        "label": 5,
+                        "seeds": [
+                            {"z": 1, "y": 3, "x": 3},
+                            {"z": 1, "y": 6, "x": 6},
+                        ],
+                    },
+                    content_type="application/json",
+                )
+            after = self._read_working()
+            path_exists = path.exists()
+
+        self.assertEqual(response.status_code, 409, response.content[:300])
+        self.assertEqual(response.json()["reason"], "verified_label_locked")
+        np.testing.assert_array_equal(after, before)
+        self.assertTrue(path_exists)
+
     def test_reused_distant_label_id_uses_a_bounded_seed_local_crop(self):
         with override_settings(MITO_DATA_ROOT=self.root.resolve()):
             path = self._seed_working_copy(self._two_blobs())

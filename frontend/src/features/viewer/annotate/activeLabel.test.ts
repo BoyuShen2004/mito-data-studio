@@ -56,6 +56,11 @@ describe("nextFreshLabelId", () => {
     }
   });
 
+  it("reserves metadata-only verified ids returned by the labels summary", () => {
+    // The row has zero voxels, but its id still appears in summaryIds.
+    expect(nextFreshLabelId({ summaryIds: [1, 5, 9], trackParentIds: [], planes: [] })).toBe(2);
+  });
+
   it("ignores an empty or absent plane", () => {
     expect(
       nextFreshLabelId({ summaryIds: [1], trackParentIds: [], planes: [null, undefined] }),

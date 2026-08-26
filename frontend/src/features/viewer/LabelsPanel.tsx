@@ -579,15 +579,18 @@ export default function LabelsPanel({
                   <span className="muted labels-row-size">{formatVoxelCount(row.voxel_count)}</span>
                   <span
                     className="muted labels-row-z"
-                    style={{ fontSize: "0.68rem" }}
-                    title={`Go to layer ${displayLayerRange(row.z_start, row.z_start)} (start of this label)`}
+                    style={{ fontSize: "0.68rem", cursor: row.voxel_count > 0 ? "pointer" : "default" }}
+                    title={row.voxel_count > 0
+                      ? `Go to layer ${displayLayerRange(row.z_start, row.z_start)} (start of this label)`
+                      : "This verified label currently has no voxels"}
                     onClick={(event) => {
                       event.stopPropagation();
+                      if (row.voxel_count === 0) return;
                       onSetActiveId(row.id);
                       onJumpToZ(row.z_start);
                     }}
                   >
-                    z{displayLayerRange(row.z_start, row.z_end)}
+                    {row.voxel_count > 0 ? `z${displayLayerRange(row.z_start, row.z_end)}` : "no voxels"}
                   </span>
                 </span>
                 <span className="row" style={{ gap: 4 }}>

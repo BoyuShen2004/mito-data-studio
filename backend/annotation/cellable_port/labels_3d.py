@@ -268,6 +268,15 @@ def forget_summary(path) -> None:
     _summary_cache.pop(str(path), None)
 
 
+def prime_empty_summary(path) -> None:
+    """Cache a newly-created, known-empty working label without scanning it."""
+    _summary_cache[str(path)] = {
+        "mtime_ns": path.stat().st_mtime_ns,
+        "stats": {},
+        "derived": {"labels": [], "bboxes": {}},
+    }
+
+
 def label_bboxes(path) -> dict:
     """``{label_id: (z1, z2, y1, y2, x1, x2)}`` for the whole working copy —
     one cached scan (see :func:`label_summary`), not one scan per label."""

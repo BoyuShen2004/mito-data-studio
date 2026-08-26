@@ -2392,7 +2392,10 @@ export default function AnnotationCanvas({
    * calls this — annotate tools leave edits in memory until then.
    */
   const saveLabels = useCallback(
-    async (origin: "manual" | "ai" = "manual"): Promise<boolean> => {
+    async (
+      origin: "manual" | "ai" = "manual",
+      purpose: "save" | "verify" = "save",
+    ): Promise<boolean> => {
       // A second click while the first request is still running joins it
       // instead of racing it into a duplicate write of the same plane.
       if (saveInFlightRef.current) return saveInFlightRef.current;
@@ -2495,6 +2498,20 @@ export default function AnnotationCanvas({
           const reason = error instanceof ApiError && error.data && typeof error.data === "object"
             ? (error.data as { reason?: unknown }).reason
             : null;
+          if (
+            purpose === "verify"
+            && error instanceof ApiError
+            && error.status === 409
+            && reason === "verified_label_locked"
+          ) {
+            const message = `Save blocked: ${error.message} Unverify them (or Undo pending edits) `
+              + "before Verify. Pending watershed/paint was not discarded.";
+            syncDirtyFromPending();
+            setStatus("error");
+            setLifecycleError(message);
+            window.alert(message);
+            return false;
+          }
           if (error instanceof ApiError && error.status === 409 && reason === "write_conflict") {
             try {
               const recovered = await recoverPendingAfterConflict(saveAxis);
@@ -4590,8 +4607,16 @@ export default function AnnotationCanvas({
 
   const runWatershedNow = useCallback(async () => {
     if (!wsTargetLabel || wsSeeds.length === 0) return;
+    if (verifiedIdsRef.current.has(wsTargetLabel)) {
+      window.alert(
+        `Verified label(s) ${wsTargetLabel} are locked. Unverify them before running this tool.`,
+      );
+      return;
+    }
     setWsRunning(true);
     try {
+      // Include live paint in the same pending overlay the server plans from.
+      stashCurrentSlice();
       const seeds: WatershedSeed[] = wsSeeds.map(({ z, y, x }) => ({ z, y, x }));
       const result = await runWatershed(
         taskId,
@@ -4610,7 +4635,7 @@ export default function AnnotationCanvas({
     } finally {
       setWsRunning(false);
     }
-  }, [taskId, wsTargetLabel, wsSeeds, applyPendingToolPlan, pendingToolSlices]);
+  }, [taskId, wsTargetLabel, wsSeeds, applyPendingToolPlan, pendingToolSlices, stashCurrentSlice]);
 
   // --- Track (SAM2): durable parent-class queue + local child classes -----
 
@@ -5490,7 +5515,7 @@ export default function AnnotationCanvas({
           // Verification describes saved geometry. Flush every pending plane
           // first so a later Save cannot immediately demote the label back to
           // Edited, and so an unsaved/phantom Active id is never verified.
-          const saved = await saveLabels();
+          const saved = await saveLabels("manual", "verify");
           if (!saved) return false;
         }
         const result = await setLabelLifecycle(taskId, labelId, action);

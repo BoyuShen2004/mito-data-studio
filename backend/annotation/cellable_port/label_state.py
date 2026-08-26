@@ -245,6 +245,10 @@ class LabelMetadataStore:
             if metadata.state == LabelState.VERIFIED
         }
 
+    def label_ids(self) -> set[int]:
+        """Every id owned by lifecycle metadata, including voxel-less ids."""
+        return {int(label_id) for label_id in self._labels}
+
     # ----- Persistence -----
 
     def save(self, filepath) -> None:
@@ -270,18 +274,18 @@ class LabelMetadataStore:
             handle.flush()
             os.fsync(handle.fileno())
         backup = f"{filepath}.bak"
+        backup_tmp = f"{tmp}.bak"
         try:
             if os.path.exists(filepath):
-                # The backup is the *previous* committed state, not a second
-                # copy of the new state.  That makes accidental lifecycle
-                # regressions recoverable instead of duplicating the damage.
+                # Keep the previous valid primary available until the new
+                # primary has committed atomically.
                 os.replace(filepath, backup)
             os.replace(tmp, filepath)
-            if not os.path.exists(backup):
-                try:
-                    os.link(filepath, backup)
-                except OSError:
-                    shutil.copy2(filepath, backup)
+            # A successful lifecycle action must also be recoverable from the
+            # backup. Stage and replace it separately so a crash can leave
+            # either the previous or latest valid copy, never a partial JSON.
+            shutil.copy2(filepath, backup_tmp)
+            os.replace(backup_tmp, backup)
         except Exception:
             if not os.path.exists(filepath) and os.path.exists(backup):
                 shutil.copy2(backup, filepath)
@@ -289,6 +293,8 @@ class LabelMetadataStore:
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
+            if os.path.exists(backup_tmp):
+                os.remove(backup_tmp)
 
     def load(self, filepath) -> bool:
         for candidate in (filepath, f"{filepath}.bak"):

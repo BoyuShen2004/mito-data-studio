@@ -1474,6 +1474,10 @@ class TaskWatershedView(APIView):
                 axis=request.data.get("axis", "z"),
                 pending_slices=request.data.get("pending_slices") or [],
             )
+        except VerifiedLabelConflict as exc:
+            return Response(
+                {"detail": str(exc), "reason": "verified_label_locked"}, status=409
+            )
         except (ValueError, SliceIOError, OSError) as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(result)
@@ -1505,6 +1509,10 @@ class TaskSplitComponentsView(APIView):
                 target_label,
                 axis=request.data.get("axis", "z"),
                 pending_slices=request.data.get("pending_slices") or [],
+            )
+        except VerifiedLabelConflict as exc:
+            return Response(
+                {"detail": str(exc), "reason": "verified_label_locked"}, status=409
             )
         except (ValueError, SliceIOError, OSError) as exc:
             return Response({"detail": str(exc)}, status=400)
@@ -1552,6 +1560,10 @@ class TaskMergeLabelsView(APIView):
                 axis=request.data.get("axis", "z"),
                 pending_slices=request.data.get("pending_slices") or [],
             )
+        except VerifiedLabelConflict as exc:
+            return Response(
+                {"detail": str(exc), "reason": "verified_label_locked"}, status=409
+            )
         except (ValueError, SliceIOError, OSError) as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(result)
@@ -1576,6 +1588,10 @@ class TaskDeleteLabelPlanView(APIView):
                 int(request.data.get("label")),
                 axis=request.data.get("axis", "z"),
                 pending_slices=request.data.get("pending_slices") or [],
+            )
+        except VerifiedLabelConflict as exc:
+            return Response(
+                {"detail": str(exc), "reason": "verified_label_locked"}, status=409
             )
         except (TypeError, ValueError, SliceIOError, OSError) as exc:
             return Response({"detail": str(exc)}, status=400)

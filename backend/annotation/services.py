@@ -2558,6 +2558,17 @@ def _verified_label_ids(volume) -> set[int]:
     return store.verified_ids()
 
 
+def _reserved_label_ids(volume, *, voxel_ids=None) -> set[int]:
+    """Ids unavailable for minting, whether owned by voxels or metadata."""
+    reserved = {
+        int(value) for value in (() if voxel_ids is None else voxel_ids)
+        if int(value) > 0
+    }
+    store, _path = _load_label_metadata_store(volume)
+    reserved.update(store.label_ids())
+    return reserved
+
+
 def _assert_verified_labels_unchanged(
     volume, before, after, *, protected: set[int] | None = None
 ) -> None:
@@ -2778,6 +2789,10 @@ def set_label_slice_ids(
     if not volume.image_location:
         raise ValueError("Volume has no image.")
     image = _open_volume(resolve_path(volume.image_location))
+    from .label_paths import working_label_rel_path
+
+    expected_owned_path = resolve_path(working_label_rel_path(volume))
+    working_existed = expected_owned_path.exists()
     mm, owned_rel = _writable_label(volume, image.shape)
     axis_i = AXES[axis]
     n = mm.shape[axis_i]
@@ -2796,6 +2811,13 @@ def set_label_slice_ids(
     sl = decode_label_rle(runs, tuple(shape)).astype(mm.dtype)
 
     owned_path = resolve_path(owned_rel)
+    from .cellable_port import labels_3d as _labels_3d
+
+    # A volume with no registered label seeds a known-empty working copy.
+    # Cache that fact without scanning so this first slice write can fold into
+    # the same incremental summary path as every later Save.
+    if not working_existed and not volume.label_location:
+        _labels_3d.prime_empty_summary(owned_path)
     if expected_revision and expected_revision != _working_label_revision(owned_path):
         raise LabelWriteConflict(
             "This working volume changed in another tab or session. Reload the "
@@ -2821,8 +2843,6 @@ def set_label_slice_ids(
     # on the next read) cost 10-27s on the volumes here, on the very request
     # that follows every Save. A y/x write spans every z, so there's no single
     # slice to fold in: drop the cache and let the next read rebuild it.
-    from .cellable_port import labels_3d as _labels_3d
-
     if axis == "z" and mtime_ns_before is not None:
         _labels_3d.update_summary_for_slice(
             owned_path, idx, sl, mtime_ns_before=mtime_ns_before
@@ -2859,6 +2879,19 @@ def set_label_slice_ids(
                     )
                 else:
                     store.get_or_create(label_id, origin=LabelOrigin.MANUAL)
+
+            # Delete/Merge plans commit through these ordinary slice writes.
+            # Drop lifecycle ownership when the last voxel of an id is gone;
+            # only ids removed completely from this plane need the bounded
+            # whole-volume existence check.
+            removed_from_plane = {
+                int(label_id)
+                for label_id in np.unique(old_sl[changed])
+                if int(label_id) > 0 and not np.any(sl == label_id)
+            }
+            for label_id in removed_from_plane:
+                if not np.any(mm == label_id):
+                    store.remove(label_id)
             _save_label_metadata_store(store, meta_path)
 
     return max_id
@@ -3060,15 +3093,26 @@ def run_watershed_task(
     from .visualization.slice_io import read_label_array
 
     label_mask = read_label_array(working_path)
-    original = np.array(label_mask, copy=True) if roi_only else None
+    before = np.array(label_mask, copy=True)
+    original = before if roi_only else None
+    _assert_labels_unverified(volume, [target_label])
+    reserved = _reserved_label_ids(volume, voxel_ids=np.unique(label_mask))
     try:
-        result = run_watershed_3d(label_mask, target_label, seeds_zyx, padding=padding)
+        result = run_watershed_3d(
+            label_mask,
+            target_label,
+            seeds_zyx,
+            padding=padding,
+            existing_label_ids=reserved,
+            max_existing_label=max(reserved, default=0),
+        )
     except WatershedError as exc:
         raise ValueError(str(exc)) from exc
     if roi_only:
         from .region_mask import protect_volume_outside_roi
 
         protect_volume_outside_roi(volume, original, label_mask)
+    _assert_verified_volume_unchanged(volume, before, label_mask)
     _save_label_volume(volume, label_mask)
 
     # Lifecycle: the target label's shape just changed (mark EDITED); every
@@ -3113,10 +3157,16 @@ def run_split_components_task(
     from .visualization.slice_io import read_label_array
 
     label_mask = read_label_array(working_path)
-    original = np.array(label_mask, copy=True) if roi_only else None
+    before = np.array(label_mask, copy=True)
+    original = before if roi_only else None
+    _assert_labels_unverified(volume, [target_label])
+    reserved = _reserved_label_ids(volume, voxel_ids=np.unique(label_mask))
     try:
         result = run_split_components_3d(
-            label_mask, target_label, size_threshold=size_threshold
+            label_mask,
+            target_label,
+            size_threshold=size_threshold,
+            max_existing_label=max(reserved, default=0),
         )
     except SplitComponentsError as exc:
         raise ValueError(str(exc)) from exc
@@ -3124,6 +3174,7 @@ def run_split_components_task(
         from .region_mask import protect_volume_outside_roi
 
         protect_volume_outside_roi(volume, original, label_mask)
+    _assert_verified_volume_unchanged(volume, before, label_mask)
     _save_label_volume(volume, label_mask)
 
     from .cellable_port.label_state import LabelOrigin
@@ -3420,7 +3471,9 @@ def _seed_local_bbox(reader: _LazyPlanLabels, target_label: int, seeds_zyx, padd
     )
 
 
-def _planned_crop_slices(reader: _LazyPlanLabels, axis: str, bbox, crop):
+def _planned_crop_slices(
+    reader: _LazyPlanLabels, axis: str, bbox, crop, *, volume=None, protected=None
+):
     z1, z2, y1, y2, x1, x2 = bbox
     answer = []
     ranges = {"z": range(z1, z2), "y": range(y1, y2), "x": range(x1, x2)}
@@ -3433,6 +3486,10 @@ def _planned_crop_slices(reader: _LazyPlanLabels, axis: str, bbox, crop):
             after[z1:z2, x1:x2] = crop[:, index - y1, :]
         else:
             after[z1:z2, y1:y2] = crop[:, :, index - x1]
+        if volume is not None:
+            _assert_verified_labels_unchanged(
+                volume, before, after, protected=protected
+            )
         planned = _encode_planned_plane(index, before, after)
         if planned is not None:
             answer.append(planned)
@@ -3477,7 +3534,9 @@ def plan_watershed_task(
                 local_seeds,
                 padding=padding,
                 max_existing_label=max_label,
-                existing_label_ids=used_labels,
+                existing_label_ids=_reserved_label_ids(
+                    task.volume, voxel_ids=used_labels
+                ),
             )
         except WatershedError as exc:
             raise ValueError(str(exc)) from exc
@@ -3487,7 +3546,10 @@ def plan_watershed_task(
             local_bbox[2] + bbox[2], local_bbox[3] + bbox[2],
             local_bbox[4] + bbox[4], local_bbox[5] + bbox[4],
         ]
-        slices = _planned_crop_slices(reader, axis, bbox, labels)
+        protected = _verified_label_ids(task.volume)
+        slices = _planned_crop_slices(
+            reader, axis, bbox, labels, volume=task.volume, protected=protected
+        )
         return {**result, "axis": axis, "slices": slices}
     finally:
         reader.close()
@@ -3508,11 +3570,12 @@ def plan_split_components_task(
             if bbox is None:
                 raise ValueError(f"Label {target_label} not found in the volume.")
             labels = _load_label_crop(reader, bbox)
+            reserved = _reserved_label_ids(task.volume)
             result = run_split_components_3d(
                 labels,
                 target_label,
                 size_threshold=size_threshold,
-                max_existing_label=max_label,
+                max_existing_label=max(max_label, max(reserved, default=0)),
             )
         except SplitComponentsError as exc:
             raise ValueError(str(exc)) from exc
@@ -3522,7 +3585,10 @@ def plan_split_components_task(
             local_bbox[2] + bbox[2], local_bbox[3] + bbox[2],
             local_bbox[4] + bbox[4], local_bbox[5] + bbox[4],
         ]
-        slices = _planned_crop_slices(reader, axis, bbox, labels)
+        protected = _verified_label_ids(task.volume)
+        slices = _planned_crop_slices(
+            reader, axis, bbox, labels, volume=task.volume, protected=protected
+        )
         return {**result, "axis": axis, "slices": slices}
     finally:
         reader.close()
@@ -3544,6 +3610,7 @@ def plan_merge_labels_task(
     reader = _LazyPlanLabels(task, axis, pending_slices)
     slices = []
     kept_voxels = removed_voxels = 0
+    protected = _verified_label_ids(task.volume)
     try:
         axis_len = reader.shape[{"z": 0, "y": 1, "x": 2}[axis]]
         for index in range(axis_len):
@@ -3556,6 +3623,9 @@ def plan_merge_labels_task(
                 continue
             after = before.copy()
             after[removed_mask] = kept
+            _assert_verified_labels_unchanged(
+                task.volume, before, after, protected=protected
+            )
             slices.append(_encode_planned_plane(index, before, after))
     finally:
         reader.close()
@@ -3590,6 +3660,7 @@ def plan_delete_label_task(
     reader = _LazyPlanLabels(task, axis, pending_slices)
     slices = []
     voxels = 0
+    protected = _verified_label_ids(task.volume)
     try:
         axis_len = reader.shape[{"z": 0, "y": 1, "x": 2}[axis]]
         scan_indices = _delete_scan_indices(
@@ -3604,6 +3675,9 @@ def plan_delete_label_task(
             voxels += count
             after = before.copy()
             after[hit] = 0
+            _assert_verified_labels_unchanged(
+                task.volume, before, after, protected=protected
+            )
             slices.append(_encode_planned_plane(index, before, after))
     finally:
         reader.close()
@@ -4094,11 +4168,9 @@ def get_labels_summary(volume, *, readonly: bool = False) -> dict:
 
     # Summary/Refresh is a read operation.  It must never seed, migrate,
     # repair, quarantine, or otherwise mutate the working draft.
-    path = _visible_label_path(volume)
-    if path is None:
-        return {"labels": [], "stats": {"total": 0, "proposed": 0, "edited": 0, "verified": 0}}
-    summary = label_summary(path)
     store, _ = _load_label_metadata_store(volume)
+    path = _visible_label_path(volume)
+    summary = label_summary(path) if path is not None else {"labels": []}
 
     stats = {"total": 0, "proposed": 0, "edited": 0, "verified": 0}
     rows = []
@@ -4117,6 +4189,25 @@ def get_labels_summary(volume, *, readonly: bool = False) -> dict:
                 "can_revert": bool(meta and meta.has_snapshot()),
             }
         )
+
+    present_ids = {int(row["id"]) for row in rows}
+    for label_id in sorted(store.verified_ids() - present_ids):
+        meta = store.get(label_id)
+        stats["total"] += 1
+        stats["verified"] += 1
+        rows.append(
+            {
+                "id": label_id,
+                "voxel_count": 0,
+                "z_start": -1,
+                "z_end": -1,
+                "state": LabelState.VERIFIED.value,
+                "origin": meta.origin.value,
+                "verified_at": meta.verified_at,
+                "can_revert": meta.has_snapshot(),
+            }
+        )
+    rows.sort(key=lambda row: int(row["id"]))
     return {"labels": rows, "stats": stats}
 
 
