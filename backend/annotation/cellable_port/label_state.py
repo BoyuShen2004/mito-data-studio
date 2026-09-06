@@ -37,6 +37,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
+from core.data_root import apply_owned_file_mode
+
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +275,10 @@ class LabelMetadataStore:
             json.dump(data, handle, indent=2)
             handle.flush()
             os.fsync(handle.fileno())
+        # NamedTemporaryFile creates at 0600 and os.replace carries that mode
+        # into the final sidecar, which would leave it unreadable to everyone
+        # but the service user. See core.data_root.apply_owned_file_mode.
+        apply_owned_file_mode(tmp)
         backup = f"{filepath}.bak"
         backup_tmp = f"{tmp}.bak"
         try:

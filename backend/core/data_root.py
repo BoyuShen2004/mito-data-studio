@@ -111,3 +111,31 @@ def assert_owned(path: Path | str, *, what: str = "file") -> Path:
             "deployment owns only its own data root."
         )
     return _logical(path)
+
+
+def apply_owned_file_mode(path: Path | str) -> None:
+    """Give an application-owned file the host's documented mode.
+
+    ``tempfile.NamedTemporaryFile`` and ``mkstemp`` always create at ``0600``
+    regardless of umask — a deliberate security default for scratch files. An
+    atomic write that stages through one and then ``os.replace``\\s it into
+    place *carries that mode through*, so the final artifact silently ends up
+    unreadable to anyone but the service user. That defeats ``UMask=0002`` and
+    the setgid data root, and it is invisible until somebody on the host tries
+    to read a sidecar and cannot.
+
+    So: call this on the staged file **before** the replace. The mode is
+    ``settings.FILE_UPLOAD_PERMISSIONS`` — the same ``0664`` the upload path
+    and ``visualization/slice_io.py`` already apply. Never ``0777``: these
+    files are shared infrastructure, and project/team/assignment checks in the
+    API remain the authorization boundary for writes.
+
+    Failures are swallowed on purpose. A filesystem that refuses ``chmod``
+    (some network mounts) must not turn a successful, already-durable write
+    into an exception — the data is correct either way, only its readability
+    on the host is reduced.
+    """
+    try:
+        os.chmod(path, getattr(settings, "FILE_UPLOAD_PERMISSIONS", 0o664) or 0o664)
+    except OSError:
+        pass

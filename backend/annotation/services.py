@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from accounts.models import AnnotatorProfile
 from accounts.teams import is_eligible_project_assignee
+from core.data_root import apply_owned_file_mode
 from core.utils import inspect_volume_voxel_size
 from core.choices import (
     ACTIVE_TASK_STATUSES,
@@ -1043,6 +1044,9 @@ def _install_submission_as_official(submission: AnnotationSubmission) -> None:
         temporary = tmp.name
         with source.open("rb") as handle:
             shutil.copyfileobj(handle, tmp)
+    # Staged at 0600 by NamedTemporaryFile; the official checkpoint must land
+    # readable on the host like every other application-owned artifact.
+    apply_owned_file_mode(temporary)
     try:
         os.replace(temporary, official)
     finally:
