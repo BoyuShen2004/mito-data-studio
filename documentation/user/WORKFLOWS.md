@@ -60,10 +60,10 @@ replace or modify the source.
 
 ## 5. Assign work
 
-1. A manager opens the project assignment surface.
+1. A manager opens the project's **Tasks** tab and presses **Assign volumes**.
 2. Select one eligible annotator for each volume.
 3. Optionally set priority, difficulty, deadline, and instructions.
-4. The annotator opens the assigned task from their dashboard.
+4. The annotator opens the assigned task from Home → **Assigned to me**.
 
 One volume corresponds to one active task and one assignee. Transfers preserve
 already recorded attribution and annotation time.
@@ -130,7 +130,8 @@ reference layer and never becomes an editable label.
 
 1. Make the relevant label active.
 2. Choose **Record hard case** and optionally add a primary note.
-3. Open it from **Hard Cases** to discuss it with project members.
+3. Open it from the project's **Cases** tab, or from Home, to discuss it with
+   project members.
 4. Resolve it when the question is settled.
 
 Public hard-case links are read-only and independently revocable.

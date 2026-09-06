@@ -9,7 +9,8 @@ from submission-round review comments.
 
 1. In Annotate, make the relevant label active and select **Record hard case**.
 2. Add an optional primary note.
-3. Open the item from **Hard Cases** or the project's **Activity** tab.
+3. Open the item from the project's **Cases** tab, or from Home — **Open cases**
+   for a manager, **Cases in my projects** for an annotator.
 4. Project members can read and reply. The creator and managers can revise the
    primary note; authorized users can resolve/take down the case.
 

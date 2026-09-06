@@ -8,9 +8,11 @@ For a requester-created project, approve it first. Then:
 
 1. Open **People** and add annotators to the project's working team so they are
    eligible for assignment.
-2. Open the project **Access** tab and grant explicit project access where
+2. Open the project **People** tab and grant explicit project access where
    required.
-3. Open **Assign** and select one assignee for each volume.
+3. Open the project **Tasks** tab and press **Assign volumes** — with rows
+   ticked it edits exactly those, with none ticked it opens the whole project's
+   plan. Select one assignee for each volume.
 4. Set task metadata and select **Save plan**. Unsaved table changes are only a
    local plan.
 
@@ -61,6 +63,7 @@ When an annotator cannot see a volume, verify:
 - project access is present;
 - the task is actually assigned to that account;
 - the task has not been closed or reassigned;
-- the annotator is looking under the correct **My Tasks** tab.
+- the annotator is looking under the correct Home tab (**Assigned to me** for
+  new work, **Needs revision** for anything handed back).
 
 [User guide](../user-guide.md) · Previous: [Projects and data](02-projects-and-data.md) · Next: [Viewer](04-viewer.md)

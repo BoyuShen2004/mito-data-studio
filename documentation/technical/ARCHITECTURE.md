@@ -42,9 +42,15 @@ results. Database migrations are additive and form part of the release record.
 ## Frontend organization
 
 The frontend is a React 18/TypeScript single-page application using React
-Router. Role-aware routes provide manager, requester, and annotator dashboards;
-shared project/volume/task pages; a full-window viewer/editor; hard-case and
-review surfaces; profile/people pages; and unauthenticated read-only shares.
+Router. One personal home at `/` serves every role, its tabs decided by role;
+shared project/volume/task pages; a full-window viewer/editor; hard-case pages;
+profile/people pages; and unauthenticated read-only shares.
+
+Tasks, hard cases, and projects are rendered by a single list component
+(`components/WorkList.tsx`) whose filter state lives in the query string, and a
+task's history is derived at render time by `features/worklist/timeline.ts` from
+fields the task serializer already returns — no per-event storage exists or is
+needed.
 
 The annotation canvas combines browser-side pending label slices with
 server-planned operations. This allows previews and compound Undo/Redo without

@@ -26,11 +26,19 @@ replaces the current in-app draft.
 
 ## Manager review
 
-The review page shows task, annotator, source channel, round, notes, QC status,
-previous decisions, and any commented instances. For an in-app snapshot, use
-**View** to inspect the immutable submission. **Annotate** opens the task's
-current working context; distinguish it from the submitted snapshot before
-making changes.
+Review happens on the task's own page, at the end of its timeline — you read the
+history and act where it ends. Open the task from Home → **Awaiting review**, or
+from the project's **Tasks** tab.
+
+The decision box shows the round, source channel, annotator, notes, QC status,
+and any commented instances. For an in-app snapshot, **View this submission**
+inspects the immutable snapshot itself (this is also the only route from which a
+manager's label comment is saved against the round being decided). The plain
+**View** in the page header shows the current working state instead —
+distinguish the two before making changes.
+
+An older `/submissions/<id>/review` link still works; it redirects onto the
+task.
 
 Available decisions are:
 
@@ -40,6 +48,10 @@ Available decisions are:
 | Approve & keep open | Install the checkpoint but allow another annotation and review round |
 | Request revision | Return the reviewed channel for more work; do not change the official mask |
 | Reject | Return the reviewed channel; do not change the official mask |
+
+Deciding leaves you on the task: its state pill updates, the timeline gains an
+entry, and — if another submission is waiting — **Next waiting submission →**
+takes you straight to it. No decision sends you back to a home page.
 
 Approval voids the competing pending channel and starts a fresh working copy
 from the approved checkpoint. A later open round starts a fresh per-label
@@ -52,8 +64,7 @@ and choose **Comment on label #…**. Enter a focused correction or question. Th
 comment records the submission round, label ID, and current axis/3-D location.
 
 The manager sees these under **Commented instances** and may delete an erroneous
-comment before deciding. The annotator sees feedback under **My Tasks → Manager
-feedback**. **View** or **Annotate** reopens the task at the recorded view and
+comment before deciding. The annotator sees feedback under Home → **Feedback**. **View** or **Annotate** reopens the task at the recorded view and
 solos/focuses the label, which is more precise than describing a location only
 in free text.
 

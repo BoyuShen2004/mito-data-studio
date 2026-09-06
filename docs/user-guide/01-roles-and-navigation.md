@@ -4,11 +4,18 @@
 
 ## Roles
 
-| Role | Main workspace | Typical responsibilities |
+Every role lands on the same **Home**. The role decides what is *on* it, not
+where it lives, so a link to a task or a project means the same thing to
+everyone who can open it.
+
+| Role | Home tabs | Typical responsibilities |
 | --- | --- | --- |
-| Requester | **My Projects** | Create projects, register server-readable data, describe requested work, monitor progress, and inspect results |
-| Manager | **Dashboard** | Approve projects, manage access and teams, assign tasks, review submissions, manage shares, and reopen or reset work |
-| Annotator | **My Tasks** | Edit assigned volumes, save drafts, record hard cases, respond to feedback, and submit snapshots |
+| Requester | **My projects** | Create projects, register server-readable data, describe requested work, monitor progress, and inspect results |
+| Manager | **Awaiting review** · **Projects to approve** · **Assigned to me** · **Open cases** · **Shares** | Approve projects, manage access and teams, assign tasks, review submissions, manage shares, and reopen or reset work |
+| Annotator | **Assigned to me** · **Needs revision** · **Done** · **Feedback** · **Cases in my projects** | Edit assigned volumes, save drafts, record hard cases, respond to feedback, and submit snapshots |
+
+Each tab is a saved query over the same list. The number on a tab is how many
+rows it holds — that count is the only "needs attention" signal there is.
 
 Pages and API results are permission-aware. Not seeing a button usually means
 the current role or project relationship does not permit the action; it is not
@@ -28,17 +35,47 @@ identities. Production deployments normally hide this control.
 
 ## Global navigation
 
-- The role home is **Dashboard**, **My Projects**, or **My Tasks**.
-- **Projects** and **Register Data** are available to managers as appropriate;
-  requesters use **My Projects** and **Register Data**.
-- **People** shows role-scoped collaborators, project teams, and eligibility.
-- **Hard Cases** is the difficult-label inbox for projects the user can access.
-- The username opens **Profile**; **Log out** ends the session.
-- **Back** returns through application history when possible, then falls back to
-  the logical parent page. The product name is display-only.
+The navigation bar holds four entries, and every one of them is a *place*:
 
-The application may preserve the selected project tab or viewer location in the
-URL. Sharing or bookmarking such an authenticated URL does not grant access.
+- **Home** — what is waiting on you, across every project.
+- **Projects** — every project you can see. Server-scoped: managers see all,
+  requesters their own, annotators the ones they work on.
+- **People** — role-scoped collaborators, project teams, and eligibility.
+- The username opens **Profile**; **Log out** ends the session.
+
+`Register Data` is not in the bar, because it is an action rather than a place.
+It sits on the pages that own it: Home, the Projects list, and a project's
+**Data** tab.
+
+Hard cases are not in the bar either. A case belongs to a project, so it lives
+on that project's **Cases** tab, and Home surfaces the ones that concern you.
+
+Every detail page carries a breadcrumb (`Cortex study / Tasks / cortex_01 #42`)
+whose every segment is a link. **Back** still returns through application
+history when possible, then falls back to the logical parent. The product name
+is display-only.
+
+List filters and the selected tab live in the URL, so a narrowed list is a link
+you can send. Sharing or bookmarking such an authenticated URL does not grant
+access.
+
+## Lists look the same everywhere
+
+Tasks, hard cases, and projects are rendered by one list. A row reads:
+
+```
+● cortex_01 z1–256                                          #42
+  Submitted 2 days ago by alice · awaiting review          alice
+  [needs split]
+```
+
+- a coloured **state dot** (with a text label for screen readers),
+- the **title**, then the **`#id`** that addresses it,
+- one line saying **what last happened and who did it**,
+- category chips, and the person responsible.
+
+Above the rows, `N Open / M Closed` doubles as a filter, alongside dropdowns
+that only ever offer values actually present in the list.
 
 ## Three permissions that are easy to confuse
 
