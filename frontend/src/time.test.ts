@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { durationTitle, formatDuration, preciseDuration } from "./time";
+import { EMPTY_VALUE } from "./emptyValue";
+import { durationTitle, formatDuration, preciseDuration, relativeTime } from "./time";
 
 /**
  * The same table `annotation.test_time_tracking.test_format_duration_is_compact_
@@ -65,5 +66,30 @@ describe("durationTitle", () => {
 
   it("quotes the measured value otherwise", () => {
     expect(durationTitle(90)).toBe("Measured annotation time: 1 m 30 s");
+  });
+});
+
+describe("relativeTime", () => {
+  const now = new Date("2026-09-06T12:00:00Z");
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+
+  it("names the bucket the event falls in", () => {
+    expect(relativeTime(ago(30_000), now)).toBe("just now");
+    expect(relativeTime(ago(60_000), now)).toBe("1 minute ago");
+    expect(relativeTime(ago(45 * 60_000), now)).toBe("45 minutes ago");
+    expect(relativeTime(ago(3 * 3_600_000), now)).toBe("3 hours ago");
+    expect(relativeTime(ago(2 * 86_400_000), now)).toBe("2 days ago");
+  });
+
+  it("falls back to a date once the event is old, or in the future", () => {
+    expect(relativeTime(ago(400 * 86_400_000), now)).toMatch(/\d/);
+    expect(relativeTime(ago(400 * 86_400_000), now)).not.toMatch(/ago/);
+    expect(relativeTime(new Date(now.getTime() + 60_000).toISOString(), now)).not.toMatch(/ago/);
+  });
+
+  it("renders a missing or unparseable timestamp as the empty value, never as now", () => {
+    expect(relativeTime(null, now)).toBe(EMPTY_VALUE);
+    expect(relativeTime("", now)).toBe(EMPTY_VALUE);
+    expect(relativeTime("not a date", now)).toBe(EMPTY_VALUE);
   });
 });

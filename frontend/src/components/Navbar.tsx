@@ -2,7 +2,6 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { roleLabel } from "../labels";
 import { backFallbackFor } from "../routes/backNavigation";
-import { homePathForRole } from "../routes/roles";
 import BackButton from "./BackButton";
 
 /**
@@ -11,14 +10,13 @@ import BackButton from "./BackButton";
  * Navigation ownership (keep this the single place — don't re-add Done/Home
  * duplicates on page topbars):
  * - Brand is display-only (not a link)
- * - Role home (My Tasks / Dashboard / …) → dedicated control, not the brand
+ * - Home / Projects / People are the only places; nothing here is a verb
  * - ← Back → previous page when possible, else hierarchical parent
  */
 export default function Navbar() {
-  const { user, isManager, isRequester, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const homePath = homePathForRole(user?.role);
   const fallback = backFallbackFor(pathname, user?.role);
 
   const onLogout = async () => {
@@ -29,45 +27,19 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <span className="brand">🧬 Mito Data Studio</span>
-      {isManager ? (
-        <>
-          <NavLink to="/manager" className="nav-link" end title="Cross-project overview">
-            Dashboard
-          </NavLink>
-          <NavLink to="/projects" className="nav-link" title="Create and open project containers">
-            Projects
-          </NavLink>
-          <NavLink to="/register-data" className="nav-link" title="Ingest data, metadata, and label Type">
-            Register Data
-          </NavLink>
-        </>
-      ) : isRequester ? (
-        <>
-          <NavLink to="/requester" className="nav-link" end>
-            My Projects
-          </NavLink>
-          <NavLink to="/register-data" className="nav-link">
-            Register Data
-          </NavLink>
-        </>
-      ) : (
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => navigate(homePath)}
-          title="Go to My Tasks"
-        >
-          My Tasks
-        </button>
-      )}
-      {/* The collaboration half of the app: who you work with, and what the
-          team has flagged. Same two entries for every role — the pages scope
-          themselves server-side, so there is nothing role-specific here. */}
+      {/* Four entries, and every one of them is a place. `Register Data` is an
+          action, so it lives on the pages that own it (Home, the Projects
+          list, and a project's Data tab). Hard Cases is not here either: a
+          case belongs to a project, and Home surfaces the ones that concern
+          you. */}
+      <NavLink to="/" className="nav-link" end title="What is waiting on you">
+        Home
+      </NavLink>
+      <NavLink to="/projects" className="nav-link" title="Every project you can see">
+        Projects
+      </NavLink>
       <NavLink to="/people" className="nav-link" title="Access, teams, and assignment eligibility">
         People
-      </NavLink>
-      <NavLink to="/hard-cases" className="nav-link" title="Difficult-label inbox">
-        Hard Cases
       </NavLink>
       <span className="spacer" />
       {fallback && <BackButton fallback={fallback} />}

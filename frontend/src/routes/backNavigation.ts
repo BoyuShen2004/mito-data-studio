@@ -29,8 +29,9 @@ export function backFallbackFor(
   const volumeViewer = matchPath("/viewer/volumes/:id", pathname);
   if (volumeViewer) return `/volumes/${volumeViewer.params.id}`;
 
-  // One hard case → the inbox; one person → the People hub.
-  if (matchPath("/hard-cases/:id", pathname)) return "/hard-cases";
+  // One person → the People hub. A hard case's real parent is its project's
+  // Cases tab, which only the loaded case knows — the page's breadcrumb links
+  // there, so Back falls back to home rather than guessing a project id.
   if (matchPath("/people/:username", pathname)) return "/people";
 
   // Volume detail sits under its project for managers.
@@ -42,7 +43,7 @@ export function backFallbackFor(
   const underProjects = matchPath("/projects/:id", pathname);
   if (underProjects) return effective === "manager" ? "/projects" : home;
 
-  // Everything else (/projects, /tasks/:id, /submissions/:id/review,
-  // /register-data, /people, /hard-cases) goes up to the dashboard.
+  // Everything else (/projects, /tasks/:id, /hard-cases/:id,
+  // /submissions/:id/review, /register-data, /people) goes up to home.
   return home;
 }

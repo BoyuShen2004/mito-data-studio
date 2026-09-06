@@ -7,29 +7,34 @@ import {
   getVolume,
   volumeDependents,
 } from "../api/volumes";
-import {
-  listProjectTasks,
-} from "../api/tasks";
+import { listProjectTasks } from "../api/tasks";
+import Breadcrumb from "../components/Breadcrumb";
 import DeleteButton from "../components/DeleteButton";
 import StatusBadge from "../components/StatusBadge";
-import { TaskDetailsStack } from "../components/TaskDetailsCards";
+import ShareControl from "../components/ShareControl";
+import { MetadataDetailsCard } from "../components/VolumeMeta";
 import type { Volume } from "../types/volume";
 import type { AnnotationTask } from "../types/task";
 import { useAuth } from "../auth/AuthContext";
 import { useAsync } from "../hooks/useAsync";
-import ShareControl from "../components/ShareControl";
 
-/** One page for a volume: volume metadata + its task's details (no separate
- * task-Details hop). A volume is one assignable unit, so there is exactly one
- * task here — the list stays a list only so a volume with none renders too.
- * Volume edits stay in the Metadata card; task assignment fields live in the
- * project's Assign details so Metadata and Task never merge by role or mode. */
+/**
+ * A volume is the **artifact** — the thing being annotated — the way a file in
+ * GitHub's Code tab is the artifact and a pull request is the work item.
+ *
+ * So this page holds paths, shape, voxel size, dataset metadata and the
+ * streaming-pyramid state, and it links to its task. It no longer renders the
+ * task's own details: those live on `/tasks/:id`, which is now the same page
+ * for a manager and an annotator. Neither page imports the other's components.
+ *
+ * Metadata is edited in place in the sidebar — there is no "edit mode" to
+ * enter, and the Save button appears only once something actually changed.
+ */
 export default function VolumeDetailPage() {
   const { id } = useParams();
   const volumeId = Number(id);
-  const { user, isManager, isRequester } = useAuth();
+  const { isManager, isRequester } = useAuth();
   const navigate = useNavigate();
-  const [editing, setEditing] = useState(false);
   const vol = useAsync(() => getVolume(volumeId), [volumeId]);
   const tasks = useAsync(
     () =>
@@ -78,99 +83,93 @@ export default function VolumeDetailPage() {
   if (vol.error) return <div className="error">{vol.error}</div>;
   if (!vol.data) return null;
   const v = vol.data;
-  const taskList = tasks.data ?? [];
-  const primaryTask = taskList[0];
+  const task: AnnotationTask | undefined = (tasks.data ?? [])[0];
+  const canEdit = isManager || isRequester;
 
   return (
-    <>
-      <div className="row spread">
-        <h1>{v.name}</h1>
-        <div className="row">
-          {isManager && (
-            <ShareControl
-              scope="volume"
-              projectId={v.project}
-              datasetId={v.dataset ?? undefined}
-              volumeId={v.id}
-            />
-          )}
-          <Link to={`/projects/${v.project}`}>
-            <button type="button" className="secondary">
-              Project
-            </button>
-          </Link>
-          {(isManager || isRequester) && <button
-            type="button"
-            className="secondary"
-            onClick={() => setEditing((e) => !e)}
-          >
-            {editing ? "Close" : "Edit metadata"}
-          </button>}
-          {(isManager || isRequester) && <DeleteButton
-            label={`volume "${v.name}"`}
-            dependents={() => volumeDependents(v.id)}
-            onDelete={(force) => deleteVolume(v.id, force)}
-            onDone={() => navigate(`/projects/${v.project}`)}
-          />}
-        </div>
-      </div>
-
-      {v.dataset_name && (
-        <p className="muted">
-          Dataset: <strong>{v.dataset_name}</strong>
-        </p>
-      )}
-
-      <TaskDetailsStack
-        volume={v}
-        tasks={taskList}
-        primaryTask={primaryTask}
-        streamingCard={<StreamingStatusCard
-          volume={v}
-          isManager={isManager}
-          busy={pyramidBusy}
-          notice={pyramidNotice}
-          onBuild={buildPyramid}
-        />}
-        // Edit mode swaps the Metadata card only — Task # stays its own card.
-        metadataCard={editing ? (
-          <div className="card">
-            <h3>Metadata</h3>
-            <VolumeEditForm
-              volume={v}
-              onSaved={() => {
-                setEditing(false);
-                vol.reload();
-                tasks.reload();
-              }}
-              onCancel={() => setEditing(false)}
-            />
-          </div>
-        ) : undefined}
-        emptyMetadata={
-          <div className="card"><h3>Metadata</h3><p className="muted">Task metadata is not available yet.</p></div>
-        }
-        taskActions={(t) => <>
-          <Link to={`/viewer/tasks/${t.id}`}><button type="button" className="secondary">View</button></Link>
-          {(t.assigned_to === user?.id || isManager) && t.can_annotate && (
-            <Link to={`/editor/tasks/${t.id}`}><button type="button">Annotate</button></Link>
-          )}
-        </>}
+    <div className="volume-page">
+      <Breadcrumb
+        items={[
+          { label: task?.project_title || `Project #${v.project}`, to: `/projects/${v.project}` },
+          { label: "Data", to: `/projects/${v.project}?tab=data` },
+          { label: v.name },
+        ]}
       />
 
-      {tasks.loading && <p className="muted">Loading tasks…</p>}
-      {!tasks.loading && taskList.length === 0 && (
-        <div className="card">
-          <h3>Task</h3>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            No task yet
-            {isManager
-              ? " — open the project's Assign tab to turn this volume into its whole-volume task."
-              : "."}
-          </p>
+      {/* Identity and navigation only — no verbs. */}
+      <header className="volume-header">
+        <div className="row task-title-line">
+          <h1>{v.name}</h1>
+          <StatusBadge value={v.label_type || "none"} />
         </div>
+        <p className="muted">
+          {v.dataset_name ? <>Dataset <strong>{v.dataset_name}</strong> · </> : null}
+          {tasks.loading ? (
+            "loading its task…"
+          ) : task ? (
+            <>
+              <Link to={`/tasks/${task.id}`}>Task #{task.id}</Link> · {task.status.replace(/_/g, " ")}
+            </>
+          ) : (
+            <>no task yet{isManager ? " — assign it from the project's Tasks tab" : ""}</>
+          )}
+        </p>
+      </header>
+
+      <div className="volume-body">
+        <div className="volume-main">
+          <MetadataDetailsCard volume={v} task={task} />
+          <StreamingStatusCard
+            volume={v}
+            isManager={isManager}
+            busy={pyramidBusy}
+            notice={pyramidNotice}
+            onBuild={buildPyramid}
+          />
+        </div>
+
+        {canEdit && (
+          <VolumeMetadataSidebar
+            volume={v}
+            onSaved={() => {
+              vol.reload();
+              tasks.reload();
+            }}
+          />
+        )}
+      </div>
+
+      {canEdit && (
+        <>
+          {isManager && (
+            <section className="section-block">
+              <div className="section-heading">
+                <h2>Public access</h2>
+                <p className="muted">A public link makes this volume readable without an account.</p>
+              </div>
+              <ShareControl
+                scope="volume"
+                projectId={v.project}
+                datasetId={v.dataset ?? undefined}
+                volumeId={v.id}
+              />
+            </section>
+          )}
+          <section className="danger-zone">
+            <h2>Danger zone</h2>
+            <p className="muted">
+              Deleting a volume removes its task, submissions and hard cases. There is no undo.
+            </p>
+            <DeleteButton
+              label={`volume "${v.name}"`}
+              dependents={() => volumeDependents(v.id)}
+              onDelete={(force) => deleteVolume(v.id, force)}
+              onDone={() => navigate(`/projects/${v.project}?tab=data`)}
+            />
+          </section>
+        </>
       )}
-    </>
+    </div>
   );
 }
 
@@ -287,15 +286,19 @@ export function StreamingStatusCard({
   );
 }
 
-/** Edit only volume metadata. Task fields have one home: Assign Details. */
-function VolumeEditForm({
+/**
+ * Volume metadata, editable where it is shown.
+ *
+ * Rule 5: you do not enter a mode to change a field. Save appears only when
+ * something differs from what the server holds, so the sidebar reads as
+ * metadata until it is being edited.
+ */
+function VolumeMetadataSidebar({
   volume,
   onSaved,
-  onCancel,
 }: {
   volume: Volume;
   onSaved: () => void;
-  onCancel: () => void;
 }) {
   const [name, setName] = useState(volume.name);
   const [imagePath, setImagePath] = useState(volume.image_path);
@@ -304,6 +307,22 @@ function VolumeEditForm({
   const [labelType, setLabelType] = useState<string>(volume.label_type);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    name !== volume.name ||
+    imagePath !== volume.image_path ||
+    regionMaskPath !== volume.region_mask_path ||
+    labelPath !== volume.label_path ||
+    labelType !== volume.label_type;
+
+  const reset = () => {
+    setName(volume.name);
+    setImagePath(volume.image_path);
+    setRegionMaskPath(volume.region_mask_path);
+    setLabelPath(volume.label_path);
+    setLabelType(volume.label_type);
+    setError(null);
+  };
 
   const save = async () => {
     setBusy(true);
@@ -335,16 +354,14 @@ function VolumeEditForm({
 
   const hasMask = Boolean(labelPath.trim());
   const labelOptions = hasMask ? ["partial", "prediction"] : ["none"];
+
   return (
-    <div className="edit-form" style={{ margin: 0 }}>
+    <aside className="volume-sidebar" aria-label="Volume metadata">
       {error && <div className="error">{error}</div>}
-      <h4 style={{ marginTop: 0 }}>Volume</h4>
-      <div className="row fields">
-        <label className="field">
-          <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-      </div>
+      <label className="field">
+        <span>Name</span>
+        <input value={name} onChange={(e) => setName(e.target.value)} />
+      </label>
       <label className="field">
         <span>1 · Raw image path</span>
         <input value={imagePath} onChange={(e) => setImagePath(e.target.value)} />
@@ -365,7 +382,7 @@ function VolumeEditForm({
           }}
         />
       </label>
-      <label className="field" style={{ maxWidth: "16rem" }}>
+      <label className="field">
         <span>Label type *</span>
         <select
           value={labelOptions.includes(labelType) ? labelType : labelOptions[0]}
@@ -373,21 +390,20 @@ function VolumeEditForm({
           disabled={labelOptions.length === 1}
         >
           {labelOptions.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
+            <option key={t} value={t}>{t}</option>
           ))}
         </select>
       </label>
-
-      <div className="row" style={{ marginTop: "0.75rem" }}>
-        <button type="button" onClick={save} disabled={busy}>
-          {busy ? "Saving…" : "Save metadata"}
-        </button>
-        <button type="button" className="secondary" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </div>
+      {dirty && (
+        <div className="row">
+          <button type="button" onClick={save} disabled={busy}>
+            {busy ? "Saving…" : "Save metadata"}
+          </button>
+          <button type="button" className="secondary" onClick={reset} disabled={busy}>
+            Discard
+          </button>
+        </div>
+      )}
+    </aside>
   );
 }

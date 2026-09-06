@@ -6,17 +6,28 @@ import {
   setHardCaseStatus,
 } from "../api/hardCases";
 import { useAsync } from "../hooks/useAsync";
-import ViewerShell, { ViewerShellMessage } from "../components/ViewerShell";
+import ViewerShell from "../components/ViewerShell";
 import AnnotationCanvas, {
   type AxisControls,
 } from "../features/viewer/AnnotationCanvas";
 import AxisSelect from "../features/viewer/AxisSelect";
 import RegionOnlyButton from "../features/viewer/RegionOnlyButton";
-import HardCaseNotesModal from "../components/HardCaseNotesModal";
+import Breadcrumb from "../components/Breadcrumb";
+import { HardCaseDiscussion } from "../components/HardCaseNotesModal";
+import StatusBadge from "../components/StatusBadge";
+import { displayTaskLayerRange } from "../features/viewer/layerIndex";
+import { categoryLabel } from "../features/viewer/hardCaseCategory";
+import { relativeTime } from "../time";
 import { hasViewCoordinates } from "../features/viewer/viewLocation";
 
 /**
- * One hard case, opened by a project member at `/hard-cases/:id`.
+ * One hard case, opened by a project member at `/hard-cases/:id` — this
+ * application's issue page.
+ *
+ * Same skeleton as the task page: title, `#id`, a state pill, a timeline with
+ * its reply box at the end, and metadata in a sidebar. The canvas sits above
+ * the discussion, full width, because for a hard case the picture *is* the
+ * subject.
  *
  * Same `AnnotationCanvas` as task View / Annotate and the public share page —
  * there is no second editor. `editable` is the server's `can_annotate` (the
@@ -40,7 +51,6 @@ export default function HardCaseDetailPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [axisControls, setAxisControls] = useState<AxisControls | null>(null);
-  const [notesOpen, setNotesOpen] = useState(false);
   const onAxisControls = useCallback((c: AxisControls | null) => {
     setAxisControls(c);
   }, []);
@@ -108,41 +118,58 @@ export default function HardCaseDetailPage() {
     navigate(hardCase.app_url, { replace: true });
   }, [needsViewRedirect, hardCase, navigate]);
 
-  if (loading) return <ViewerShellMessage>Loading hard case…</ViewerShellMessage>;
-  if (error) return <ViewerShellMessage tone="error">{error}</ViewerShellMessage>;
+  if (loading) return <p className="muted">Loading hard case…</p>;
+  if (error) return <div className="error">{error}</div>;
   if (!hardCase) return null;
-  if (needsViewRedirect) {
-    return <ViewerShellMessage>Opening recorded layer…</ViewerShellMessage>;
-  }
+  if (needsViewRedirect) return <p className="muted">Opening recorded layer…</p>;
+
+  const firstLine = hardCase.note.split("\n")[0]?.trim() ?? "";
+  const title = firstLine || `Label #${hardCase.label_id}`;
 
   return (
-    <ViewerShell
-      topbar={
-        <>
-          <h1>Hard case · label #{hardCase.label_id}</h1>
-          {!hardCase.can_annotate && (
-            <span className="muted" style={{ fontSize: "0.78rem" }}>
-              View only
-            </span>
-          )}
-          <span className="muted" style={{ fontSize: "0.78rem" }}>
-            {hardCase.project_title} ·{" "}
-            {hardCase.volume_name} · by{" "}
-            {hardCase.created_by_username || "—"} ·{" "}
-            {new Date(hardCase.created_at).toLocaleDateString()}
-          </span>
-          <span className="spacer" />
-          {notice && <span className="error">{notice}</span>}
-          <div className="editor-actions">
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setNotesOpen(true)}
-            >
-              Note{hardCase.message_count ? ` (${hardCase.message_count})` : ""}
-            </button>
-            {axisControls && (
-              <>
+    <div className="hard-case-page">
+      <Breadcrumb
+        items={[
+          {
+            label: hardCase.project_title || "Project",
+            to: hardCase.project ? `/projects/${hardCase.project}` : undefined,
+          },
+          {
+            label: "Cases",
+            to: hardCase.project ? `/projects/${hardCase.project}?tab=cases` : undefined,
+          },
+          { label: `${title} #${hardCase.id}` },
+        ]}
+      />
+
+      {/* Identity only — the controls that change this case are in the sidebar. */}
+      <header className="task-header">
+        <div className="row task-title-line">
+          <h1>{title}</h1>
+          <span className="task-number">#{hardCase.id}</span>
+          <StatusBadge value={hardCase.status === "open" ? "in_review" : "completed"} />
+          <span className="muted">{hardCase.status === "open" ? "open" : "taken down"}</span>
+          {!hardCase.can_annotate && <span className="muted">· view only</span>}
+        </div>
+        <p className="muted">
+          Label #{hardCase.label_id} on{" "}
+          <Link to={`/volumes/${hardCase.volume}`}>{hardCase.volume_name || "volume"}</Link> · z
+          {displayTaskLayerRange(hardCase.z_start, hardCase.z_end)} ·{" "}
+          <Link to={`/tasks/${hardCase.task}`}>task #{hardCase.task}</Link> · raised{" "}
+          {relativeTime(hardCase.created_at)} by {hardCase.created_by_username || "—"}
+        </p>
+      </header>
+
+      <ViewerShell
+        embedded
+        topbar={
+          axisControls ? (
+            <>
+              <span className="muted" style={{ fontSize: "0.78rem" }}>
+                Soloed on label #{hardCase.label_id}
+              </span>
+              <span className="spacer" />
+              <div className="editor-actions">
                 <AxisSelect
                   id="topbar-hard-case-axis"
                   value={axisControls.axis}
@@ -150,23 +177,72 @@ export default function HardCaseDetailPage() {
                   disabled={axisControls.disabled}
                 />
                 <RegionOnlyButton controls={axisControls} />
-              </>
-            )}
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void copyLink()}
-              disabled={hardCase.revoked}
-              title={
-                hardCase.revoked
-                  ? "The public link for this case was revoked."
-                  : "Copy the public, no-account read-only link."
-              }
-            >
-              {copyState === "copied" ? "Copied" : "Copy link"}
-            </button>
-            {hardCase.can_take_down && (
-              <>
+              </div>
+            </>
+          ) : undefined
+        }
+      >
+        <AnnotationCanvas
+          taskId={hardCase.task}
+          volumeId={hardCase.volume ?? 0}
+          zStart={hardCase.z_start}
+          zEnd={hardCase.z_end}
+          mode={hardCase.can_annotate ? "annotate" : "view"}
+          editable={hardCase.can_annotate}
+          initialActiveId={hardCase.label_id}
+          initialSoloId={hardCase.label_id}
+          onAxisControls={onAxisControls}
+        />
+      </ViewerShell>
+
+      <div className="hard-case-page-body">
+        <div>
+          <HardCaseDiscussion hardCase={hardCase} onChanged={reload} headings="h3" />
+        </div>
+
+        <aside className="task-sidebar" aria-label="Case details">
+          <div className="sidebar-field">
+            <div className="eyebrow">Category</div>
+            <div className={hardCase.category ? "" : "muted"}>
+              {categoryLabel(hardCase.category)}
+            </div>
+          </div>
+          <div className="sidebar-field">
+            <div className="eyebrow">Raised by</div>
+            <div>{hardCase.created_by_username || "—"}</div>
+          </div>
+          {hardCase.status === "resolved" && (
+            <div className="sidebar-field">
+              <div className="eyebrow">Taken down by</div>
+              <div>{hardCase.resolved_by_username || "—"}</div>
+            </div>
+          )}
+          <div className="sidebar-field">
+            <div className="eyebrow">Volume</div>
+            <Link to={`/volumes/${hardCase.volume}`}>{hardCase.volume_name || "volume"}</Link>
+          </div>
+          <div className="sidebar-field">
+            <div className="eyebrow">Task</div>
+            <Link to={`/tasks/${hardCase.task}`}>#{hardCase.task}</Link>
+          </div>
+
+          <div className="sidebar-field">
+            <div className="eyebrow">Public link</div>
+            <div className="hard-case-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void copyLink()}
+                disabled={hardCase.revoked}
+                title={
+                  hardCase.revoked
+                    ? "The public link for this case was revoked."
+                    : "Copy the public, no-account read-only link."
+                }
+              >
+                {copyState === "copied" ? "Copied" : "Copy link"}
+              </button>
+              {hardCase.can_take_down && (
                 <button
                   type="button"
                   className="secondary"
@@ -176,6 +252,15 @@ export default function HardCaseDetailPage() {
                 >
                   {hardCase.revoked ? "Restore link" : "Revoke link"}
                 </button>
+              )}
+              {copyState === "failed" && <span className="error">Could not copy the link.</span>}
+            </div>
+          </div>
+
+          {hardCase.can_take_down && (
+            <div className="sidebar-field">
+              <div className="eyebrow">State</div>
+              <div className="hard-case-actions">
                 <button
                   type="button"
                   className="secondary"
@@ -184,35 +269,12 @@ export default function HardCaseDetailPage() {
                 >
                   {hardCase.status === "open" ? "Take down" : "Reopen"}
                 </button>
-              </>
-            )}
-            <Link to="/hard-cases">
-              <button type="button" className="secondary">
-                All cases
-              </button>
-            </Link>
-          </div>
-        </>
-      }
-    >
-      <AnnotationCanvas
-        taskId={hardCase.task}
-        volumeId={hardCase.volume ?? 0}
-        zStart={hardCase.z_start}
-        zEnd={hardCase.z_end}
-        mode={hardCase.can_annotate ? "annotate" : "view"}
-        editable={hardCase.can_annotate}
-        initialActiveId={hardCase.label_id}
-        initialSoloId={hardCase.label_id}
-        onAxisControls={onAxisControls}
-      />
-      {notesOpen && (
-        <HardCaseNotesModal
-          hardCase={hardCase}
-          onClose={() => setNotesOpen(false)}
-          onChanged={reload}
-        />
-      )}
-    </ViewerShell>
+              </div>
+            </div>
+          )}
+          {notice && <p className="error" role="alert">{notice}</p>}
+        </aside>
+      </div>
+    </div>
   );
 }

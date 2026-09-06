@@ -119,3 +119,39 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
     {message && <span className="error" aria-live="polite">{message}</span>}
   </span>;
 }
+
+const SHARE_STATE_TEXT: Record<string, string> = {
+  all: "Every dataset and volume in this project has a public link.",
+  partial: "Part of this project has a public link.",
+  shared: "A public link is live.",
+  none: "Nothing in this project is publicly shared.",
+  not_shared: "Nothing here is publicly shared.",
+};
+
+/** The same state `ShareControl` shows, with no controls.
+ *
+ * Overview says what is currently shared; the buttons that change it live in
+ * Settings. Reading it in two places is fine — it is one small GET — but the
+ * verb belongs in exactly one. */
+export function ShareSummary({
+  scope,
+  projectId,
+  datasetId,
+  volumeId,
+}: {
+  scope: PublicShare["scope"];
+  projectId: number;
+  datasetId?: number;
+  volumeId?: number;
+}) {
+  const params = { scope, project_id: projectId, dataset_id: datasetId, volume_id: volumeId };
+  const share = useAsync(() => getEntityShare(params), [scope, projectId, datasetId, volumeId]);
+  if (share.loading || share.error || !share.data) return null;
+  const state = share.data.aggregate_state ?? "not_shared";
+  return (
+    <p className="muted share-summary">
+      <span className={`share-led share-led-${state}`} aria-hidden="true" />{" "}
+      {SHARE_STATE_TEXT[state] ?? SHARE_STATE_TEXT.not_shared}
+    </p>
+  );
+}

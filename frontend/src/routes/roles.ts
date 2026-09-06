@@ -10,18 +10,14 @@ export function effectiveRole(role: string | null | undefined): HomeRole {
   return "annotator";
 }
 
-export function homePathForRole(role: string | null | undefined): string {
-  return `/${effectiveRole(role)}`;
+/** Every role lands on the same personal home. The role still decides what
+ * that page *contains* (see `pages/HomePage.tsx`), but not where it lives —
+ * three role-specific roots were three URLs for one idea. */
+export function homePathForRole(_role?: string | null | undefined): string {
+  return "/";
 }
 
-/** Short label for the role home — used on Home/Done buttons. */
-export function homeLabelForRole(role: string | null | undefined): string {
-  switch (effectiveRole(role)) {
-    case "manager":
-      return "Dashboard";
-    case "requester":
-      return "My Projects";
-    default:
-      return "My Tasks";
-  }
+/** Short label for the home — used on Home/Done buttons. */
+export function homeLabelForRole(_role?: string | null | undefined): string {
+  return "Home";
 }

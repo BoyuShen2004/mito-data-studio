@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import HardCaseDetailPage from "./HardCaseDetailPage";
 import HardCaseSharePage from "./HardCaseSharePage";
+import ReviewBox from "../components/ReviewBox";
 import ReviewSubmissionPage from "./ReviewSubmissionPage";
 import { TaskViewerPage } from "./ViewerPage";
 
@@ -48,6 +49,7 @@ vi.mock("../api/submissions", () => ({
 
 vi.mock("../api/reviewLabelComments", () => ({
   listReviewLabelComments: vi.fn(),
+  deleteReviewLabelComment: vi.fn(),
   saveReviewLabelComment: harness.saveReviewLabelComment,
 }));
 
@@ -349,11 +351,18 @@ describe("collaboration workflow pages", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("View only")).toBeTruthy();
-    expect(screen.queryByText(/Note: Needs a second look/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Note" }));
-    expect(screen.getByRole("dialog", { name: "Notes · label #44" })).toBeTruthy();
-    expect(screen.getByText("Needs a second look")).toBeTruthy();
+    // The issue skeleton: title, #id, state, and the note as the page's own
+    // content rather than something behind a dialog.
+    expect(screen.getByRole("heading", { name: "Needs a second look" })).toBeTruthy();
+    expect(screen.getByText("#3")).toBeTruthy();
+    expect(screen.getByText("open")).toBeTruthy();
+    expect(screen.getByText(/view only/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Discussion" })).toBeTruthy();
+    // can_edit_note is false, so the note is read, not edited.
+    expect(screen.queryByRole("textbox", { name: "Primary note" })).toBeNull();
+    // can_comment is true, so the reply box is there, at the end.
+    expect(screen.getByRole("textbox", { name: "Discussion reply" })).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(harness.canvasProps).toHaveBeenLastCalledWith(
       expect.objectContaining({
         taskId: 7,
@@ -399,29 +408,30 @@ describe("collaboration workflow pages", () => {
     );
   });
 
+  const submission = (overrides: Record<string, unknown> = {}) => ({
+    id: 5,
+    task: 7,
+    task_detail: task({ submission_count: 1 }),
+    annotator_username: "alice",
+    source: "inapp",
+    round_number: 1,
+    submitted_at: "2026-07-30T12:00:00Z",
+    label_file: "",
+    notes: "",
+    qc_status: "passed",
+    qc_report: {},
+    reviews: [],
+    project_title: "Project A",
+    volume_name: "chunk-a",
+    ...overrides,
+  });
+
   it("sends the approve-time keep-open decision explicitly", async () => {
-    harness.asyncData = {
-      id: 5,
-      task: 7,
-      task_detail: task({ submission_count: 1 }),
-      annotator_username: "alice",
-      source: "inapp",
-      submitted_at: "2026-07-30T12:00:00Z",
-      label_file: "",
-      notes: "",
-      qc_status: "passed",
-      qc_report: {},
-      reviews: [],
-      project_title: "Project A",
-      volume_name: "chunk-a",
-    };
+    harness.asyncData = submission();
 
     render(
-      <MemoryRouter initialEntries={["/submissions/5/review"]}>
-        <Routes>
-          <Route path="/submissions/:id/review" element={<ReviewSubmissionPage />} />
-          <Route path="/manager" element={<div>manager home</div>} />
-        </Routes>
+      <MemoryRouter>
+        <ReviewBox submissionId={5} onDecided={harness.reload} />
       </MemoryRouter>,
     );
 
@@ -437,35 +447,55 @@ describe("collaboration workflow pages", () => {
     );
   });
 
+  it("leaves the reviewer on the task instead of redirecting to a role home", async () => {
+    harness.asyncData = submission();
+
+    render(
+      <MemoryRouter>
+        <ReviewBox submissionId={5} onDecided={harness.reload} nextHref="/tasks/8" />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve & close" }));
+
+    // The decision is recorded in place and the task is asked to refresh, so
+    // the new state and the new timeline entry appear where the work happened.
+    await waitFor(() => expect(harness.reload).toHaveBeenCalled());
+    expect(screen.getByText(/recorded/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Next waiting submission/ }).getAttribute("href"))
+      .toBe("/tasks/8");
+  });
+
   it("offers view-only and annotate routes before an in-app review decision", () => {
-    harness.asyncData = {
-      id: 5,
-      task: 7,
-      task_detail: task({ submission_count: 1 }),
-      annotator_username: "alice",
-      source: "inapp",
-      submitted_at: "2026-07-30T12:00:00Z",
-      label_file: "",
-      notes: "",
-      qc_status: "passed",
-      qc_report: {},
-      reviews: [],
-    };
+    harness.asyncData = submission();
+
+    render(
+      <MemoryRouter>
+        <ReviewBox submissionId={5} onDecided={harness.reload} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Review this submission" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View this submission" }).closest("a")?.getAttribute("href"))
+      .toBe("/viewer/tasks/7?submission=5");
+    expect(screen.getByRole("button", { name: "Annotate" }).closest("a")?.getAttribute("href"))
+      .toBe("/editor/tasks/7");
+    expect(screen.getByRole("heading", { name: "Commented instances" })).toBeTruthy();
+  });
+
+  it("keeps /submissions/:id/review working, as a redirect onto the task", async () => {
+    harness.asyncData = submission();
 
     render(
       <MemoryRouter initialEntries={["/submissions/5/review"]}>
         <Routes>
           <Route path="/submissions/:id/review" element={<ReviewSubmissionPage />} />
+          <Route path="/tasks/:id" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Review submission #7" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "View" }).closest("a")?.getAttribute("href"))
-      .toBe("/viewer/tasks/7?submission=5");
-    expect(screen.getByRole("button", { name: "Annotate" }).closest("a")?.getAttribute("href"))
-      .toBe("/editor/tasks/7");
-    expect(screen.getByRole("heading", { name: "Commented instances" })).toBeTruthy();
+    expect((await screen.findByTestId("location")).textContent).toBe("/tasks/7");
   });
 
   it("lets a manager save a label comment only from submission-aware View", async () => {

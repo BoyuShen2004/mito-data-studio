@@ -1,6 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import { DatasetVolumesTable, VolumeMetaBlock } from "./VolumeMeta";
+import type { AnnotationTask } from "../types/task";
+import {
+  AnnotationTimeCell,
+  DatasetVolumesTable,
+  MetadataDetailsCard,
+  VolumeMetaBlock,
+} from "./VolumeMeta";
 
 describe("shared volume metadata", () => {
   it("uses the same complete field shape and preserves missing voxel size", () => {
@@ -59,5 +66,86 @@ describe("shared volume metadata", () => {
     />);
     expect(screen.getByRole("columnheader", {name: "View"}).className).toContain("action-align-center");
     expect(screen.getByRole("button", {name: "View"}).closest("td")?.className).toContain("action-align-center");
+  });
+});
+
+const task = {
+  id: 40,
+  project: 2,
+  project_title: "Project P",
+  dataset: "Dataset D",
+  dataset_metadata: {},
+  volume_name: "volume",
+  image_location: "/raw/image.tif",
+  region_mask_location: "/roi/region.tif",
+  label_location: "/labels/mask.tif",
+  has_region_mask: true,
+  label_type: "prediction",
+  volume_status: "registered",
+  status: "assigned",
+  task_type: "manual_annotation",
+  review_history: [],
+  can_submit: true,
+} as unknown as AnnotationTask;
+
+const volume = {...task, name: "volume"};
+
+describe("MetadataDetailsCard", () => {
+  it("shows Raw, Region, Labels in order inside the single Metadata card", () => {
+    render(<MemoryRouter><MetadataDetailsCard volume={volume} task={task}/></MemoryRouter>);
+    expect(screen.getAllByRole("heading", {name: "Metadata"})).toHaveLength(1);
+    expect(screen.queryByText("Volume metadata")).toBeNull();
+    expect(screen.queryByText("Volume (source)")).toBeNull();
+    expect(screen.queryByText("Chunk / crop")).toBeNull();
+    const cell = screen.getByText(/Raw · image\.tif/).closest("td")!;
+    expect(within(cell).getAllByText(/Raw|Region|Labels/).map((row) => row.textContent)).toEqual([
+      "Raw · image.tif", "Region · region.tif", "Labels · mask.tif prediction",
+    ]);
+  });
+
+  it("never carries task fields — those belong to the task page's sidebar", () => {
+    render(<MemoryRouter><MetadataDetailsCard volume={volume} task={task}/></MemoryRouter>);
+    const metadata = screen.getByRole("heading", {name: "Metadata"}).closest("section")!;
+    for (const label of ["Assignee", "Priority", "Difficulty", "Deadline", "Instructions"]) {
+      expect(within(metadata).queryByText(label)).toBeNull();
+    }
+    expect(document.querySelectorAll(".details-metadata-card")).toHaveLength(1);
+  });
+
+  it("renders a volume that has no task yet — the artifact exists first", () => {
+    render(<MemoryRouter><MetadataDetailsCard volume={volume}/></MemoryRouter>);
+    expect(screen.getByRole("heading", {name: "Metadata"})).toBeTruthy();
+    expect(screen.getByText("Project #2")).toBeTruthy();
+    expect(screen.getByText(/Raw · image\.tif/)).toBeTruthy();
+  });
+});
+
+/** `unmeasured is never zero` — see docs/product-invariants.md. */
+describe("AnnotationTimeCell", () => {
+  it("shows the measured total with the precise value in a tooltip", () => {
+    render(<AnnotationTimeCell time={{tracked: true, seconds: 8040, display: "2h 14m"}}/>);
+    const cell = screen.getByText("2h 14m");
+    expect(cell.className).not.toContain("annotation-time-unknown");
+    expect(cell.getAttribute("title")).toMatch(/Measured annotation time/);
+  });
+
+  it("shows — for a legacy-exempt task, not a fabricated zero", () => {
+    render(<AnnotationTimeCell time={{tracked: false, seconds: null, display: "—"}}/>);
+    const cell = screen.getByText("—", {selector: ".annotation-time-unknown"});
+    expect(cell.className).toContain("annotation-time-unknown");
+    expect(cell.getAttribute("title")).toMatch(/before time tracking/);
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
+  it("shows 0m for an eligible task nobody has opened yet", () => {
+    render(<AnnotationTimeCell time={{tracked: true, seconds: 0, display: "0m"}}/>);
+    const cell = screen.getByText("0m");
+    expect(cell.className).not.toContain("annotation-time-unknown");
+    expect(cell.getAttribute("title")).toMatch(/Measured annotation time/);
+  });
+
+  it("degrades to the honest unknown when the server sent no time at all", () => {
+    render(<AnnotationTimeCell/>);
+    expect(screen.getByText("—", {selector: ".annotation-time-unknown"})).toBeTruthy();
   });
 });

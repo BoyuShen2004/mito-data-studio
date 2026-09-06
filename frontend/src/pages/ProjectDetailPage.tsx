@@ -7,7 +7,7 @@ import {
   removeProjectMember,
   reviewProject,
 } from "../api/projects";
-import { listAnnotators } from "../api/tasks";
+import { listAnnotators, listProjectTasks } from "../api/tasks";
 import { getDeploymentIdentity } from "../api/deployment";
 import { getProjectStatistics } from "../api/statistics";
 import { deleteProjectForce, projectDependents } from "../api/datasets";
@@ -20,28 +20,36 @@ import DatasetsCard from "../components/DatasetsCard";
 import DeleteButton from "../components/DeleteButton";
 import ProjectEditForm from "../components/ProjectEditForm";
 import AssignmentPlanEditor from "../components/AssignmentPlanEditor";
-import HardCaseList from "../components/HardCaseList";
+import WorkList, { useWorkFilter } from "../components/WorkList";
+import Breadcrumb from "../components/Breadcrumb";
 import StatusBadge from "../components/StatusBadge";
-import ShareControl from "../components/ShareControl";
+import ShareControl, { ShareSummary } from "../components/ShareControl";
 import SectionTabs, { type SectionTab } from "../components/SectionTabs";
+
 import type { Volume } from "../types/volume";
-import type { WorkloadRow } from "../types/project";
+import type { Project, WorkloadRow } from "../types/project";
+import type { HardCase } from "../types/hardCase";
 import { DatasetVolumesTable } from "../components/VolumeMeta";
 
-type ProjectTab = "overview" | "data" | "assign" | "access" | "activity";
+/** Nouns, not verbs — "Assign" was the odd one out and is now a bulk action
+ * inside Tasks; "Activity" was a junk drawer and its two halves went to
+ * Overview (workload) and Cases (hard cases). */
+type ProjectTab = "overview" | "data" | "tasks" | "cases" | "people" | "settings";
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
   const projectId = Number(id);
-  const { isManager, isRequester, user } = useAuth();
+  const { isManager, user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const summary = useAsync(() => getProjectSummary(projectId), [projectId]);
   const volumes = useAsync(() => listProjectVolumes(projectId), [projectId]);
   const deployment = useAsync(getDeploymentIdentity, []);
+  // Loaded at page level because the tab strip shows the open count; the
+  // rows themselves are the same payload the Cases tab renders.
+  const hardCases = useAsync(() => listHardCases({ project: projectId }), [projectId]);
 
   const [reviewing, setReviewing] = useState(false);
-  const [editing, setEditing] = useState(false);
 
   const reloadAll = () => {
     summary.reload();
@@ -67,27 +75,27 @@ export default function ProjectDetailPage() {
 
   const { project, progress, workload } = summary.data;
   const reviewed = project.manager_reviewed;
-  const tabs: SectionTab<ProjectTab>[] = isManager
-    ? [
-        { id: "overview", label: "Overview" },
-        { id: "data", label: "Data", count: project.volume_count },
-        { id: "assign", label: "Assign", count: project.task_count },
-        { id: "access", label: "Access" },
-        { id: "activity", label: "Activity" },
-      ]
-    : [
-        { id: "overview", label: "Overview" },
-        { id: "data", label: "Data", count: project.volume_count },
-        { id: "activity", label: "Activity" },
-      ];
+  const canEditProject = isManager || project.created_by === user?.id;
+  const tabs: SectionTab<ProjectTab>[] = [
+    { id: "overview", label: "Overview" },
+    { id: "data", label: "Data", count: project.volume_count },
+    { id: "tasks", label: "Tasks", count: project.task_count },
+    { id: "cases", label: "Cases", count: hardCases.data?.filter((row) => row.status === "open").length },
+    ...(isManager ? [{ id: "people" as const, label: "People" }] : []),
+    ...(canEditProject ? [{ id: "settings" as const, label: "Settings" }] : []),
+  ];
   const requested = searchParams.get("tab") as ProjectTab | null;
   const active = tabs.some((tab) => tab.id === requested)
     ? requested as ProjectTab
     : "overview";
+  // A tab switch drops the previous list's filters: a stale `?assignee=` from
+  // Tasks would otherwise hide every row on Cases.
   const selectTab = (tab: ProjectTab) => setSearchParams({ tab });
 
   return (
     <div className="project-page">
+      <Breadcrumb items={[{ label: "Projects", to: "/projects" }, { label: project.title }]} />
+
       <header className="project-header row spread">
         <div>
           <div className="row project-title-line"><h1>{project.title}</h1><StatusBadge value={project.status} /></div>
@@ -96,33 +104,7 @@ export default function ProjectDetailPage() {
             {project.annotation_type.replace(/_/g, " ")} · {project.annotation_target} · deadline {project.deadline ?? "—"}
           </p>
         </div>
-        <div className="row project-header-actions">
-          {isManager && <ShareControl scope="project" projectId={project.id} />}
-          {(isManager || project.created_by === user?.id) && <button
-            type="button"
-            className="secondary"
-            onClick={() => setEditing((v) => !v)}
-          >
-            {editing ? "Close" : "Edit project"}
-          </button>}
-          {(isManager || project.created_by === user?.id) && <DeleteButton
-            label={`project "${project.title}"`}
-            dependents={() => projectDependents(projectId)}
-            onDelete={(force) => deleteProjectForce(projectId, force)}
-            onDone={() => navigate("/projects")}
-          />}
-        </div>
       </header>
-
-      {editing && (
-        <ProjectEditForm
-          project={project}
-          onSaved={() => {
-            setEditing(false);
-            summary.reload();
-          }}
-        />
-      )}
 
       <SectionTabs tabs={tabs} active={active} onChange={selectTab} label="Project sections" sticky />
 
@@ -132,15 +114,24 @@ export default function ProjectDetailPage() {
           {deployment.data?.features.FEATURE_DASHBOARDS === true
             ? <ProjectOperationalStatistics projectId={projectId} />
             : <ProjectSummaryCard progress={progress} />}
-          <div className="next-actions row">
-            <span className="eyebrow">Next</span>
-            <button type="button" className="secondary" onClick={() => selectTab("data")}>Open data</button>
-            {isManager && reviewed && <button type="button" className="secondary" onClick={() => selectTab("assign")}>Assign work</button>}
-            {isRequester && <Link to={`/register-data?project=${projectId}`}><button type="button">Register more data</button></Link>}
-          </div>
+          {isManager && <WorkloadTable workload={workload} />}
+          {/* Overview reports what is shared; the buttons that change it are
+              in Settings. */}
+          {isManager && <section className="section-block">
+            <div className="section-heading"><h2>Public access</h2></div>
+            <ShareSummary scope="project" projectId={projectId} />
+          </section>}
         </>}
 
         {active === "data" && <>
+          <div className="row spread section-heading">
+            <div><h2>Data</h2><p className="muted">Datasets and the volumes registered into them.</p></div>
+            {/* Only the roles `/register-data` actually admits; anyone else
+                would be bounced straight back home by the route guard. */}
+            {canEditProject && (
+              <Link to={`/register-data?project=${projectId}`}><button type="button">Add data</button></Link>
+            )}
+          </div>
           <DatasetsCard datasets={project.datasets ?? []} volumes={volumes.data ?? []} projectId={projectId} onChanged={reloadAll} />
           {(volumes.data ?? []).some((volume) => !volume.dataset) && <section className="section-block">
             <div className="section-heading"><h2>Ungrouped volumes</h2><p className="muted">Volumes registered before dataset grouping was available.</p></div>
@@ -148,31 +139,33 @@ export default function ProjectDetailPage() {
           </section>}
         </>}
 
-        {active === "assign" && isManager && <section className="section-block">
-          <div className="section-heading"><h2>Assignment &amp; task metadata</h2><p className="muted">Push one assignee per volume and set task priority, difficulty, deadline, or instructions.</p></div>
-          {!reviewed ? <div className="empty-state">Approve this project in Overview before assigning work.</div> : (
-            <AssignmentPlanEditor
-              projectId={projectId}
-              projectTitle={project.title}
-              workingTeamId={project.working_team}
-              projectDeadline={project.deadline}
-              onSaved={reloadAll}
-            />
-          )}
-        </section>}
+        {active === "tasks" && (
+          <ProjectTasks
+            projectId={projectId}
+            projectTitle={project.title}
+            workingTeamId={project.working_team}
+            projectDeadline={project.deadline}
+            reviewed={reviewed}
+            isManager={isManager}
+            onSaved={reloadAll}
+          />
+        )}
 
-        {active === "access" && isManager && <>
-          <section className="section-block access-share-note">
-            <div><h2>Public access</h2><p className="muted">The compact Share control remains in the project header so its state is visible from every pane.</p></div>
-          </section>
+        {active === "cases" && <ProjectHardCases cases={hardCases} />}
+
+        {active === "people" && isManager && <>
           <ProjectMembers projectId={projectId} />
           <p className="muted">Team eligibility is managed in <Link to="/people">People</Link>.</p>
         </>}
 
-        {active === "activity" && <>
-          <ProjectHardCases projectId={projectId} />
-          {isManager && <WorkloadTable workload={workload} />}
-        </>}
+        {active === "settings" && canEditProject && (
+          <ProjectSettings
+            project={project}
+            isManager={isManager}
+            onSaved={summary.reload}
+            onDeleted={() => navigate("/projects")}
+          />
+        )}
       </main>
     </div>
   );
@@ -307,36 +300,180 @@ function ProjectOperationalStatistics({ projectId }: { projectId: number }) {
   );
 }
 
-/** Hard cases flagged on this project, newest first. Same list body as the
- * `/hard-cases` inbox — the project page is just a pre-filtered view of it. */
-function ProjectHardCases({ projectId }: { projectId: number }) {
-  const cases = useAsync(() => listHardCases({ project: projectId }), [projectId]);
-  const rows = cases.data ?? [];
-  const open = rows.filter((c) => c.status === "open");
+/** Hard cases flagged on this project — the same `WorkList` the task list and
+ * the personal home use, with the project scope applied at the endpoint and
+ * state/category/author narrowed in the browser. */
+function ProjectHardCases({ cases }: { cases: AsyncState<HardCase[]> }) {
+  const [filter, setFilter] = useWorkFilter();
 
   return (
     <section className="section-block">
-      <div className="row spread">
-        <h2 style={{ margin: 0 }}>Hard cases ({open.length})</h2>
-        <Link to="/hard-cases">
-          <button type="button" className="secondary">
-            All hard cases
-          </button>
-        </Link>
-      </div>
-      {cases.loading ? (
-        <p className="muted">Loading…</p>
-      ) : cases.error ? (
+      <div className="section-heading"><h2>Cases</h2><p className="muted">Labels the team flagged as hard, and what was decided about them.</p></div>
+      {cases.error ? (
         <div className="error">{cases.error}</div>
       ) : (
-        <HardCaseList
-          cases={rows}
+        <WorkList
+          kind="case"
+          rows={cases.data ?? []}
+          loading={cases.loading}
           showProject={false}
+          filter={filter}
+          onFilterChange={setFilter}
           onChanged={cases.reload}
-          emptyText="Nobody has flagged a hard case on this project yet."
+          label="Hard cases on this project"
+          emptyText={
+            <>Nobody has flagged a hard case on this project yet. They are raised from the Annotate toolbar with “Record hard case”.</>
+          }
         />
       )}
     </section>
+  );
+}
+
+/**
+ * The project's work list, and the assignment editor as a bulk action inside
+ * it rather than a tab of its own.
+ *
+ * "Assign volumes" with rows ticked edits exactly those; with nothing ticked
+ * it opens the whole project's plan, which is what the old Assign tab did.
+ */
+function ProjectTasks({
+  projectId,
+  projectTitle,
+  workingTeamId,
+  projectDeadline,
+  reviewed,
+  isManager,
+  onSaved,
+}: {
+  projectId: number;
+  projectTitle: string;
+  workingTeamId: number | null;
+  projectDeadline: string | null;
+  reviewed: boolean;
+  isManager: boolean;
+  onSaved: () => void;
+}) {
+  const tasks = useAsync(() => listProjectTasks(projectId), [projectId]);
+  const [filter, setFilter] = useWorkFilter();
+  const [selected, setSelected] = useState<number[]>([]);
+  const [assigning, setAssigning] = useState<number[] | null>(null);
+  const canAssign = isManager && reviewed;
+  // A plain helper, not a component: one declared inside a render body gets a
+  // new type identity every render and remounts the button under the click.
+  const assignButton = (ids: number[]) => (
+    <button type="button" onClick={() => setAssigning(ids)}>Assign volumes</button>
+  );
+
+  if (assigning) {
+    return (
+      <section className="section-block">
+        <div className="row spread section-heading">
+          <div>
+            <h2>Assign volumes</h2>
+            <p className="muted">
+              {assigning.length > 0
+                ? `${assigning.length} selected task${assigning.length === 1 ? "" : "s"}.`
+                : "Every task on this project."}{" "}
+              Push one assignee per volume and set priority, difficulty, deadline, or instructions.
+            </p>
+          </div>
+          <button type="button" className="secondary" onClick={() => setAssigning(null)}>
+            Back to tasks
+          </button>
+        </div>
+        <AssignmentPlanEditor
+          projectId={projectId}
+          projectTitle={projectTitle}
+          workingTeamId={workingTeamId}
+          projectDeadline={projectDeadline}
+          restrictToTaskIds={assigning.length > 0 ? assigning : undefined}
+          onSaved={() => {
+            tasks.reload();
+            onSaved();
+          }}
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section className="section-block">
+      <div className="row spread section-heading">
+        <div><h2>Tasks</h2><p className="muted">One task per volume, one assignee each.</p></div>
+        {canAssign && assignButton(selected)}
+      </div>
+      {!reviewed && isManager && (
+        <div className="empty-state">Approve this project in Overview before assigning work.</div>
+      )}
+      {tasks.error ? (
+        <div className="error">{tasks.error}</div>
+      ) : (
+        <WorkList
+          kind="task"
+          rows={tasks.data ?? []}
+          loading={tasks.loading}
+          showProject={false}
+          filter={filter}
+          onFilterChange={setFilter}
+          onChanged={tasks.reload}
+          label="Tasks on this project"
+          selectable={canAssign}
+          selected={selected}
+          onSelectionChange={setSelected}
+          bulkActions={assignButton}
+          emptyText={
+            <>No tasks yet. Register volumes under <strong>Data</strong>, then use <strong>Assign volumes</strong>.</>
+          }
+        />
+      )}
+    </section>
+  );
+}
+
+/** Everything that changes the project itself, in one place: edit, share, and
+ * — quarantined at the bottom — delete. */
+function ProjectSettings({
+  project,
+  isManager,
+  onSaved,
+  onDeleted,
+}: {
+  project: Project;
+  isManager: boolean;
+  onSaved: () => void;
+  onDeleted: () => void;
+}) {
+  return (
+    <>
+      <section className="section-block">
+        <div className="section-heading"><h2>Project details</h2></div>
+        <ProjectEditForm project={project} onSaved={onSaved} />
+      </section>
+
+      {isManager && (
+        <section className="section-block">
+          <div className="section-heading">
+            <h2>Public access</h2>
+            <p className="muted">A public link makes this project readable without an account.</p>
+          </div>
+          <ShareControl scope="project" projectId={project.id} />
+        </section>
+      )}
+
+      <section className="danger-zone">
+        <h2>Danger zone</h2>
+        <p className="muted">
+          Deleting a project removes its datasets, volumes, tasks and hard cases. There is no undo.
+        </p>
+        <DeleteButton
+          label={`project "${project.title}"`}
+          dependents={() => projectDependents(project.id)}
+          onDelete={(force) => deleteProjectForce(project.id, force)}
+          onDone={onDeleted}
+        />
+      </section>
+    </>
   );
 }
 

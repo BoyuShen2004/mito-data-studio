@@ -1,59 +1,40 @@
 import { Link } from "react-router-dom";
 import { listProjects } from "../api/projects";
 import { useAsync } from "../hooks/useAsync";
-import StatusBadge from "../components/StatusBadge";
 
+import WorkList, { useWorkFilter } from "../components/WorkList";
+
+/** Every project, on the same list component the task and case lists use.
+ * `Register data` lives here rather than in the navbar: it is an action, not a
+ * place. */
 export default function ProjectListPage() {
   const { data, loading, error } = useAsync(listProjects, []);
+  const [filter, setFilter] = useWorkFilter();
 
   return (
     <>
       <div className="row spread">
         <h1>Projects</h1>
-        <Link to="/projects/new">
-          <button>+ New project</button>
-        </Link>
+        <div className="row page-actions">
+          <Link to="/register-data">
+            <button type="button" className="secondary">Register data</button>
+          </Link>
+          <Link to="/projects/new">
+            <button type="button">+ New project</button>
+          </Link>
+        </div>
       </div>
-
-      <p className="muted">Create and open project containers here. Register Data handles ingestion; People handles teams and assignment eligibility.</p>
 
       {error && <div className="error">{error}</div>}
-      <div className="card">
-        {loading ? (
-          <p className="muted">Loading…</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Status</th>
-                  <th>Volumes</th>
-                  <th>Tasks</th>
-                  <th>Deadline</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data ?? []).map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <Link to={`/projects/${p.id}`}>{p.title}</Link>
-                    </td>
-                    <td>
-                      <StatusBadge value={p.status} />
-                    </td>
-                    <td>{p.volume_count}</td>
-                    <td>{p.task_count}</td>
-                    <td>{p.deadline ?? "—"}</td>
-                    <td>{new Date(p.created_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <WorkList
+        kind="project"
+        rows={data ?? []}
+        loading={loading}
+        filter={filter}
+        onFilterChange={setFilter}
+        label="Projects"
+        emptyText={<>No projects yet. <Link to="/projects/new">Create the first one</Link>, then register data into it.</>}
+      />
     </>
   );
 }

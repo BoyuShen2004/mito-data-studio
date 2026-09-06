@@ -1,7 +1,10 @@
 import { Fragment, type ReactNode } from "react";
 import { EMPTY_VALUE } from "../emptyValue";
 import { METADATA_FIELDS } from "../metadataFields";
+import type { AnnotationTimeSummary } from "../api/timing";
 import type { DatasetMetadata } from "../types/project";
+import { durationTitle, formatDuration } from "../time";
+import type { AnnotationTask } from "../types/task";
 import RegionCoverage from "./RegionCoverage";
 import StatusBadge from "./StatusBadge";
 
@@ -145,4 +148,59 @@ export function DatasetVolumesTable({
       </tr>)}</tbody>
     </table>
   </div>;
+}
+
+type DetailVolume = VolumeMetaLike & {
+  project: number;
+  dataset_name?: string;
+  image_location?: string;
+  region_mask_location?: string;
+  label_location?: string;
+  status?: string;
+};
+
+const shortLocation = (value?: string) => (value ? value.split(/[\\/]/).pop() || value : "—");
+
+export function MetadataDetailsCard({
+  volume,
+  task,
+  projectTitle,
+  datasetMetadata,
+}: {
+  volume: DetailVolume;
+  /** Absent on a volume nobody has been assigned yet — the artifact exists
+   * before the work item does, and the page must still render it. */
+  task?: AnnotationTask | null;
+  projectTitle?: string;
+  datasetMetadata?: DatasetMetadata;
+}) {
+  const image = volume.image_location || task?.image_location;
+  const region = volume.region_mask_location || task?.region_mask_location;
+  const label = volume.label_location || task?.label_location;
+  return <section className="card details-metadata-card">
+    <h3>Metadata</h3>
+    <VolumeMetaBlock volume={volume} scientificMetadata={datasetMetadata ?? task?.dataset_metadata}/>
+    <table><tbody>
+      <tr><th>Project</th><td>{projectTitle || task?.project_title || `Project #${volume.project}`}</td></tr>
+      <tr><th>Dataset</th><td>{volume.dataset_name || task?.dataset || "—"}</td></tr>
+      <tr><th>Data layers</th><td className="data-layer-lines">
+        <div title={image}>Raw · {shortLocation(image)}</div>
+        {volume.has_region_mask && <div title={region}>Region · {shortLocation(region)}</div>}
+        <div title={label}>Labels · {shortLocation(label)} <StatusBadge value={volume.label_type || task?.label_type || "none"}/></div>
+      </td></tr>
+      <tr><th>Status</th><td>{volume.status || task?.volume_status || "—"}</td></tr>
+    </tbody></table>
+  </section>;
+}
+
+/** Cumulative annotation time, with the precise value in a tooltip. */
+export function AnnotationTimeCell({time}: {time?: AnnotationTimeSummary}) {
+  const tracked = time?.tracked ?? false;
+  const seconds = tracked ? time?.seconds ?? 0 : null;
+  return <span
+    className={`annotation-time${tracked ? "" : " annotation-time-unknown"}`}
+    title={durationTitle(seconds, {legacy: !tracked})}
+  >
+    {time?.display ?? formatDuration(seconds)}
+  </span>;
 }

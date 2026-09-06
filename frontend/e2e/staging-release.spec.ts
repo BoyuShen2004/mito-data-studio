@@ -9,7 +9,8 @@ const restoredVolumeId = Number(process.env.MITO_STAGING_WORKER_B_VOLUME_ID);
 async function login(
   page: Page,
   credentials: { username?: string; password?: string } = { username, password },
-  expectedHome: RegExp = /\/manager$/,
+  // One personal home for every role now — the role decides the tabs, not the URL.
+  expectedHome: RegExp = /\/$/,
 ) {
   if (!credentials.username || !credentials.password) {
     throw new Error("Protected staging test credentials were not supplied");
@@ -27,14 +28,16 @@ test("restored release exposes manager collaboration workflows", async ({ page }
 
   await page.goto("/projects");
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
-  await expect(page.locator("tbody tr").first()).toBeVisible();
+  await expect(page.locator(".work-row").first()).toBeVisible();
 
   await page.goto("/people");
   await expect(page.getByRole("heading", { name: "People" })).toBeVisible();
 
-  await page.goto("/hard-cases");
-  await expect(page.getByRole("heading", { name: "Hard Cases" })).toBeVisible();
-  await expect(page.getByText(/^Open \([1-9][0-9]*\)$/)).toBeVisible();
+  // Hard cases are no longer a top-level silo: Home surfaces the ones that
+  // concern you, and a project's Cases tab holds its own.
+  await page.goto("/");
+  await page.getByRole("tab", { name: /Open cases/ }).click();
+  await expect(page.getByRole("button", { name: /[0-9]+ Open/ })).toBeVisible();
 });
 
 test("integrated organization, team, assignment, review, and region workflows", async ({ browser }) => {
@@ -66,7 +69,7 @@ test("integrated organization, team, assignment, review, and region workflows", 
   const annotatorPage = await annotatorContext.newPage();
   await Promise.all([
     login(managerPage, manager),
-    login(annotatorPage, annotator, /\/annotator$/),
+    login(annotatorPage, annotator),
   ]);
 
   // The existing public SPA stays intact; the integrated collaboration data
@@ -91,13 +94,14 @@ test("integrated organization, team, assignment, review, and region workflows", 
 
   // Auto-fill remains a manager-side draft until saved. The annotator then
   // opens the one task already pushed to them through My Tasks.
-  await managerPage.goto(`/projects/${projectId}`);
+  await managerPage.goto(`/projects/${projectId}?tab=tasks`);
+  await managerPage.getByRole("button", { name: "Assign volumes" }).first().click();
   await managerPage.getByRole("button", { name: "Auto-fill balanced plan" }).click();
   await expect(managerPage.getByText(/Plan filled|Created [0-9]+ new task/))
     .toBeVisible({ timeout: 30_000 });
 
-  await annotatorPage.goto("/annotator");
-  const assignedRow = annotatorPage.getByRole("row").filter({
+  await annotatorPage.goto("/");
+  const assignedRow = annotatorPage.locator(".work-row").filter({
     hasText: `#${assignedTaskId}`,
   });
   await expect(assignedRow).toBeVisible();
@@ -132,12 +136,18 @@ test("integrated organization, team, assignment, review, and region workflows", 
     return row.id;
   }, assignedTaskId);
 
+  // The old review route still resolves; it redirects onto the task, where the
+  // decision box sits at the end of the timeline.
   await managerPage.goto(`/submissions/${submissionId}/review`);
-  await expect(managerPage.getByRole("heading", { name: `Review submission #${assignedTaskId}` }))
+  await expect(managerPage).toHaveURL(new RegExp(`/tasks/${assignedTaskId}`));
+  await expect(managerPage.getByRole("heading", { name: "Review this submission" }))
     .toBeVisible();
   await managerPage.getByLabel("Comments").fill("v1.1 integrated staging review");
   await managerPage.getByRole("button", { name: "Request revision" }).click();
-  await expect(managerPage).toHaveURL(/\/manager$/);
+  // Deciding leaves you on the task, with the result visible — never a bare
+  // redirect to a role home.
+  await expect(managerPage).toHaveURL(new RegExp(`/tasks/${assignedTaskId}`));
+  await expect(managerPage.getByText(/recorded/)).toBeVisible();
 
   await managerPage.goto(`/viewer/tasks/${regionTaskId}`);
   const regionLayer = managerPage.locator('.canvas-stage > img[aria-hidden="true"]');
@@ -162,8 +172,8 @@ test("reserved second annotator opens the assigned public verification task", as
   };
   const taskId = Number(process.env.MITO_STAGING_WORKER_B_TASK_ID);
   expect(Number.isSafeInteger(taskId)).toBe(true);
-  await login(page, worker, /\/annotator$/);
-  const assignedRow = page.getByRole("row").filter({ hasText: `#${taskId}` });
+  await login(page, worker);
+  const assignedRow = page.locator(".work-row").filter({ hasText: `#${taskId}` });
   await expect(assignedRow).toBeVisible();
   await assignedRow.getByRole("button", { name: "Annotate" }).click();
   await expect(page).toHaveURL(new RegExp(`/editor/tasks/${taskId}$`));
@@ -629,7 +639,7 @@ test("restored annotators preserve distinct-task edits and expose all tool surfa
   const contexts = await Promise.all(workers.map(() => browser.newContext()));
   const pages = await Promise.all(contexts.map((context) => context.newPage()));
   await Promise.all(pages.map((page, index) =>
-    login(page, workers[index], /\/annotator$/),
+    login(page, workers[index]),
   ));
 
   const digest = (page: Page, taskId: number) => page.evaluate(async (id) => {
@@ -765,7 +775,7 @@ test("enabled EfficientSAM and SAM2 execute through the restored browser workflo
   await login(page, {
     username: process.env.MITO_STAGING_WORKER_B_USERNAME,
     password: process.env.MITO_STAGING_WORKER_B_PASSWORD,
-  }, /\/annotator$/);
+  });
   await page.goto(`/editor/tasks/${restoredTaskId}`);
   const overlay = page.locator(".canvas-stage > canvas").first();
   await expect(overlay).toBeVisible({ timeout: 120_000 });

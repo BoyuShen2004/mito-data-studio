@@ -1,19 +1,16 @@
 import { useState } from "react";
 import { displayTaskLayerRange } from "../features/viewer/layerIndex";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { getTask } from "../api/tasks";
 import { submitTask } from "../api/submissions";
 import { useAsync } from "../hooks/useAsync";
 import FileUpload from "../components/FileUpload";
 import StatusBadge from "../components/StatusBadge";
-import { useAuth } from "../auth/AuthContext";
-import { offlineSubmitLabel } from "../components/TaskDetailsCards";
+import { offlineSubmitLabel } from "../labels";
 
 export default function SubmitTaskPage() {
   const { id } = useParams();
   const taskId = Number(id);
-  const navigate = useNavigate();
-  const {isManager} = useAuth();
   const { data: t, loading } = useAsync(() => getTask(taskId), [taskId]);
 
   const [file, setFile] = useState<File | null>(null);
@@ -35,8 +32,10 @@ export default function SubmitTaskPage() {
       form.append("label_file", file);
       form.append("notes", notes);
       const sub = await submitTask(taskId, form);
+      // No timeout-then-navigate: a page that can show its own result should.
+      // The task page is one deliberate click away, with the new round already
+      // in its timeline.
       setResult(`Submitted. QC: ${sub.qc_status}.`);
-      setTimeout(() => navigate(isManager && t ? `/volumes/${t.volume}` : `/tasks/${taskId}`), 1200);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
@@ -58,7 +57,14 @@ export default function SubmitTaskPage() {
       <div className="card">
         {error && <div className="error">{error}</div>}
         {result ? (
-          <p>{result}</p>
+          <>
+            <p>{result}</p>
+            <div className="row">
+              <Link to={`/tasks/${taskId}`}>
+                <button type="button">Back to task #{taskId}</button>
+              </Link>
+            </div>
+          </>
         ) : (
           <form onSubmit={submit}>
             <FileUpload

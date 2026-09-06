@@ -14,10 +14,9 @@ import type {
   PlanEntryTask,
 } from "../types/task";
 import StatusBadge from "./StatusBadge";
-import { AnnotationTimeCell } from "./TaskDetailsCards";
 import RegionCoverage from "./RegionCoverage";
 import TeamEditor from "./teams/TeamEditor";
-import { formatShape, formatVoxelSize } from "./VolumeMeta";
+import { AnnotationTimeCell, formatShape, formatVoxelSize } from "./VolumeMeta";
 
 // A <select> over 1–5 levels. Falls back to showing an unexpected stored value
 // so an out-of-range number is never silently changed just by opening the row.
@@ -132,12 +131,17 @@ export default function AssignmentPlanEditor({
   workingTeamId,
   projectDeadline = null,
   onSaved,
+  restrictToTaskIds,
 }: {
   projectId: number;
   projectTitle: string;
   workingTeamId: number | null;
   projectDeadline?: string | null;
   onSaved?: () => void;
+  /** When the manager reached this from a selection in the Tasks list, edit
+   * only those rows. Undefined means the whole project, which is what the
+   * "Assign volumes" button with nothing selected opens. */
+  restrictToTaskIds?: number[];
 }) {
   // Ensures a task exists for every volume (creating any missing ones) and
   // lists them — no annotators proposed here, so the manager sees every
@@ -184,13 +188,24 @@ export default function AssignmentPlanEditor({
     setRowsLoaded(true);
   }
 
+  // Every row `listPlanRows` returned, narrowed to the manager's selection.
+  // Auto-fill, the dirty set and the table all read this, so a bulk edit
+  // launched from selected rows can never quietly touch a row off screen.
+  const scopedOrder = useMemo(
+    () =>
+      restrictToTaskIds === undefined
+        ? order
+        : order.filter((id) => restrictToTaskIds.includes(id)),
+    [order, restrictToTaskIds],
+  );
+
   const dirtyIds = useMemo(
-    () => order.filter((id) => original[id] && !rowsEqual(draft[id], original[id])),
-    [order, draft, original],
+    () => scopedOrder.filter((id) => original[id] && !rowsEqual(draft[id], original[id])),
+    [scopedOrder, draft, original],
   );
   const datasetGroups = useMemo(() => {
     const grouped = new Map<string, { name: string; ids: number[] }>();
-    for (const id of order) {
+    for (const id of scopedOrder) {
       const task = meta[id];
       if (!task) continue;
       const key = task.dataset_id == null ? "ungrouped" : String(task.dataset_id);
@@ -202,7 +217,7 @@ export default function AssignmentPlanEditor({
       grouped.set(key, group);
     }
     return Array.from(grouped.entries()).map(([key, group]) => ({ key, ...group }));
-  }, [order, meta]);
+  }, [scopedOrder, meta]);
 
   const patch = (id: number, changes: Partial<DraftRow>) => {
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...changes } }));
@@ -411,7 +426,7 @@ export default function AssignmentPlanEditor({
         )}
       </div>
 
-      {order.length === 0 ? (
+      {scopedOrder.length === 0 ? (
         <p className="muted">
           This project has no volumes yet — register data before building an
           assignment plan.

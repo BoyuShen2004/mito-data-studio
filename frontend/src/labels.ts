@@ -101,3 +101,24 @@ export const priorityLabel = (v: number | null | undefined) =>
   levelLabel(PRIORITY_LEVELS, v);
 export const difficultyLabel = (v: number | null | undefined) =>
   levelLabel(DIFFICULTY_LEVELS, v);
+
+// --- Submission channel ----------------------------------------------------
+//
+// Two channels exist and they are never the same operation: in-app submits the
+// server-side working draft, file upload submits a file the annotator built
+// elsewhere. Naming them identically everywhere is what keeps the review page,
+// the timeline and the history from drifting.
+
+export const submissionChannelLabel = (source?: string) =>
+  source === "inapp"
+    ? "Online (in-app)"
+    : source === "upload"
+      ? "Offline (file upload)"
+      : "Unknown channel";
+
+/** Offline round already taken? `submission_count` counts in-app submits too,
+ * so keying the button off it made the task page and the upload page disagree. */
+export const offlineSubmitLabel = (task: { review_history: { source: string }[] }) =>
+  task.review_history.some((round) => round.source === "upload")
+    ? "Submit a new label file"
+    : "Submit completed label";

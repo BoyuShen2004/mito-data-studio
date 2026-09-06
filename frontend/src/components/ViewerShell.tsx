@@ -22,12 +22,19 @@ export default function ViewerShell({
   topbar,
   children,
   standalone = false,
+  embedded = false,
 }: {
   /** Contents of the `.editor-topbar` strip; omit for no topbar. */
   topbar?: ReactNode;
   children: ReactNode;
   /** True when the page is NOT inside `Layout fullBleed` (no app navbar). */
   standalone?: boolean;
+  /** True when the canvas is a block *within* an ordinary scrolling page (the
+   * hard-case page, where the discussion below it is the rest of the page).
+   * `.viewer-embedded` supplies the same definite height contract as
+   * `.full-bleed-standalone`, bounded instead of `100vh` — same reason, same
+   * shape, no third CSS fork. */
+  embedded?: boolean;
 }) {
   const shell = (
     <div className="editor-shell">
@@ -35,7 +42,9 @@ export default function ViewerShell({
       <div className="editor-body">{children}</div>
     </div>
   );
-  return standalone ? <div className="full-bleed-standalone">{shell}</div> : shell;
+  if (standalone) return <div className="full-bleed-standalone">{shell}</div>;
+  if (embedded) return <div className="viewer-embedded">{shell}</div>;
+  return shell;
 }
 
 /** Shell-shaped placeholder for a page's loading / error state — keeps the

@@ -3690,3 +3690,423 @@ button.dev-reset-btn:hover:not(:disabled) {
   gap: 0.3rem;
   margin: 0.6rem 0;
 }
+
+/* --- The work list ------------------------------------------------------ */
+/* One list for tasks, hard cases and projects. Row anatomy, in visual weight:
+   state dot · title · #id · one-line most-recent-event · chips · person.
+   Every filter narrows rows already in memory — nothing here fetches. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.work-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  overflow: hidden;
+}
+.work-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: #f7f8fa;
+}
+.work-list-counts {
+  display: flex;
+  gap: 1rem;
+}
+.work-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.1rem;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.work-count:hover {
+  color: var(--text);
+  background: transparent;
+}
+.work-count-active {
+  color: var(--text);
+}
+.work-count-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--ok);
+}
+.work-list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.work-filter select,
+.work-filter input {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.82rem;
+}
+.work-filter input[type="search"] {
+  width: 11rem;
+}
+.work-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.work-row {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.work-row:last-child {
+  border-bottom: 0;
+}
+.work-row-dim {
+  opacity: 0.62;
+}
+.work-state-dot {
+  flex: 0 0 auto;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-top: 0.32rem;
+  border-radius: 999px;
+  background: var(--muted);
+}
+.work-state-open,
+.work-state-assigned,
+.work-state-in_progress,
+.work-state-active,
+.work-state-in_annotation {
+  background: var(--ok);
+}
+.work-state-submitted,
+.work-state-revision_requested,
+.work-state-in_review {
+  background: var(--warn);
+}
+.work-state-approved,
+.work-state-completed,
+.work-state-delivered,
+.work-state-resolved {
+  background: #8250df;
+}
+.work-state-rejected,
+.work-state-cancelled {
+  background: var(--danger);
+}
+.work-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.work-row-title-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+}
+.work-row-title {
+  color: var(--text);
+  font-weight: 600;
+}
+.work-row-title:hover {
+  color: var(--accent);
+}
+.work-row-subtitle {
+  margin-top: 0.15rem;
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-chip {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.work-chip-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.work-row-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+.work-row-number {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+.work-row-person {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.work-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+.work-list-empty {
+  padding: 1.6rem 1rem;
+  text-align: center;
+}
+@media (max-width: 760px) {
+  .work-row {
+    flex-wrap: wrap;
+  }
+  .work-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+.work-select-all,
+.work-row-select {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.28rem;
+}
+.work-bulk-bar {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  font-size: 0.85rem;
+}
+.share-summary {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.danger-zone {
+  margin-top: 2rem;
+  padding: 1rem;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+}
+.danger-zone h2 {
+  margin: 0 0 0.3rem;
+  color: var(--danger);
+  font-size: 1rem;
+}
+
+/* --- Breadcrumb --------------------------------------------------------- */
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.breadcrumb-sep {
+  color: var(--border);
+}
+.breadcrumb [aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* --- Task page: the pull request ---------------------------------------- */
+/* Timeline is the page; metadata sits beside it so it never competes with the
+   narrative, and the action box is at the end of the history it concludes. */
+.task-header,
+.volume-header {
+  margin-bottom: 0.75rem;
+}
+.task-title-line {
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.task-title-line h1 {
+  margin: 0;
+}
+.task-number {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+}
+.task-primary-actions {
+  gap: 0.4rem;
+}
+.task-conversation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+  gap: 1.5rem;
+  align-items: start;
+}
+.task-timeline {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0 0 0 1rem;
+  border-left: 2px solid var(--border);
+}
+.timeline-event {
+  position: relative;
+  padding: 0.45rem 0 0.45rem 0.75rem;
+}
+.timeline-event::before {
+  content: "";
+  position: absolute;
+  left: -1.42rem;
+  top: 0.82rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  border: 2px solid var(--card);
+  background: var(--muted);
+}
+.timeline-event-submitted::before {
+  background: var(--accent);
+}
+.timeline-event-review::before,
+.timeline-event-approved::before {
+  background: var(--ok);
+}
+.timeline-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.timeline-title {
+  font-weight: 600;
+}
+.timeline-when {
+  font-size: 0.78rem;
+}
+.timeline-body {
+  margin: 0.3rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  white-space: pre-wrap;
+}
+.review-box {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--card);
+}
+.review-box h3 {
+  margin-top: 0;
+}
+.review-box-idle,
+.review-box-done {
+  border-color: var(--border);
+}
+.review-box-comments {
+  margin: 0.75rem 0;
+}
+.task-sidebar,
+.volume-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--border);
+}
+.sidebar-field .eyebrow {
+  margin-bottom: 0.15rem;
+}
+.sidebar-instructions {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.sidebar-cases {
+  gap: 0.4rem;
+}
+.round-details {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.round-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* --- Volume page: the artifact ------------------------------------------ */
+.volume-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem;
+  gap: 1.5rem;
+  align-items: start;
+}
+.volume-sidebar {
+  padding-top: 0.2rem;
+}
+
+@media (max-width: 900px) {
+  .task-conversation,
+  .volume-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .task-sidebar,
+  .volume-sidebar {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+}
+
+/* --- A canvas inside an ordinary page ----------------------------------- */
+/* Same height contract as `.full-bleed-standalone` — `.editor-shell` is
+   `height: 100%` and needs a definite-height ancestor — but bounded, so the
+   hard-case discussion below it is part of the same scrolling page. */
+.viewer-embedded {
+  height: min(68vh, 620px);
+  min-height: 20rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.hard-case-page-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16rem;
+  gap: 1.5rem;
+  align-items: start;
+  margin-top: 1.25rem;
+}
+.hard-case-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+@media (max-width: 900px) {
+  .hard-case-page-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

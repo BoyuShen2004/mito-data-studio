@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HardCase } from "../types/hardCase";
-import HardCaseList from "./HardCaseList";
+import WorkList from "./WorkList";
 import HardCaseNotesModal from "./HardCaseNotesModal";
 
 const api = vi.hoisted(() => ({
@@ -14,6 +14,9 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/hardCases", () => api);
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({ user: { id: 5 }, isManager: false }),
+}));
 
 const hardCase: HardCase = {
   id: 8,
@@ -96,10 +99,10 @@ describe("HardCaseNotesModal", () => {
     await screen.findByText("No replies yet.");
   });
 
-  it("opens the shared modal from the list Note button", async () => {
+  it("opens the shared modal from the work list's Note button", async () => {
     render(
       <MemoryRouter>
-        <HardCaseList cases={[hardCase]} />
+        <WorkList kind="case" rows={[hardCase]} />
       </MemoryRouter>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Note" }));

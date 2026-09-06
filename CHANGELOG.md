@@ -5,6 +5,57 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+### Changed
+
+- **The interface is reorganised around one primitive: a unit of work.** A task
+  is a proposed change that gets submitted and reviewed, a hard case is a
+  numbered, stateful, discussable thing, and a project contains both. They now
+  look like it.
+
+  - **One list, everywhere.** `WorkList` replaces four separate implementations
+    of "rows of work" — the task table, the hard-case list, and the inline
+    tables on the project list and the manager dashboard. Every row carries a
+    state dot with an accessible label, a title, `#id`, the most recent event
+    and who did it, and its person. Every list can be filtered by state,
+    assignee, author, category and free text, all client-side over rows already
+    fetched, with the filter held in the query string so a narrowed view is a
+    link you can send.
+  - **One home.** `/` is the personal home for every role, replacing the
+    manager, annotator and requester dashboards. Each tab is a saved query over
+    the same list, using the same calls those three pages already made. The
+    manager's left "attention rail", which duplicated two of its own tabs as
+    links, is gone: the count on a tab is the signal.
+  - **A project is six nouns.** Overview · Data · Tasks · Cases · People ·
+    Settings. "Assign" was a verb among nouns and is now a bulk action inside
+    the Tasks list, working on the rows you select. "Activity" was a junk
+    drawer: its hard cases became Cases, its workload table moved to Overview.
+  - **A task page is a timeline with a sidebar**, and the thing you must do next
+    is at the end of it. Its history is assembled from fields the task API
+    already returned — no new endpoint, no new field. The canvas is a sibling
+    tab rather than something further down.
+  - **A hard case page is the same skeleton**: title, `#id`, state, the
+    discussion with its reply box at the end, and metadata in a sidebar, with
+    the canvas above.
+  - **A submission is reviewed on its task's own page.** Reviewing on a separate
+    route meant reading the history in one place and acting in another, then
+    being redirected to a dashboard root — seven times, for a manager working
+    through eight submissions. `/submissions/:id/review` still resolves; it
+    redirects onto the task.
+  - **Actions moved to the scope of what they change.** Page headers carry
+    identity and navigation only. Edit and Share live in Settings, Delete in a
+    bordered Danger zone, "Add data" is one primary button on the Data tab, and
+    volume metadata is edited in place instead of behind an edit mode. `View`
+    and `Annotate` remain the most prominent control on a task page.
+  - **Every detail page carries a breadcrumb**, and no action redirects to a
+    role home. Reviewing leaves you on the task with the result visible and the
+    next waiting submission one click away.
+  - The navbar is four entries — Home, Projects, People, and you. `Register
+    Data` moved to the pages that own it, and Hard Cases left the top level: a
+    case belongs to a project, and Home surfaces the ones that concern you.
+
+  No model, table, column or migration changed. Everything above is presentation
+  and list/detail routing over data the API already returned.
+
 ### Added
 
 - **Hard cases carry a category.** Recording one now asks what kind of problem
