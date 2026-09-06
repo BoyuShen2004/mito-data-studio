@@ -77,6 +77,7 @@ from .services import (
     review_submission,
     set_hard_case_revoked,
     set_hard_case_status,
+    set_hard_case_category,
     update_hard_case_note,
     set_label_lifecycle_action,
     set_label_slice_ids,
@@ -2093,27 +2094,34 @@ class HardCaseCreateView(APIView):
                 status=400,
             )
         note = str(request.data.get("note") or "").strip()
+        category = str(request.data.get("category") or "").strip()
         if len(note) > 1000:
             return Response(
                 {"detail": "Hard-case notes must be 1,000 characters or fewer."},
                 status=400,
             )
-        case = create_hard_case(
-            task=task,
-            user=request.user,
-            label_id=label_id,
-            note=note,
-            **(
-                {
-                    "view_z": view["z"],
-                    "view_y": view["y"],
-                    "view_x": view["x"],
-                    "view_axis": view["axis"],
-                }
-                if (view := _parse_optional_view_location(request.data))
-                else {}
-            ),
-        )
+        try:
+            case = create_hard_case(
+                task=task,
+                user=request.user,
+                label_id=label_id,
+                note=note,
+                **(
+                    {
+                        "view_z": view["z"],
+                        "view_y": view["y"],
+                        "view_x": view["x"],
+                        "view_axis": view["axis"],
+                    }
+                    if (view := _parse_optional_view_location(request.data))
+                    else {}
+                ),
+                category=category,
+            )
+        except ValueError as exc:
+            # An unknown category is a client bug; refusing it beats
+            # recording a case whose reason silently vanished.
+            return Response({"detail": str(exc)}, status=400)
         return Response(
             HardCaseSerializer(case, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -2151,6 +2159,11 @@ class HardCaseListView(generics.ListAPIView):
         case_status = params.get("status")
         if case_status:
             qs = qs.filter(status=case_status)
+        category = params.get("category")
+        if category:
+            # "uncategorised" is a real thing to filter for — cases recorded
+            # before the field existed, and ones nobody has filed yet.
+            qs = qs.filter(category="" if category == "uncategorised" else category)
         return qs
 
 
@@ -2205,7 +2218,13 @@ class HardCaseStatusView(APIView):
 
 
 class HardCaseNoteView(APIView):
-    """``PATCH /api/hard-cases/<pk>/note/`` — edit the primary short note."""
+    """``PATCH /api/hard-cases/<pk>/note/`` — edit a case's note and category.
+
+    One endpoint for the two editable fields rather than two: they are edited
+    from the same dialog, by the same people, under the same permission, and
+    splitting them would make a single "save" into two round trips that can
+    half-fail. The URL keeps its original name so existing callers still work.
+    """
 
     permission_classes = [IsAuthenticated]
 
@@ -2213,10 +2232,23 @@ class HardCaseNoteView(APIView):
         case = get_object_or_404(
             HardCase.objects.select_related("task", "project", "created_by"), pk=pk
         )
-        if "note" not in request.data:
-            return Response({"detail": "note is required."}, status=400)
+        has_note = "note" in request.data
+        has_category = "category" in request.data
+        if not (has_note or has_category):
+            return Response(
+                {"detail": "note or category is required."}, status=400
+            )
         try:
-            update_hard_case_note(case, user=request.user, note=str(request.data.get("note") or ""))
+            if has_note:
+                update_hard_case_note(
+                    case, user=request.user, note=str(request.data.get("note") or "")
+                )
+            if has_category:
+                set_hard_case_category(
+                    case,
+                    user=request.user,
+                    category=str(request.data.get("category") or ""),
+                )
         except PermissionError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:

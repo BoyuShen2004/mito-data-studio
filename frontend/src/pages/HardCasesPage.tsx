@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import {
+  HARD_CASE_CATEGORIES,
+  UNCATEGORISED_LABEL,
+} from "../features/viewer/hardCaseCategory";
 import { listHardCases } from "../api/hardCases";
 import { useAsync } from "../hooks/useAsync";
 import HardCaseList from "../components/HardCaseList";
@@ -14,11 +18,34 @@ import HardCaseList from "../components/HardCaseList";
  */
 export default function HardCasesPage() {
   const [showResolved, setShowResolved] = useState(false);
+  const [category, setCategory] = useState("");
   const cases = useAsync(() => listHardCases(), []);
 
   const rows = cases.data ?? [];
-  const open = rows.filter((c) => c.status === "open");
-  const resolved = rows.filter((c) => c.status === "resolved");
+  // Filtered client-side: the inbox is already fully loaded, and a round trip
+  // per chip click would make the counts flicker for no benefit.
+  const visible = useMemo(
+    () =>
+      category === ""
+        ? rows
+        : rows.filter((c) =>
+            category === "uncategorised" ? !c.category : c.category === category,
+          ),
+    [rows, category],
+  );
+  const open = visible.filter((c) => c.status === "open");
+  const resolved = visible.filter((c) => c.status === "resolved");
+
+  // Counts come from every row, not the filtered set, so a chip always says
+  // how many it would show rather than how many survived the current filter.
+  const counts = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const row of rows) {
+      const key = row.category || "uncategorised";
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+    return tally;
+  }, [rows]);
 
   return (
     <>
@@ -39,6 +66,43 @@ export default function HardCasesPage() {
         the person who recorded a case and the project’s managers can annotate
         it or take it down.
       </p>
+
+      <div className="hard-case-filter-row" role="group" aria-label="Filter by category">
+        <button
+          type="button"
+          aria-pressed={category === ""}
+          className={`hard-case-filter-chip${category === "" ? " hard-case-filter-chip-active" : ""}`}
+          onClick={() => setCategory("")}
+        >
+          All ({rows.length})
+        </button>
+        {HARD_CASE_CATEGORIES.map((entry) => {
+          const n = counts.get(entry.value) ?? 0;
+          return (
+            <button
+              key={entry.value}
+              type="button"
+              aria-pressed={category === entry.value}
+              title={entry.hint}
+              disabled={n === 0}
+              className={`hard-case-filter-chip${category === entry.value ? " hard-case-filter-chip-active" : ""}`}
+              onClick={() => setCategory(entry.value)}
+            >
+              {entry.label} ({n})
+            </button>
+          );
+        })}
+        {(counts.get("uncategorised") ?? 0) > 0 && (
+          <button
+            type="button"
+            aria-pressed={category === "uncategorised"}
+            className={`hard-case-filter-chip${category === "uncategorised" ? " hard-case-filter-chip-active" : ""}`}
+            onClick={() => setCategory("uncategorised")}
+          >
+            {UNCATEGORISED_LABEL} ({counts.get("uncategorised")})
+          </button>
+        )}
+      </div>
 
       {cases.error && <div className="error">{cases.error}</div>}
 

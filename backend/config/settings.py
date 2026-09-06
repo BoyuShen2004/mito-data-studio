@@ -579,37 +579,6 @@ FEATURE_VOLUME_PYRAMIDS = _upgrade_feature("FEATURE_VOLUME_PYRAMIDS")
 # appearing merely because pyramid files are on disk.
 FEATURE_CHUNK_SERVICE = _upgrade_feature("FEATURE_CHUNK_SERVICE")
 
-# --- Mitochondria instance annotation, project management, quality ---------
-# All four default to False so an existing deployment upgrades to *identical*
-# behaviour and opts in one feature at a time. Every route below is registered
-# unconditionally and its view returns 503 when the flag is off, so a
-# misconfiguration reads as "not enabled" rather than as a 404 typo.
-
-# Per-instance morphology and QA flags (annotation.LabelInstanceAnnotation).
-FEATURE_INSTANCE_ANNOTATION = _env_bool("FEATURE_INSTANCE_ANNOTATION", False)
-
-# Per-user in-app inbox (accounts.Notification). Notifications are written by
-# the service layer regardless of this flag being *read* by the API, so turning
-# it on later shows the history rather than starting from empty.
-FEATURE_NOTIFICATIONS = _env_bool("FEATURE_NOTIFICATIONS", False)
-
-# Dated delivery targets inside a project (projects.Milestone) plus the
-# burndown/throughput/attention endpoints that read them.
-FEATURE_MILESTONES = _env_bool("FEATURE_MILESTONES", False)
-
-# Dice/IoU and instance-level scoring (annotation.QualityScore). Requires the
-# `overlap` QC provider to be selectable; see MITO_QC_PROVIDER.
-FEATURE_QUALITY_METRICS = _env_bool("FEATURE_QUALITY_METRICS", False)
-
-# How many recent gold-standard scores feed AnnotatorProfile.quality_score.
-# A person with fewer than one scored submission reports None, never 0.0.
-MITO_QUALITY_SCORE_WINDOW = int(os.getenv("MITO_QUALITY_SCORE_WINDOW", "10"))
-
-# Mean Dice below this raises a `quality.flagged` notification to the manager.
-MITO_QUALITY_FLAG_THRESHOLD = float(
-    os.getenv("MITO_QUALITY_FLAG_THRESHOLD", "0.80")
-)
-
 # Signed chunk tokens. The signing key is derived from SECRET_KEY with a
 # distinct salt, so no signing secret is stored in the database. Rotating the
 # key version invalidates every outstanding token at once, which is the only

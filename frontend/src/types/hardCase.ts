@@ -15,6 +15,8 @@ export interface HardCase {
   volume: number | null;
   volume_name: string;
   label_id: number;
+  /** Why it was flagged. Empty means uncategorised — see hardCaseCategory.ts. */
+  category: string;
   note: string;
   view_z: number | null;
   view_y: number | null;

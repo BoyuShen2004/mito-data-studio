@@ -341,11 +341,41 @@ describe("Select tool label picking", () => {
         6,
         "membrane is ambiguous",
         { z: 0, y: 2, x: 2, axis: "z", label: 6 },
+        // No category chosen: blank is a real value, not a placeholder the
+        // client is expected to fill in.
+        "",
       );
     });
     expect(await screen.findByText("Hard case recorded")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Edit notes" }));
     expect(await screen.findByRole("dialog", { name: "Notes · label #6" })).toBeTruthy();
     expect(screen.getByLabelText("Primary note")).toBeTruthy();
+  });
+
+  it("records the chosen category, and lets it be cleared again", async () => {
+    mount();
+    await screen.findByTitle(/64 voxels/);
+    fireEvent.change(screen.getByTitle("Active label id"), { target: { value: "6" } });
+    fireEvent.click(screen.getByRole("button", { name: "Record hard case" }));
+
+    const chip = await screen.findByRole("button", { name: "Needs split" });
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    // Clicking the selected chip again clears it: a reason nobody is sure of
+    // belongs recorded as absent, not guessed.
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(chip);
+
+    fireEvent.click(screen.getByRole("button", { name: "Share with the project" }));
+    await waitFor(() => {
+      expect(hoisted.createHardCase).toHaveBeenCalledWith(
+        5,
+        6,
+        "",
+        { z: 0, y: 2, x: 2, axis: "z", label: 6 },
+        "needs_split",
+      );
+    });
   });
 });

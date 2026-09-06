@@ -5,18 +5,59 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+### Added
+
+- **Hard cases carry a category.** Recording one now asks what kind of problem
+  it is — uncertain, needs split, needs merge, not a mitochondrion, cut off by
+  the volume boundary, or other — and the inbox filters and counts by it. The
+  category is editable afterwards from the same dialog as the note, under the
+  same permission.
+
+  Blank is a real value: the 35 cases recorded before this field existed carry
+  none and list as **Uncategorised**, and clicking the selected chip again
+  clears it back. A reason nobody is sure of is better recorded as absent than
+  guessed.
+
 ### Changed
 
-- Added a release/publication documentation portal covering product behavior,
-  complete user workflows, architecture, data contracts, AI models, reference
-  hardware, manuscript methods, reproducibility, and release gates.
-- Reorganized the repository around a root Django `manage.py`, `docs/`,
-  `scripts/dev/`, and a common `Makefile` command surface.
-- Kept `backend/manage.py` as a temporary compatibility shim for installed
-  service units and existing automation.
-- Consolidated current user, development, Docker, and host-deployment guidance.
-- Added contribution, security, editor, attribution, and repository-layout
-  documentation.
+- The login page opens on the **Annotator** tab, and Annotator is listed first.
+  Development and deployed builds share one page, so both change.
+
+### Fixed
+
+- **18 tests left stale by `63ce567`.** That commit made two deliberate
+  behaviour changes and left the tests asserting what it replaced:
+  `unique_registered_image_per_dataset` (`volumes/0012`) forbids two volumes in
+  one dataset sharing an `image_path`, but fifteen fixtures still reused one;
+  and `_seed_working_label` now refuses an unreadable or shape-mismatched
+  registered label instead of silently starting empty, which three tests still
+  contradicted. Two of the three could not run at all, because `h5py` was
+  absent from the environment despite being declared in `environment.yml` —
+  leaving the HDF5 and NIfTI read paths unverified while the suite looked green.
+
+- **The viewer's layer field could silently discard a typed layer.**
+  `CommitNumberInput` kept a local draft so a controlled re-render could not
+  fight the user mid-edit, but re-synced it from the prop unconditionally — so
+  a background update landing between a keystroke and Enter/blur replaced what
+  had been typed, and the commit applied the old number. The draft is now held
+  while the field has focus.
+
+- **The frontend suite is no longer load-dependent.** `scrubBenchmark.test.ts`
+  asserted wall-clock p95 from inside the ordinary suite (now behind
+  `MITO_RUN_BENCH`, reachable via `npm run bench:phase13`); vitest's 5 s
+  `testTimeout` collided with Testing Library's async budget, masking what a
+  slow wait was waiting for (now 20 s against 5 s); and one test synchronised
+  on the slice image before asserting on the layer field, which updates a
+  commit later.
+
+### Decided
+
+- **The two label-seeding policies diverge on purpose.** `_seed_working_label`
+  refuses an unreadable registered label; `_load_or_init_label` starts empty.
+  That is safe because of call order: the strict one is the editor's entry
+  point, the lenient one runs only from SAM2 tracking, and tracking needs
+  prompts which need the editor. Both halves are documented in place and locked
+  by `annotation/test_seeding_policy.py`.
 
 ## 1.1.5
 

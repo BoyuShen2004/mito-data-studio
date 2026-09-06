@@ -3,8 +3,14 @@ import { useEffect, useState } from "react";
 import {
   addHardCaseMessage,
   listHardCaseMessages,
+  updateHardCaseCategory,
   updateHardCaseNote,
 } from "../api/hardCases";
+import {
+  HARD_CASE_CATEGORIES,
+  UNCATEGORISED_LABEL,
+  categoryLabel,
+} from "../features/viewer/hardCaseCategory";
 import type { HardCase, HardCaseMessage } from "../types/hardCase";
 
 export default function HardCaseNotesModal({
@@ -47,6 +53,20 @@ export default function HardCaseNotesModal({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
+
+  const saveCategory = async (next: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await updateHardCaseCategory(hardCase.id, next);
+      setHardCase(updated);
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not change the category.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const saveNote = async () => {
     setBusy(true);
@@ -93,6 +113,41 @@ export default function HardCaseNotesModal({
           <h3 id={`hard-case-notes-title-${hardCase.id}`}>Notes · label #{hardCase.label_id}</h3>
           <button type="button" className="secondary" onClick={onClose}>Close</button>
         </div>
+
+        <section className="hard-case-category-section">
+          <h4>Category</h4>
+          {hardCase.can_edit_note ? (
+            <div className="hard-case-category-row">
+              {HARD_CASE_CATEGORIES.map((entry) => (
+                <button
+                  key={entry.value}
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={hardCase.category === entry.value}
+                  title={entry.hint}
+                  className={`hard-case-category-chip${
+                    hardCase.category === entry.value
+                      ? " hard-case-category-chip-active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    // Same rule as the record dialog: clicking the current one
+                    // clears it, because "we are not sure why" is a real answer.
+                    void saveCategory(
+                      hardCase.category === entry.value ? "" : entry.value,
+                    )
+                  }
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className={hardCase.category ? "" : "muted"}>
+              {hardCase.category ? categoryLabel(hardCase.category) : UNCATEGORISED_LABEL}
+            </p>
+          )}
+        </section>
 
         <section className="hard-case-primary-note">
           <h4>Primary note</h4>

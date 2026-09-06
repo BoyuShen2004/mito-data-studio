@@ -5,18 +5,12 @@ import { listSubmissions } from "../api/submissions";
 import { useAsync } from "../hooks/useAsync";
 import StatusBadge from "../components/StatusBadge";
 import PublicShareTree from "../components/PublicShareTree";
-import AttentionPanel from "../components/AttentionPanel";
 import SectionTabs, { type SectionTab } from "../components/SectionTabs";
 import type { Project } from "../types/project";
 import type { Submission } from "../types/submission";
 import { submissionChannelLabel } from "../components/TaskDetailsCards";
 
-type DashboardTab =
-  | "projects"
-  | "approvals"
-  | "reviews"
-  | "attention"
-  | "shares";
+type DashboardTab = "projects" | "approvals" | "reviews" | "shares";
 
 export default function ManagerDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,7 +27,6 @@ export default function ManagerDashboard() {
       ? [{ id: "approvals" as const, label: "Approvals", count: pendingApproval.length }]
       : []),
     { id: "reviews", label: "Reviews", count: reviewRows.length },
-    { id: "attention", label: "Attention" },
     { id: "shares", label: "Shares" },
   ];
   const requested = searchParams.get("tab") as DashboardTab | null;
@@ -78,10 +71,6 @@ export default function ManagerDashboard() {
               tab="reviews"
               disabled={reviewRows.length === 0}
             />
-            {/* No count: this one is fetched by the panel itself, and a
-                hard-coded zero would claim "nothing overdue" before anything
-                had been looked up. */}
-            <AttentionLink label="Overdue & waiting" tab="attention" />
             {pendingApproval.length === 0 && reviewRows.length === 0 && (
               <p className="muted attention-clear">You’re caught up.</p>
             )}
@@ -106,9 +95,6 @@ export default function ManagerDashboard() {
             {active === "projects" && <ProjectsPanel rows={rows} loading={projects.loading} />}
             {active === "approvals" && <ApprovalsPanel rows={pendingApproval} />}
             {active === "reviews" && <ReviewsPanel rows={reviewRows} loading={submissions.loading} />}
-            {/* Cross-project overdue / waiting work. Degrades to an explicit
-                notice when delivery analytics are off. */}
-            {active === "attention" && <AttentionPanel />}
             {active === "shares" && <PublicShareTree />}
           </section>
         </main>

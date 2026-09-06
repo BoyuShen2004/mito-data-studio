@@ -39,9 +39,5 @@ export interface Volume {
   image_location: string;
   region_mask_location: string;
   label_location: string;
-  /** Submissions on this volume are scored against `reference_submission`. */
-  is_gold_standard?: boolean;
-  /** The approved submission used as the trusted answer, if one is set. */
-  reference_submission?: number | null;
   created_at: string;
 }

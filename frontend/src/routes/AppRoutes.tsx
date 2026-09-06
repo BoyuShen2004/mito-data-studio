@@ -20,7 +20,6 @@ import PublicSharePage from "../pages/PublicSharePage";
 import HardCasesPage from "../pages/HardCasesPage";
 import HardCaseDetailPage from "../pages/HardCaseDetailPage";
 import PeoplePage from "../pages/PeoplePage";
-import InboxPage from "../pages/InboxPage";
 import ProfilePage from "../pages/ProfilePage";
 import PersonPage from "../pages/PersonPage";
 import AdminSettingsPage from "../pages/AdminSettingsPage";
@@ -203,17 +202,6 @@ export default function AppRoutes() {
         element={
           <RequireAuth>
             <PersonPage />
-          </RequireAuth>
-        }
-      />
-
-      {/* Your notifications. Every role gets it; the API only ever returns
-          the signed-in person's own rows, so no role gate belongs here. */}
-      <Route
-        path="/inbox"
-        element={
-          <RequireAuth>
-            <InboxPage />
           </RequireAuth>
         }
       />

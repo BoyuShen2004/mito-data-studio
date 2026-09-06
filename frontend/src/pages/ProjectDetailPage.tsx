@@ -24,20 +24,11 @@ import HardCaseList from "../components/HardCaseList";
 import StatusBadge from "../components/StatusBadge";
 import ShareControl from "../components/ShareControl";
 import SectionTabs, { type SectionTab } from "../components/SectionTabs";
-import DeliveryPanel from "../components/DeliveryPanel";
-import QualityPanel from "../components/QualityPanel";
 import type { Volume } from "../types/volume";
 import type { WorkloadRow } from "../types/project";
 import { DatasetVolumesTable } from "../components/VolumeMeta";
 
-type ProjectTab =
-  | "overview"
-  | "data"
-  | "assign"
-  | "access"
-  | "activity"
-  | "delivery"
-  | "quality";
+type ProjectTab = "overview" | "data" | "assign" | "access" | "activity";
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
@@ -83,15 +74,11 @@ export default function ProjectDetailPage() {
         { id: "assign", label: "Assign", count: project.task_count },
         { id: "access", label: "Access" },
         { id: "activity", label: "Activity" },
-        { id: "delivery", label: "Delivery" },
-        { id: "quality", label: "Quality" },
       ]
     : [
         { id: "overview", label: "Overview" },
         { id: "data", label: "Data", count: project.volume_count },
         { id: "activity", label: "Activity" },
-        { id: "delivery", label: "Delivery" },
-        { id: "quality", label: "Quality" },
       ];
   const requested = searchParams.get("tab") as ProjectTab | null;
   const active = tabs.some((tab) => tab.id === requested)
@@ -186,12 +173,6 @@ export default function ProjectDetailPage() {
           <ProjectHardCases projectId={projectId} />
           {isManager && <WorkloadTable workload={workload} />}
         </>}
-
-        {/* Both panels degrade to an explicit "not enabled" notice when their
-            feature flag is off, rather than erroring — the tab is always
-            reachable so a manager can tell "off" from "broken". */}
-        {active === "delivery" && <DeliveryPanel projectId={projectId} />}
-        {active === "quality" && <QualityPanel projectId={projectId} />}
       </main>
     </div>
   );

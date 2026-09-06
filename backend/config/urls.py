@@ -24,11 +24,6 @@ from accounts.api import (
     RegisterView,
 )
 from accounts.collaboration_api import CollaborationAdminView
-from accounts.notifications_api import (
-    NotificationListView,
-    NotificationMarkReadView,
-    NotificationUnreadCountView,
-)
 from annotation.timing_api import (
     AnnotatorTimeReportView,
     TaskTimingHeartbeatView,
@@ -144,24 +139,6 @@ from core.statistics_api import (
     AnnotatorStatisticsView,
     ProjectStatisticsCsvView,
     ProjectStatisticsView,
-)
-from annotation.instance_api import (
-    ProjectInstanceSummaryView,
-    TaskInstanceAnnotationsView,
-    VolumeInstanceAnnotationsView,
-)
-from annotation.quality_api import (
-    AnnotatorQualityView,
-    ProjectQualityView,
-    SubmissionQualityView,
-    VolumeApprovedSubmissionsView,
-    VolumeGoldStandardView,
-)
-from projects.milestone_api import (
-    DeliveryOverviewView,
-    MilestoneDetailView,
-    ProjectDeliveryView,
-    ProjectMilestonesView,
 )
 from processing.api import ProcessingJobViewSet
 from projects.api import DatasetViewSet, ProjectViewSet
@@ -705,96 +682,6 @@ urlpatterns = [
         "api/review-label-comments/<int:pk>/",
         ReviewLabelCommentDetailView.as_view(),
         name="api-review-label-comment-detail",
-    ),
-    # --- Notifications ------------------------------------------------------
-    # Recording happens in the service layer whatever the flag says; these
-    # read-and-acknowledge endpoints are what FEATURE_NOTIFICATIONS gates, so
-    # enabling it later reveals the accumulated history rather than an empty
-    # inbox.
-    path(
-        "api/notifications/",
-        NotificationListView.as_view(),
-        name="api-notifications",
-    ),
-    path(
-        "api/notifications/unread-count/",
-        NotificationUnreadCountView.as_view(),
-        name="api-notifications-unread-count",
-    ),
-    path(
-        "api/notifications/read/",
-        NotificationMarkReadView.as_view(),
-        name="api-notifications-read",
-    ),
-    # --- Per-instance morphology and QA flags -------------------------------
-    path(
-        "api/volumes/<int:pk>/instance-annotations/",
-        VolumeInstanceAnnotationsView.as_view(),
-        name="api-volume-instance-annotations",
-    ),
-    path(
-        "api/tasks/<int:pk>/instance-annotations/",
-        TaskInstanceAnnotationsView.as_view(),
-        name="api-task-instance-annotations",
-    ),
-    path(
-        "api/tasks/<int:pk>/instance-annotations/<int:label_id>/",
-        TaskInstanceAnnotationsView.as_view(),
-        name="api-task-instance-annotation-detail",
-    ),
-    path(
-        "api/projects/<int:pk>/instance-annotations/summary/",
-        ProjectInstanceSummaryView.as_view(),
-        name="api-project-instance-summary",
-    ),
-    # --- Milestones and delivery analytics ----------------------------------
-    path(
-        "api/projects/<int:project_id>/milestones/",
-        ProjectMilestonesView.as_view(),
-        name="api-project-milestones",
-    ),
-    path(
-        "api/milestones/<int:pk>/",
-        MilestoneDetailView.as_view(),
-        name="api-milestone-detail",
-    ),
-    path(
-        "api/projects/<int:project_id>/delivery/",
-        ProjectDeliveryView.as_view(),
-        name="api-project-delivery",
-    ),
-    # Cross-project: the same three panels with no project filter, so a manager
-    # can see what is overdue anywhere without opening each project in turn.
-    path(
-        "api/delivery/",
-        DeliveryOverviewView.as_view(),
-        name="api-delivery-overview",
-    ),
-    # --- Quality metrics ----------------------------------------------------
-    path(
-        "api/submissions/<int:pk>/quality/",
-        SubmissionQualityView.as_view(),
-        name="api-submission-quality",
-    ),
-    path(
-        "api/projects/<int:pk>/quality/",
-        ProjectQualityView.as_view(),
-        name="api-project-quality",
-    ),
-    path(
-        "api/volumes/<int:pk>/gold-standard/",
-        VolumeGoldStandardView.as_view(),
-        name="api-volume-gold-standard",
-    ),
-    path(
-        "api/volumes/<int:pk>/approved-submissions/",
-        VolumeApprovedSubmissionsView.as_view(),
-        name="api-volume-approved-submissions",
-    ),
-    path(
-        "api/people/<str:username>/quality/",
-        AnnotatorQualityView.as_view(),
-        name="api-person-quality",
     ),
     # --- Project CRUD + summary (router) -----------------------------------
     path("api/", include(router.urls)),

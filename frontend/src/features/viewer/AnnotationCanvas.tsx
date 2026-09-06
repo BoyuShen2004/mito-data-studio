@@ -38,6 +38,7 @@ import {
 import { getDeploymentIdentity } from "../../api/deployment";
 import type { HardCase } from "../../types/hardCase";
 import { createHardCase } from "../../api/hardCases";
+import { HARD_CASE_CATEGORIES } from "./hardCaseCategory";
 import HardCaseNotesModal from "../../components/HardCaseNotesModal";
 import { useAsync } from "../../hooks/useAsync";
 import { useAuth } from "../../auth/AuthContext";
@@ -73,7 +74,6 @@ import { panCanvasHorizontally, panCanvasVertically } from "./canvasPan";
 import { labelColor, labelColorCss } from "./labelColor";
 import LabelsPanel, { type LabelsScope } from "./LabelsPanel";
 import Labels3DPanel from "./Labels3DPanel";
-import InstanceAnnotationPanel from "./annotate/InstanceAnnotationPanel";
 import AnnotateToolChrome from "./annotate/AnnotateToolChrome";
 import TrackRail, { type TrackingPromptTool } from "./annotate/TrackRail";
 import { canPropagatePrompt, trackRangeIssue } from "./annotate/trackRange";
@@ -2684,6 +2684,7 @@ export default function AnnotationCanvas({
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [hardCaseNote, setHardCaseNote] = useState("");
+  const [hardCaseCategory, setHardCaseCategory] = useState("");
   const [shareNotesOpen, setShareNotesOpen] = useState(false);
   // `copyState` drives the link row's button: it starts on **Copy** and only
   // becomes **Copied** after the user clicks it *and* the clipboard write
@@ -2733,6 +2734,7 @@ export default function AnnotationCanvas({
         activeIdRef.current,
         hardCaseNote.trim(),
         location,
+        hardCaseCategory,
       );
       setShareCase(created);
       setShareStage("done");
@@ -2744,7 +2746,7 @@ export default function AnnotationCanvas({
     } finally {
       setSharing(false);
     }
-  }, [taskId, hardCaseNote]);
+  }, [taskId, hardCaseNote, hardCaseCategory]);
 
   const shareUrl = shareCase ? window.location.origin + shareCase.url : null;
 
@@ -6447,6 +6449,34 @@ export default function AnnotationCanvas({
                   every annotator working on it. You and managers can annotate
                   it or take it down later; everyone else sees it View-only.
                 </p>
+                <fieldset className="hard-case-category-picker">
+                  <legend>What kind of problem?</legend>
+                  <div className="hard-case-category-row">
+                    {HARD_CASE_CATEGORIES.map((entry) => (
+                      <button
+                        key={entry.value}
+                        type="button"
+                        aria-pressed={hardCaseCategory === entry.value}
+                        title={entry.hint}
+                        className={`hard-case-category-chip${
+                          hardCaseCategory === entry.value
+                            ? " hard-case-category-chip-active"
+                            : ""
+                        }`}
+                        onClick={() =>
+                          // Clicking the selected one clears it: a case whose
+                          // reason nobody is sure of is better filed as
+                          // uncategorised than as a guess.
+                          setHardCaseCategory((current) =>
+                            current === entry.value ? "" : entry.value,
+                          )
+                        }
+                      >
+                        {entry.label}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
                 <label>
                   <span>Why is this hard? (optional)</span>
                   <textarea
@@ -6935,14 +6965,6 @@ export default function AnnotationCanvas({
         />
 
         <div className="labels-panel-slot">
-          {/* Morphology / QA flags for the Active instance. Renders nothing at
-              all when the deployment has not enabled the feature, so the
-              editor is unchanged where it is off. */}
-          <InstanceAnnotationPanel
-            taskId={taskId}
-            activeId={activeId}
-            readOnly={!editable}
-          />
           <LabelsPanel
             scope={labelsScope}
             onScopeChange={setLabelsScope}

@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.db import models
 
-from core.choices import AuditVerb, NotificationVerb, TeamRole, UserRole
+from core.choices import AuditVerb, TeamRole, UserRole
 
 
 class Institution(models.Model):
@@ -196,69 +196,3 @@ class AuditEvent(models.Model):
     def __str__(self) -> str:
         who = self.actor.get_username() if self.actor else "system"
         return f"{who} {self.verb} {self.target_type}#{self.target_id}"
-
-
-class Notification(models.Model):
-    """One thing that happened which one person still needs to look at.
-
-    Deliberately **not** merged into :class:`AuditEvent`, despite the similar
-    shape. Audit answers "what has ever happened to this object", is written
-    for every permission-relevant action, and is never mutated. A notification
-    answers "what does this person still owe attention to", is written for the
-    small fraction of events worth interrupting somebody about, and is mutated
-    exactly once when it is read. Sharing one table would mean either marking
-    audit rows read or writing an inbox row for every audit event; both are
-    wrong.
-
-    ``target`` is stored as (type, id) rather than a foreign key, for the same
-    reason ``AuditEvent`` does it: the notification must survive the deletion
-    of whatever it points at, degrading to a dead link rather than vanishing
-    from somebody's history.
-    """
-
-    recipient = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="notifications",
-    )
-    verb = models.CharField(max_length=64, choices=NotificationVerb.choices)
-    actor = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="sent_notifications",
-    )
-    target_type = models.CharField(max_length=64, blank=True)
-    target_id = models.CharField(max_length=64, blank=True)
-
-    title = models.CharField(max_length=200)
-    body = models.CharField(max_length=500, blank=True)
-    # Where clicking it should land, as an SPA path ("/tasks/12"). Stored
-    # rather than derived so an old notification keeps working after the route
-    # that produced it is restructured.
-    url = models.CharField(max_length=300, blank=True)
-
-    read_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        # ``-id`` breaks the tie: two notifications written in the same tick
-        # share an ``auto_now_add`` timestamp, and without a second key the
-        # database may return them in either order.
-        ordering = ["-created_at", "-id"]
-        indexes = [
-            # The only two queries this table serves: the recipient's inbox and
-            # their unread badge count. One composite index covers both.
-            models.Index(
-                fields=["recipient", "read_at", "-created_at"],
-                name="idx_notification_inbox",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.recipient.get_username()}: {self.title}"
-
-    @property
-    def is_read(self) -> bool:
-        return self.read_at is not None

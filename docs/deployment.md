@@ -170,29 +170,6 @@ venv/bin/python manage.py backfill_region_pyramids
 The source image and region files remain immutable. Do not delete pyramids or
 registered sources as a deployment step.
 
-## Scheduled notification tasks
-
-Two commands have no triggering action — nothing *happens* when a deadline gets
-closer — so they need a clock. Both are safe to re-run and both are no-ops
-unless notifications are in use.
-
-```bash
-# Daily. Notifies assignees of approaching deadlines and the project of
-# at-risk milestones. Idempotent per (recipient, target, day), so an hourly
-# cron or a retry after a partial failure cannot produce duplicate rows.
-python manage.py notify_deadlines --days 3
-
-# Weekly. Deletes read notifications past the retention window. Unread rows
-# are never deleted, however old — they are still owed to somebody.
-python manage.py prune_notifications --days 90
-```
-
-Both accept `--dry-run`, which reports the counts without writing or deleting.
-
-Without `prune_notifications` on a timer the table only grows: an active
-project writes a notification per assignment, submission, review decision, and
-hard-case reply, for every person who should see it.
-
 ## Data-safety rules
 
 - Annotation tools never persist implicitly. Only explicit Save writes pending

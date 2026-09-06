@@ -3618,375 +3618,75 @@ button.dev-reset-btn:hover:not(:disabled) {
   font-size: 0.75rem;
 }
 
-/* --- Notifications ---------------------------------------------------------
-   The bell is a nav-link with an absolutely positioned badge, so adding it to
-   the navbar does not change the height or baseline of the row. */
-.notification-bell {
-  position: relative;
-  padding-right: 0.9rem;
-}
-.notification-badge {
-  position: absolute;
-  top: -0.15rem;
-  right: -0.15rem;
-  min-width: 1.05rem;
-  padding: 0 0.22rem;
-  border-radius: 999px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 0.62rem;
-  line-height: 1.05rem;
-  text-align: center;
-  font-weight: 600;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.notification-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  overflow: hidden;
-}
-.notification-row {
-  display: grid;
-  grid-template-columns: 7rem 1fr auto;
-  gap: 0.75rem;
-  align-items: baseline;
-  padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid var(--border);
-}
-.notification-row:last-child {
-  border-bottom: none;
-}
-/* Unread is marked by a rule and weight, not by colour alone. */
-.notification-row-unread {
-  background: var(--accent-soft);
-  border-left: 3px solid var(--accent);
-}
-.notification-row-unread .notification-main a,
-.notification-row-unread .notification-main > span {
-  font-weight: 600;
-}
-.notification-kind {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-.notification-main p {
-  margin: 0.15rem 0 0;
-  font-size: 0.85rem;
-}
-
-/* --- Instance annotation panel --------------------------------------------- */
-.instance-annotation-panel {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  padding: 0.5rem 0.6rem;
-  margin-bottom: 0.5rem;
-  font-size: var(--annotate-chrome-font, 0.72rem);
-}
-.instance-annotation-title {
-  font-weight: 600;
-  margin-bottom: 0.35rem;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.instance-flag-badge {
-  color: var(--warn);
-}
-.instance-annotation-group {
+/* --- Hard case categories --------------------------------------------------
+   One vocabulary, three surfaces: the record dialog, the inbox filter, and the
+   detail editor. They share these classes so a category looks the same
+   wherever it appears. */
+.hard-case-category-picker {
   border: none;
   padding: 0;
-  margin: 0 0 0.45rem;
+  margin: 0 0 0.6rem;
 }
-.instance-annotation-group legend {
+.hard-case-category-picker legend {
   padding: 0;
-  font-size: var(--annotate-chrome-small, 0.67rem);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.8rem;
   color: var(--muted);
 }
-.instance-chip-row {
+.hard-case-category-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.22rem;
-  margin-top: 0.25rem;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
 }
-.instance-chip {
-  padding: 0.14rem 0.42rem;
+.hard-case-category-chip,
+.hard-case-filter-chip {
+  padding: 0.2rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--card);
   color: var(--text);
-  font-size: var(--annotate-chrome-small, 0.67rem);
+  font-size: 0.79rem;
   cursor: pointer;
 }
-.instance-chip:hover:not(:disabled) {
+.hard-case-category-chip:hover:not(:disabled),
+.hard-case-filter-chip:hover:not(:disabled) {
   border-color: var(--accent);
 }
-/* Selection carries a border and weight change too, never colour alone. */
-.instance-chip-active {
+.hard-case-filter-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* Selection carries weight and border as well as fill, never colour alone. */
+.hard-case-category-chip-active,
+.hard-case-filter-chip-active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
 }
-.instance-flag-row {
-  display: flex;
-  align-items: center;
-  gap: 0.32rem;
-  margin-top: 0.18rem;
-}
-.instance-annotation-hint {
-  margin: 0.25rem 0 0;
-  font-size: var(--annotate-chrome-small, 0.67rem);
-}
-.instance-annotation-note {
-  margin-top: 0.3rem;
-}
-
-/* --- Charts ----------------------------------------------------------------
-   Hand-authored inline SVG. One measure per chart, so hue carries magnitude or
-   status and identity always comes from a label — never from a colour key. */
-.chart-figure {
-  margin: 0.5rem 0 0;
-}
-.chart-svg {
-  width: 100%;
-  height: auto;
-  display: block;
-  overflow: visible;
-}
-.chart-axis {
-  stroke: var(--border);
-  stroke-width: 1;
-}
-.chart-grid {
-  stroke: var(--border);
-  stroke-width: 1;
-  stroke-dasharray: 2 3;
-}
-.chart-axis-label,
-.chart-direct-label {
-  font-size: 10px;
-  fill: var(--muted);
-}
-.chart-direct-label {
-  font-weight: 600;
-  fill: var(--accent);
-}
-.chart-direct-label-muted {
-  fill: var(--muted);
-  font-weight: 500;
-}
-.chart-bar {
-  fill: var(--accent);
-}
-.chart-bar:hover {
-  fill: var(--accent-hover);
-}
-/* A zero day is drawn as a hairline on the baseline, so "no work" is visibly
-   different from "no data" (which the series never contains — it is
-   zero-filled server-side). */
-.chart-bar-empty {
-  fill: var(--border);
-}
-.chart-line {
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-/* The ideal descent is an annotation, not a second measured series: dashed and
-   grey, so the two are distinguishable without relying on hue. */
-.chart-reference-line {
-  stroke: var(--muted);
-  stroke-width: 2;
-  stroke-dasharray: 4 4;
-  opacity: 0.65;
-}
-.chart-area-top {
-  stop-color: var(--accent);
-  stop-opacity: 0.18;
-}
-.chart-area-bottom {
-  stop-color: var(--accent);
-  stop-opacity: 0.01;
-}
-.chart-tooltip {
-  font-size: 11px;
-  font-weight: 600;
-  fill: var(--text);
-  paint-order: stroke;
-  stroke: var(--card);
-  stroke-width: 3px;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
-.chart-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-.chart-metric strong {
-  font-size: 1.15rem;
-}
-.chart-metric span {
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.category-bars {
-  list-style: none;
-  margin: 0.4rem 0 0;
-  padding: 0;
-}
-.category-bars li {
-  display: grid;
-  grid-template-columns: minmax(8rem, 14rem) 1fr 3rem;
-  gap: 0.55rem;
-  align-items: center;
-  padding: 0.16rem 0;
-}
-.category-bars-label {
-  font-size: 0.8rem;
-}
-.category-bars-track {
-  background: var(--bg);
-  border-radius: 3px;
-  height: 0.62rem;
-  overflow: hidden;
-}
-.category-bars-fill {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--accent);
-}
-.category-bars-warn .category-bars-fill {
-  background: var(--warn);
-}
-.category-bars-value {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-/* --- Milestones ------------------------------------------------------------ */
-.milestone-form {
-  gap: 0.6rem;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  margin-bottom: 0.6rem;
-}
-.milestone-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-.milestone-row {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  padding: 0.6rem 0.75rem;
-}
-/* Overdue is marked by a rule as well as by colour. */
-.milestone-row-overdue {
-  border-left: 3px solid var(--warn);
-}
-.milestone-head {
-  align-items: baseline;
-}
-.milestone-chip {
+.hard-case-category-badge {
   margin-left: 0.4rem;
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 600;
-}
-.milestone-chip-overdue {
-  background: var(--warn);
-  color: #fff;
-}
-.milestone-track {
-  margin: 0.4rem 0 0.25rem;
-  height: 0.4rem;
-  border-radius: 3px;
+  border: 1px solid var(--border);
   background: var(--bg);
-  overflow: hidden;
+  font-size: 0.7rem;
+  color: var(--muted);
 }
-.milestone-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: var(--accent);
-}
-.milestone-burndown {
-  margin-top: 0.35rem;
-}
-.link-button {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 0.8rem;
-  text-decoration: underline;
-}
-
-/* --- Quality --------------------------------------------------------------- */
-.quality-score-block + .quality-score-block {
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--border);
-}
-.summary-metric-warn strong {
+/* The three that mean "this labelling is wrong" read as warnings; the rest are
+   neutral observations and should not shout. */
+.hard-case-category-needs_split,
+.hard-case-category-needs_merge,
+.hard-case-category-false_positive {
+  border-color: var(--warn);
   color: var(--warn);
 }
-.plain-list {
-  list-style: none;
-  margin: 0.3rem 0 0;
-  padding: 0;
+.hard-case-category-section {
+  margin-bottom: 0.8rem;
 }
-.plain-list li {
-  padding: 0.16rem 0;
-}
-.quality-sparkline {
-  max-width: 240px;
-  margin-top: 0.4rem;
-}
-.quality-sparkline-head {
-  fill: var(--accent);
-}
-
-/* --- Gold standard ---------------------------------------------------------
-   A manager-only card on the volume page. Its "Active" chip uses the warn
-   token rather than a new colour: this is a state worth noticing, not an
-   error, and the codebase has no separate accent for it. */
-.gold-standard-card .field {
-  margin: 0.5rem 0;
-  max-width: 34rem;
-}
-.milestone-chip-gold {
-  background: var(--warn);
-  color: #fff;
+.hard-case-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.6rem 0;
 }

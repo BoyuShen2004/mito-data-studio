@@ -4,7 +4,6 @@ import { roleLabel } from "../labels";
 import { backFallbackFor } from "../routes/backNavigation";
 import { homePathForRole } from "../routes/roles";
 import BackButton from "./BackButton";
-import NotificationBell from "./NotificationBell";
 
 /**
  * Global top bar for every authenticated page (including View/Annotate).
@@ -70,9 +69,6 @@ export default function Navbar() {
       <NavLink to="/hard-cases" className="nav-link" title="Difficult-label inbox">
         Hard Cases
       </NavLink>
-      {/* Same reasoning as People/Hard Cases above: one entry for every role,
-          scoped server-side to the signed-in person's own notifications. */}
-      <NotificationBell />
       <span className="spacer" />
       {fallback && <BackButton fallback={fallback} />}
       {/* The identity readout is the way into your own account — the profile

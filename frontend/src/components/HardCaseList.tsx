@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { categoryLabel } from "../features/viewer/hardCaseCategory";
 import { Link } from "react-router-dom";
 import { displayTaskLayerRange } from "../features/viewer/layerIndex";
 import { setHardCaseStatus } from "../api/hardCases";
@@ -61,6 +62,13 @@ export default function HardCaseList({
               <Link to={c.app_url}>
                 <strong>Label #{c.label_id}</strong>
               </Link>
+              {c.category && (
+                <span
+                  className={`hard-case-category-badge hard-case-category-${c.category}`}
+                >
+                  {categoryLabel(c.category)}
+                </span>
+              )}
               {c.revoked && (
                 <span className="muted" style={{ fontSize: "0.75rem" }}>
                   {" "}

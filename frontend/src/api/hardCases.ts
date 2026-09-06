@@ -10,10 +10,12 @@ export const createHardCase = (
   labelId: number,
   note = "",
   location?: ViewLocation | null,
+  category = "",
 ) =>
   api.post<HardCase>(`/tasks/${taskId}/hard-cases/`, {
     label_id: labelId,
     note,
+    category,
     ...(location
       ? {
           view_z: location.z,
@@ -30,11 +32,14 @@ export const listHardCases = (params?: {
   project?: number;
   volume?: number;
   status?: HardCaseStatus;
+  /** A category value, or "uncategorised" for the ones nobody has filed. */
+  category?: string;
 }) => {
   const q = new URLSearchParams();
   if (params?.project != null) q.set("project", String(params.project));
   if (params?.volume != null) q.set("volume", String(params.volume));
   if (params?.status) q.set("status", params.status);
+  if (params?.category) q.set("category", params.category);
   const qs = q.toString();
   return api.get<HardCase[]>(`/hard-cases/${qs ? `?${qs}` : ""}`);
 };
@@ -52,6 +57,10 @@ export const setHardCaseRevoked = (id: number, revoked: boolean) =>
 
 export const updateHardCaseNote = (id: number, note: string) =>
   api.patch<HardCase>(`/hard-cases/${id}/note/`, { note });
+
+/** Re-file a case. Same endpoint and permission as editing its note. */
+export const updateHardCaseCategory = (id: number, category: string) =>
+  api.patch<HardCase>(`/hard-cases/${id}/note/`, { category });
 
 export const listHardCaseMessages = (id: number) =>
   api.get<HardCaseMessage[]>(`/hard-cases/${id}/messages/`);

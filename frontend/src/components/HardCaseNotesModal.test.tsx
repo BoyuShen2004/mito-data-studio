@@ -25,6 +25,7 @@ const hardCase: HardCase = {
   volume: 4,
   volume_name: "v1",
   label_id: 17,
+  category: "",
   note: "Initial reason",
   view_z: null,
   view_y: null,
