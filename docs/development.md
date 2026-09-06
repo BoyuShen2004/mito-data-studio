@@ -134,6 +134,35 @@ make check-git
 ```
 
 Run Django tests from `backend/`; its discovery is working-directory sensitive.
+This matters more than it sounds: from the repository root the runner discovers
+**zero** tests and still exits `0`, which is indistinguishable from a passing
+run. From `backend/` it discovers the full suite. Passing explicit app labels
+(`accounts annotation projects volumes core processing config`) also works from
+either directory.
+
+Check the optional readers are installed before trusting a green run:
+
+```bash
+python -c "import h5py, nibabel"
+```
+
+`environment.yml` declares both, but an env that predates them (or was built
+without the pip section) silently loses `volumes.test_metadata_parity` and
+`volumes.test_nifti` to import errors and skips part of
+`annotation.test_hdf5_source` — leaving the HDF5 and NIfTI read paths
+unverified while the suite still looks healthy.
+
+A test must never depend on the host's `.env`. Anything asserting a
+feature-flag-disabled path has to pin the flag with
+`override_settings(FEATURE_X=False)` rather than relying on the default —
+otherwise it passes on a fresh checkout and fails as soon as somebody enables
+the feature. Run the suite with the flags both on and off before trusting it.
+
+The suite is written against PostgreSQL. `MITO_DB_ENGINE=sqlite` runs faster and
+is fine for day-to-day work, but it is not equivalent —
+`volumes.test_legacy_migration_reconciliation` fails on sqlite by design, so
+confirm a clean run on PostgreSQL before promoting.
+
 Use the ordinary frontend build for development. `build:production` is reserved
 for the audited production profile.
 

@@ -44,6 +44,17 @@ describe("development account login helper", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
+  it("opens on the annotator portal by default", async () => {
+    render(<MemoryRouter><LoginPage /></MemoryRouter>);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "Annotator Login",
+      "Requester Login",
+    ]);
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    expect(tabs[1].getAttribute("aria-selected")).toBe("false");
+  });
+
   it("shows the configured deployment release discreetly", async () => {
     render(<MemoryRouter><LoginPage /></MemoryRouter>);
     const version = await screen.findByLabelText("Release version");

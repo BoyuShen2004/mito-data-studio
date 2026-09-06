@@ -721,9 +721,15 @@ class PublicShareChunkAccess(ChunkTestCase):
         from projects.models import PublicShare
 
         self.build()
+        # Its own registered image: ``unique_registered_image_per_dataset``
+        # (volumes/0012) forbids two volumes in one dataset sharing an
+        # ``image_path``, so the "not shared" volume registers its own, as a
+        # second volume in a real dataset would.
+        other_image = self.image.parent / "not-shared.tif"
+        tifffile.imwrite(str(other_image), self.source)
         self.other = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="not-shared",
-            image_path=str(self.image),
+            image_path=str(other_image),
         )
         self.share = PublicShare.objects.create(
             scope="volume", project=self.project, dataset=self.dataset,

@@ -55,6 +55,17 @@ class AuditVerb(models.TextChoices):
     SUBMISSION_SUPERSEDED = "submission.superseded", "Submission superseded"
     REVIEW_RECORDED = "review.recorded", "Review decision recorded"
     TASK_LABELS_RESET = "task.labels_reset", "Task working labels reset"
+    # Per-instance morphology / QA flags.
+    INSTANCE_ANNOTATION_SET = "instance.annotation_set", "Instance annotation set"
+    INSTANCE_ANNOTATION_CLEARED = (
+        "instance.annotation_cleared",
+        "Instance annotation cleared",
+    )
+    # Quality scoring and delivery targets.
+    QUALITY_SCORED = "quality.scored", "Submission quality scored"
+    MILESTONE_CREATED = "milestone.created", "Milestone created"
+    MILESTONE_UPDATED = "milestone.updated", "Milestone updated"
+    MILESTONE_DELETED = "milestone.deleted", "Milestone deleted"
 
 
 class UserRole(models.TextChoices):
@@ -301,3 +312,107 @@ class TimeTracking(models.TextChoices):
 
     ELIGIBLE = "eligible", "Time tracking eligible"
     LEGACY_EXEMPT = "legacy_exempt", "Legacy — annotation time unknown"
+
+
+# --- Mitochondria instance annotation ---------------------------------------
+# Two orthogonal dimensions on one instance. A mitochondrion can be both
+# *swollen* (what it is) and *uncertain* (how confident the annotator is);
+# collapsing them into one enum would force a false choice.
+
+
+class MitoMorphology(models.TextChoices):
+    """Morphological phenotype of one mitochondrion instance.
+
+    Blank is a real value here and means "nobody has classified this one" —
+    deliberately not the same as ``NORMAL``, which is a positive claim that
+    someone looked and found nothing unusual.
+    """
+
+    NORMAL = "normal", "Normal"
+    ELONGATED = "elongated", "Elongated / tubular"
+    FRAGMENTED = "fragmented", "Fragmented / punctate"
+    SWOLLEN = "swollen", "Swollen"
+    DONUT = "donut", "Donut / toroidal (MOAS)"
+    MEGA = "mega", "Megamitochondrion"
+    CRISTAE_LOSS = "cristae_loss", "Cristae disrupted / lost"
+    MITOPHAGY = "mitophagy", "Undergoing mitophagy"
+
+
+class InstanceQaFlag(models.TextChoices):
+    """What is wrong (or unresolved) about how one instance is labelled.
+
+    Independent of :class:`MitoMorphology`: these describe the *annotation*,
+    not the biology. ``NEEDS_SPLIT`` / ``NEEDS_MERGE`` are the human-recorded
+    truth that ``QualityScore.false_merges`` / ``false_splits`` estimate
+    automatically, so the two can be compared.
+    """
+
+    UNCERTAIN = "uncertain", "Uncertain — needs a second look"
+    BOUNDARY_TRUNCATED = "boundary_truncated", "Cut off by the volume boundary"
+    NEEDS_SPLIT = "needs_split", "Under-segmented — one id covers two objects"
+    NEEDS_MERGE = "needs_merge", "Over-segmented — one object split across ids"
+    FALSE_POSITIVE = "false_positive", "Not a mitochondrion"
+
+
+# The flags that mean "a human should look at this again", used to build the
+# reviewer's flagged-instance list and the project attention queue.
+REVIEW_WORTHY_QA_FLAGS = (
+    InstanceQaFlag.UNCERTAIN,
+    InstanceQaFlag.NEEDS_SPLIT,
+    InstanceQaFlag.NEEDS_MERGE,
+    InstanceQaFlag.FALSE_POSITIVE,
+)
+
+
+# --- Notifications ----------------------------------------------------------
+
+
+class NotificationVerb(models.TextChoices):
+    """What happened, for one person's inbox.
+
+    Deliberately a separate vocabulary from :class:`AuditVerb`: audit records
+    everything that touches an object forever, while only a fraction of that
+    is worth interrupting somebody about.
+    """
+
+    TASK_ASSIGNED = "task.assigned", "Task assigned to you"
+    TASK_WITHDRAWN = "task.withdrawn", "Task withdrawn"
+    SUBMISSION_RECEIVED = "submission.received", "Submission awaiting your review"
+    SUBMISSION_REVIEWED = "submission.reviewed", "Your submission was reviewed"
+    HARD_CASE_OPENED = "hard_case.opened", "Hard case opened"
+    HARD_CASE_REPLIED = "hard_case.replied", "New reply on a hard case"
+    DEADLINE_APPROACHING = "deadline.approaching", "Deadline approaching"
+    MILESTONE_AT_RISK = "milestone.at_risk", "Milestone at risk"
+    QUALITY_FLAGGED = "quality.flagged", "Submission quality flagged"
+
+
+# --- Milestones -------------------------------------------------------------
+
+
+class MilestoneStatus(models.TextChoices):
+    PLANNED = "planned", "Planned"
+    ACTIVE = "active", "Active"
+    MET = "met", "Met"
+    MISSED = "missed", "Missed"
+
+
+class MilestoneMetric(models.TextChoices):
+    """What a milestone counts toward its target."""
+
+    TASKS_APPROVED = "tasks_approved", "Tasks approved"
+    VOLUMES_COMPLETED = "volumes_completed", "Volumes completed"
+
+
+# --- Quality scoring --------------------------------------------------------
+
+
+class QualityScoreKind(models.TextChoices):
+    """Where a :class:`annotation.models.QualityScore` came from.
+
+    ``REVIEWER_AGREEMENT`` costs no extra annotation: it compares what an
+    annotator submitted against what the reviewer actually approved, which is
+    work that already happened.
+    """
+
+    GOLD_STANDARD = "gold_standard", "Scored against a gold-standard reference"
+    REVIEWER_AGREEMENT = "reviewer_agreement", "Annotator versus reviewer's approved label"

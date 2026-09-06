@@ -72,6 +72,17 @@ class PyramidTestCase(TestCase):
             voxel_size_z=40.0, voxel_size_y=8.0, voxel_size_x=8.0,
         )
 
+    def another_image(self, name: str):
+        """A distinct registered image, for a second volume in this dataset.
+
+        ``unique_registered_image_per_dataset`` (volumes/0012) forbids two
+        volumes in one dataset sharing an ``image_path``, so a test needing a
+        second volume registers a second image, as production would.
+        """
+        path = self.external / f"{name}.tif"
+        tifffile.imwrite(str(path), self.source)
+        return path
+
 
 class FlagGating(PyramidTestCase):
     def test_disabled_refuses_and_writes_nothing(self):
@@ -246,7 +257,7 @@ class Isolation(PyramidTestCase):
     def test_two_volumes_get_separate_derivatives(self):
         other = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="other",
-            image_path=str(self.image),
+            image_path=str(self.another_image("other")),
         )
         with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON):
             self.assertNotEqual(
@@ -291,7 +302,7 @@ class LegacyData(PyramidTestCase):
         """An absent derivative is an accurate absence, not a missing record."""
         legacy = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="legacy",
-            image_path=str(self.image),
+            image_path=str(self.another_image("legacy")),
         )
         self.assertFalse(legacy.ready_streaming)
         self.assertEqual(legacy.pyramid_metadata, {})

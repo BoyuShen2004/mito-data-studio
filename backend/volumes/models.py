@@ -111,6 +111,30 @@ class Volume(models.Model):
     voxel_size_y = models.FloatField(null=True, blank=True)
     voxel_size_x = models.FloatField(null=True, blank=True)
 
+    # --- Gold standard ------------------------------------------------------
+    # A gold-standard volume is assigned and annotated like any other; the
+    # annotator is deliberately not told, because a known test measures
+    # attention rather than ordinary working accuracy.
+    is_gold_standard = models.BooleanField(
+        default=False,
+        help_text=(
+            "Submissions on this volume are scored against "
+            "``reference_submission``."
+        ),
+    )
+    # The trusted answer is an already-approved submission, not a separately
+    # curated file: it went through the same review everything else did, and
+    # an in-app submission's label snapshot is immutable by construction (see
+    # ``annotation.models.AnnotationSubmission``), so it cannot drift out from
+    # under a score computed against it.
+    reference_submission = models.ForeignKey(
+        "annotation.AnnotationSubmission",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="gold_standard_for",
+    )
+
     file_format = models.CharField(
         max_length=10, choices=FileFormat.choices, default=FileFormat.TIFF
     )

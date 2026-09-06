@@ -18,7 +18,7 @@ function releaseLabel(release: string): string {
 export default function LoginPage() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
-  const [portal, setPortal] = useState<LoginPortal>("requester");
+  const [portal, setPortal] = useState<LoginPortal>("annotator");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -133,20 +133,20 @@ export default function LoginPage() {
             <button
               type="button"
               role="tab"
-              aria-selected={portal === "requester"}
-              className={`tab ${portal === "requester" ? "tab-active" : ""}`}
-              onClick={() => setPortal("requester")}
-            >
-              Requester Login
-            </button>
-            <button
-              type="button"
-              role="tab"
               aria-selected={portal === "annotator"}
               className={`tab ${portal === "annotator" ? "tab-active" : ""}`}
               onClick={() => setPortal("annotator")}
             >
               Annotator Login
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={portal === "requester"}
+              className={`tab ${portal === "requester" ? "tab-active" : ""}`}
+              onClick={() => setPortal("requester")}
+            >
+              Requester Login
             </button>
           </div>
 

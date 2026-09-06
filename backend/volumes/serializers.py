@@ -154,9 +154,17 @@ class VolumeSerializer(serializers.ModelSerializer):
             "region_mask_coverage",
             "region_mask_empty",
             "label_location",
+            # Read-only here on purpose: the gold-standard switch is manager-only
+            # and validated (a reference must belong to this volume), so it is
+            # written through `VolumeGoldStandardView`, never through an
+            # ordinary volume PATCH.
+            "is_gold_standard",
+            "reference_submission",
             "created_at",
         ]
         read_only_fields = [
+            "is_gold_standard",
+            "reference_submission",
             "project",
             "status",
             "created_at",

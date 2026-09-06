@@ -16,6 +16,7 @@ visitor can open the same data but see different actions.
 | [6. Region-only, assisted masks, and SAM2 Track](user-guide/06-assisted-and-track.md) | Protect content outside an ROI and review AI-assisted proposals safely |
 | [7. Save, submit, review, and feedback](user-guide/07-submit-and-review.md) | Understand drafts and snapshots, both submission channels, decisions, and label comments |
 | [8. Hard cases, sharing, time, profile, and safety](user-guide/08-collaboration-and-safety.md) | Collaborate, publish revocable read-only links, interpret time, and recover safely |
+| [9. Instance annotation, quality, and delivery](user-guide/09-instance-quality-and-delivery.md) | Record per-instance morphology and issues; read the inbox, milestones, and measured quality |
 
 ## Recommended end-to-end path
 

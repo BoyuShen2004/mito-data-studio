@@ -10,7 +10,26 @@
  */
 
 import "fake-indexeddb/auto";
+import { configure } from "@testing-library/dom";
 import { beforeEach } from "vitest";
+
+// --- async timeout ----------------------------------------------------------
+// Testing Library's default `waitFor` / `findBy*` budget is 1000 ms. That is
+// generous on an idle machine and far too tight on a busy one: this suite runs
+// many jsdom workers in parallel, and on a loaded CI box (or beside a backend
+// suite) the viewer tests routinely need longer just to mount a canvas and
+// resolve their first fetch.
+//
+// Three tests were intermittently failing that way — `SliceViewer`,
+// `AnnotationCanvasRegion`, and `AnnotationCanvasHardCaseFocus` — always with
+// a "unable to find" / stale-value error rather than a wrong one, and never
+// when run in isolation.
+//
+// Raising the ceiling does not hide a real failure: `waitFor` polls and
+// returns the moment its condition holds, so a passing test is not slowed by
+// one millisecond. Only the *failure* path waits longer, which is the correct
+// trade — a slow true negative beats a fast false one.
+configure({ asyncUtilTimeout: 5000 });
 
 // Viewer navigation now intentionally persists in the real address bar. Each
 // test still needs a fresh browser URL unless it explicitly creates a deep

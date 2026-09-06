@@ -4,6 +4,7 @@ import { useAsync } from "../hooks/useAsync";
 import { roleLabel } from "../labels";
 import StatusBadge from "../components/StatusBadge";
 import AnnotatorTimeSection from "../components/AnnotatorTimeSection";
+import AnnotatorQualitySection from "../components/AnnotatorQualitySection";
 import { ProjectRef } from "./PeoplePage";
 
 /** Read-only card for one person, reached from any People roster.
@@ -98,6 +99,9 @@ export default function PersonPage() {
             list. Lazy for the same reason: opening someone's card should not
             cost a report they may not want. */}
         <AnnotatorTimeSection username={p.username} />
+        {/* Renders nothing when quality metrics are off or this person has
+            never been measured — see the component. */}
+        <AnnotatorQualitySection username={p.username} />
       </div>
     </>
   );

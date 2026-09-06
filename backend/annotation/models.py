@@ -7,8 +7,11 @@ from django.db import models
 from core.choices import (
     DifficultyLevel,
     HardCaseStatus,
+    InstanceQaFlag,
+    MitoMorphology,
     PriorityLevel,
     QCStatus,
+    QualityScoreKind,
     ReviewDecision,
     SubmissionSource,
     SubmissionReviewStatus,
@@ -894,3 +897,155 @@ class AnnotationOperation(models.Model):
                 f"is append-only. Record a new operation instead."
             )
         return super().save(*args, **kwargs)
+
+
+class LabelInstanceAnnotation(models.Model):
+    """Per-instance metadata for one label id in one volume.
+
+    An **absent row means "not annotated"**, which is exactly the behaviour
+    every existing volume already has. That is what makes this model purely
+    additive: nothing backfills it, and a volume with zero rows here renders
+    and exports precisely as it did before the table existed.
+
+    Keyed on ``(volume, label_id)`` rather than on the task. Instance ids are a
+    property of the volume's label raster, so a task being re-scoped to a
+    different z-range must not orphan or silently re-point what somebody
+    recorded about instance 47.
+
+    Two orthogonal dimensions, deliberately not collapsed into one enum:
+
+    * ``morphology`` — what this mitochondrion *is* (the science).
+    * ``qa_flags``   — what is wrong or unresolved about how it is *labelled*
+      (the annotation quality).
+
+    One instance can legitimately be both ``swollen`` and ``uncertain``, and a
+    single field would force a false choice between recording the phenotype
+    and recording the doubt.
+    """
+
+    volume = models.ForeignKey(
+        "volumes.Volume",
+        on_delete=models.CASCADE,
+        related_name="instance_annotations",
+    )
+    label_id = models.PositiveIntegerField()
+
+    # Blank is a real, meaningful value: "nobody has classified this one".
+    # Deliberately distinct from MitoMorphology.NORMAL, which is the positive
+    # claim that somebody looked and found nothing unusual.
+    morphology = models.CharField(
+        max_length=20, choices=MitoMorphology.choices, blank=True
+    )
+    # Multi-select, stored as a JSON list of InstanceQaFlag values and
+    # validated against the enum in the serializer. A list rather than a second
+    # table: these are a handful of short constants per instance, and "flagged
+    # for two reasons" must stay expressible without a join.
+    qa_flags = models.JSONField(default=list, blank=True)
+    note = models.CharField(max_length=280, blank=True)
+
+    # Who last touched it, so a reviewer can tell an annotator's own
+    # uncertainty flag from one the reviewer added afterwards.
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="instance_annotations",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["volume_id", "label_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["volume", "label_id"], name="uniq_instance_annotation"
+            )
+        ]
+        indexes = [
+            # The two hot reads: one volume's panel, and "everything with a
+            # given phenotype across a project".
+            models.Index(
+                fields=["volume", "morphology"], name="idx_instance_morphology"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.volume_id}#{self.label_id} {self.morphology or 'unclassified'}"
+
+    @property
+    def is_empty(self) -> bool:
+        """Does this row carry no information at all?
+
+        ``services.set_instance_annotation`` deletes rather than stores these,
+        so "has a row" always means "somebody recorded something".
+        """
+        return not self.morphology and not self.qa_flags and not self.note
+
+    @property
+    def review_worthy(self) -> bool:
+        """Should a reviewer be pointed at this instance?"""
+        from core.choices import REVIEW_WORTHY_QA_FLAGS
+
+        worthy = {flag.value for flag in REVIEW_WORTHY_QA_FLAGS}
+        return any(flag in worthy for flag in (self.qa_flags or []))
+
+
+class QualityScore(models.Model):
+    """Measured agreement between one submission and a trusted reference.
+
+    Every metric is **nullable on purpose**. A provider that cannot compute a
+    figure records its absence; it must never write ``0.0``, which would be
+    indistinguishable from a genuine score of zero. This is the same
+    discipline ``Volume.region_mask_coverage`` and ``TimeTracking.
+    LEGACY_EXEMPT`` already enforce elsewhere in the codebase.
+    """
+
+    submission = models.ForeignKey(
+        AnnotationSubmission,
+        on_delete=models.CASCADE,
+        related_name="quality_scores",
+    )
+    kind = models.CharField(max_length=32, choices=QualityScoreKind.choices)
+    # What it was scored against. Nullable so a score outlives a reference
+    # submission that is later removed — the numbers stay meaningful even when
+    # the comparison target is gone.
+    reference_submission = models.ForeignKey(
+        AnnotationSubmission,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="scored_against",
+    )
+
+    # --- Semantic overlap (foreground vs background) -----------------------
+    dice = models.FloatField(null=True, blank=True)
+    iou = models.FloatField(null=True, blank=True)
+    precision = models.FloatField(null=True, blank=True)
+    recall = models.FloatField(null=True, blank=True)
+
+    # --- Instance level ----------------------------------------------------
+    # The metrics that actually decide whether EM instance segmentation is
+    # usable: a volume can score 0.95 Dice and still be worthless if every
+    # neighbouring pair of mitochondria is merged into one id.
+    instance_f1 = models.FloatField(
+        null=True, blank=True, help_text="Instances matched at IoU >= 0.5."
+    )
+    false_merges = models.PositiveIntegerField(null=True, blank=True)
+    false_splits = models.PositiveIntegerField(null=True, blank=True)
+    variation_of_information = models.FloatField(null=True, blank=True)
+
+    provider = models.CharField(max_length=64)
+    # Per-class / per-instance breakdown, whatever the provider chose to keep.
+    detail = models.JSONField(default=dict, blank=True)
+    computed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-computed_at", "-id"]
+        indexes = [
+            models.Index(fields=["submission", "kind"], name="idx_quality_sub_kind"),
+        ]
+
+    def __str__(self) -> str:
+        shown = "—" if self.dice is None else f"{self.dice:.3f}"
+        return f"{self.get_kind_display()} dice={shown}"

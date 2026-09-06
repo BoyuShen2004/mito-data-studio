@@ -8,6 +8,7 @@ import type { ReviewDecision } from "../types";
 import { submissionChannelLabel } from "../components/TaskDetailsCards";
 import { listReviewLabelComments, deleteReviewLabelComment } from "../api/reviewLabelComments";
 import ReviewLabelCommentList from "../components/ReviewLabelCommentList";
+import SubmissionQualityCard from "../components/SubmissionQualityCard";
 import type { ReviewLabelComment } from "../types/reviewLabelComment";
 
 export default function ReviewSubmissionPage() {
@@ -150,6 +151,9 @@ export default function ReviewSubmissionPage() {
           </ul>
         )}
       </div>
+
+      {/* Renders nothing unless a score exists — see the component. */}
+      <SubmissionQualityCard submissionId={submissionId} />
 
       {s.reviews.length > 0 && (
         <div className="card">

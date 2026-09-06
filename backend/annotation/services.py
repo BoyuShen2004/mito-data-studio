@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -28,6 +30,8 @@ from .models import (
     HardCaseMessage,
     ReviewRecord,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _serialized_volume_write(function):
@@ -414,6 +418,7 @@ def assign_task_to_annotator(
     Updates the existing task in place. Reassignment keeps the same task row,
     so no duplicate annotation tasks are created.
     """
+    previous_assignee = None
     with transaction.atomic():
         locked = AnnotationTask.objects.select_for_update().get(pk=task.pk)
         previous_assignee = locked.assigned_to
@@ -461,6 +466,17 @@ def assign_task_to_annotator(
                 reason=_timing.WorkInterval.CloseReason.SUPERSEDED,
             )
     task.refresh_from_db()
+    # Outside the transaction: an inbox write must never hold assignment locks,
+    # and a notification failure must never roll back a completed assignment.
+    if task.assigned_to is not None and task.assigned_to.pk != getattr(
+        previous_assignee, "pk", None
+    ):
+        try:
+            from accounts.notifications import notify_task_assigned
+
+            notify_task_assigned(task, actor=actor)
+        except Exception:  # noqa: BLE001 - never fails a completed assignment
+            logger.exception("Could not notify assignee of task %s", task.pk)
     return task
 
 
@@ -493,6 +509,11 @@ def withdraw_project_assignments(
 
     task_ids = []
     volume_ids = set()
+    # (task, former assignee) pairs captured before `assigned_to` is cleared.
+    # The assignee is held separately rather than read back off the task: the
+    # loop below mutates the very objects appended here, so a list of tasks
+    # alone would report every former assignee as None.
+    withdrawn_from: list[tuple] = []
     with transaction.atomic():
         locked = list(
             tasks.select_for_update().select_related("volume", "assigned_to")
@@ -509,6 +530,7 @@ def withdraw_project_assignments(
                 outcome=AssignmentWithdrawal.Outcome.WITHDRAWN,
             )
             _retire_submissions(task, reason="Assignment withdrawn.")
+            withdrawn_from.append((task, task.assigned_to))
             task.assigned_to = None
             task.status = TaskStatus.UNASSIGNED
             task.assigned_at = None
@@ -528,6 +550,15 @@ def withdraw_project_assignments(
                 "last_decision_comments", "last_decision_source",
             ])
             task_ids.append(task.id)
+    # Outside the transaction, and guarded: the withdrawal is committed by now,
+    # so an inbox failure must not report it as an error. `locked` still holds
+    # each task's former assignee, which the rows themselves no longer do.
+    try:
+        from accounts.notifications import notify_task_withdrawn
+
+        notify_task_withdrawn(withdrawn_from, actor=None)
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not notify withdrawn assignees on project %s", project.pk)
     return {
         "withdrawn": len(task_ids),
         "task_ids": task_ids,
@@ -729,6 +760,37 @@ def _mark_submitted(task: AnnotationTask) -> None:
     task.save(update_fields=["status", "submitted_at", "submission_count"])
 
 
+def _after_submission(submission, *, actor=None) -> None:
+    """Inbox + gold-standard scoring for one freshly created submission.
+
+    Deliberately called **outside** the submit transaction. Both side effects
+    are best-effort and comparatively slow (scoring reads two label volumes),
+    and neither may hold the task lock or roll back work that is already
+    durable on disk.
+
+    Every step is guarded, imports included. By the time this runs the
+    submission row and its label snapshot are committed, so *nothing* here may
+    reach the caller as a failure — a 500 after a successful submit would tell
+    the annotator their work was lost when it was not.
+    """
+    try:
+        from accounts.notifications import (
+            manager_recipients,
+            notify_submission_received,
+        )
+
+        notify_submission_received(submission, manager_recipients(), actor=actor)
+    except Exception:  # noqa: BLE001 - an inbox write never fails a submit
+        logger.exception("Could not notify managers of submission %s", submission.pk)
+
+    try:
+        from .quality_scoring import score_against_gold_standard
+
+        score_against_gold_standard(submission, actor=actor)
+    except Exception:  # noqa: BLE001 - a metric never fails a submit
+        logger.exception("Could not score submission %s", submission.pk)
+
+
 def submit_annotation(
     *, task: AnnotationTask, annotator, label_file, notes: str = ""
 ) -> AnnotationSubmission:
@@ -762,6 +824,7 @@ def submit_annotation(
         )
         run_basic_qc(submission)
         _mark_submitted(task)
+    _after_submission(submission, actor=annotator)
     return submission
 
 
@@ -833,6 +896,7 @@ def submit_inapp_annotation(
             actor=annotator,
             reason=_timing.WorkInterval.CloseReason.SUBMITTED,
         )
+    _after_submission(submission, actor=annotator)
     return submission
 
 
@@ -920,6 +984,16 @@ def _record_review(submission, reviewer, decision, comments) -> ReviewRecord:
         reviewer, AuditVerb.REVIEW_RECORDED, target=task,
         review_id=review.pk, submission_id=submission.pk, decision=str(decision),
     )
+    # Same best-effort contract as the audit write above, and for the same
+    # reason: a failed inbox write must not turn a recorded verdict into a 500.
+    try:
+        from accounts.notifications import notify_submission_reviewed
+
+        notify_submission_reviewed(
+            submission, decision, actor=reviewer, comments=comments
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not notify %s of review", submission.annotator_id)
     return review
 
 
@@ -990,7 +1064,76 @@ def approve_submission(
             task, TaskStatus.APPROVED,
             extra_fields=("approved_at", "annotation_locked"),
         )
-        return review
+    # Outside the transaction: scoring reads two label volumes, which must not
+    # happen while this approval still holds the task and submission locks.
+    # Guarded because the approval is already committed by this point — a
+    # failure here must not report a successful approval as an error.
+    try:
+        _after_approval(locked, reviewer=reviewer)
+    except Exception:  # noqa: BLE001
+        logger.exception("Post-approval scoring failed for submission %s", locked.pk)
+    return review
+
+
+def _after_approval(approved, *, reviewer=None) -> None:
+    """Reviewer-agreement scoring for one approved submission.
+
+    The signal this measures is already produced by the existing workflow, at
+    no extra annotation cost. ``can_submit_task`` permits a **manager** to
+    submit, so the ordinary way a reviewer fixes work is to edit the working
+    label and submit their own corrected version, then approve that instead of
+    the annotator's. When that happens the approved submission's author is not
+    the task's assignee, and the difference between the two submissions is
+    exactly how much correction the work needed.
+
+    When the approved submission *is* the assignee's own, there was nothing to
+    correct and no score is written — an absent score means "not measured",
+    which is the honest reading, rather than a perfect score the reviewer never
+    actually claimed.
+    """
+    task = approved.task
+    assignee_id = task.assigned_to_id
+    if assignee_id is None or approved.annotator_id == assignee_id:
+        return
+
+    annotator_submission = (
+        AnnotationSubmission.objects.filter(task=task, annotator_id=assignee_id)
+        .exclude(pk=approved.pk)
+        .order_by("-submitted_at", "-id")
+        .first()
+    )
+    if annotator_submission is None:
+        return
+
+    from .quality_scoring import score_reviewer_agreement
+
+    try:
+        score = score_reviewer_agreement(
+            annotator_submission, approved, actor=reviewer
+        )
+    except Exception:  # noqa: BLE001 - a metric never fails an approval
+        logger.exception("Could not score reviewer agreement on task %s", task.pk)
+        return
+
+    if score is None or score.dice is None:
+        return
+
+    from django.conf import settings
+
+    threshold = float(getattr(settings, "MITO_QUALITY_FLAG_THRESHOLD", 0.80))
+    if score.dice >= threshold:
+        return
+    try:
+        from accounts.notifications import manager_recipients, notify_quality_flagged
+
+        notify_quality_flagged(
+            annotator_submission,
+            manager_recipients(),
+            score.dice,
+            threshold=threshold,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not raise quality flag for task %s", task.pk)
 
 
 def _install_submission_as_official(submission: AnnotationSubmission) -> None:
@@ -1328,6 +1471,30 @@ def _load_or_init_label(volume, shape):
                 # The official label may be registered by reference to
                 # someone else's tree — never quarantine/rewrite it here;
                 # a corrupt/unreadable seed just means "start empty".
+                #
+                # Note this is the *opposite* of `_seed_working_label`, which
+                # refuses outright rather than starting empty. The divergence
+                # is deliberate and safe because of who calls what:
+                #
+                #   * `_seed_working_label` runs from `_writable_label` — the
+                #     editor's entry point — and from
+                #     `reset_working_labels_to_registered`. It is creating the
+                #     annotator's starting point, so a broken source must stop
+                #     the operation: otherwise a proofreading volume hands over
+                #     a blank mask where a prediction should have been.
+                #   * this function runs only from SAM2 tracking
+                #     (`track_task_batch`, `track_task_fork`), and tracking
+                #     needs prompts, which need the editor, which already went
+                #     through the strict gate above. So by the time this runs a
+                #     valid working copy exists and is returned before the
+                #     official label is read at all.
+                #
+                # That ordering is what makes the lenient branch here
+                # unreachable for a corrupt registered label, and it is why it
+                # stays lenient: it is a defensive fallback, not a policy.
+                # If a future caller reaches this without going through the
+                # editor first, revisit — the two would then genuinely
+                # disagree. `test_seeding_policy.py` locks both halves.
                 arr = None
             if arr is not None and arr.shape == tuple(shape):
                 return arr.astype(np.int32)
@@ -4620,7 +4787,7 @@ def create_hard_case(
     axis = (view_axis or "").strip().lower()
     if axis not in {"", "x", "y", "z"}:
         axis = "z"
-    return HardCase.objects.create(
+    case = HardCase.objects.create(
         task=task,
         project=task.project,
         volume=task.volume,
@@ -4632,6 +4799,16 @@ def create_hard_case(
         view_axis=axis,
         created_by=user,
     )
+    # Guarded like every other inbox write: recording the case is the
+    # operation, telling the project about it is a courtesy that must not be
+    # able to fail it.
+    try:
+        from accounts.notifications import notify_hard_case_opened
+
+        notify_hard_case_opened(case, actor=user)
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not announce hard case %s", case.pk)
+    return case
 
 
 def get_public_hard_case(token: str) -> HardCase | None:
@@ -4756,7 +4933,16 @@ def add_hard_case_message(case: HardCase, *, user, body: str) -> HardCaseMessage
         raise ValueError("Message cannot be blank.")
     if len(cleaned) > 2000:
         raise ValueError("Messages must be 2,000 characters or fewer.")
-    return HardCaseMessage.objects.create(hard_case=case, author=user, body=cleaned)
+    message = HardCaseMessage.objects.create(
+        hard_case=case, author=user, body=cleaned
+    )
+    try:
+        from accounts.notifications import notify_hard_case_replied
+
+        notify_hard_case_replied(message, actor=user)
+    except Exception:  # noqa: BLE001 - a reply is durable before anyone is told
+        logger.exception("Could not announce reply on hard case %s", case.pk)
+    return message
 
 
 def set_hard_case_status(case: HardCase, *, status: str, user=None) -> HardCase:

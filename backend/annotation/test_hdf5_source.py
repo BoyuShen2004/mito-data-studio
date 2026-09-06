@@ -410,10 +410,16 @@ class Hdf5WorkingCopyTests(TestCase):
 
         self.assertEqual(hashlib.sha256(self.mask.read_bytes()).hexdigest(), before)
 
-    def test_an_unreadable_h5_mask_starts_an_empty_working_copy(self):
-        """Same policy the TIFF branch already applies: a registered label
-        this app cannot read means "start empty", never an error out of the
-        editor's entry point."""
+    def test_an_unreadable_h5_mask_is_refused_not_silently_emptied(self):
+        """Same policy the TIFF branch applies: refuse, do not start empty.
+
+        Seeding used to fall back to an empty working copy here. That is worse
+        than the error: on a proofreading volume the annotator would be handed
+        a blank mask where a prediction should have been, correct nothing, and
+        submit work that looks like they deleted every label. The editor's
+        entry point turns this into a 400 with the message below (see
+        ``annotation.api.TaskLabelIdsView``), not a crash.
+        """
         from annotation.services import _writable_label
 
         broken = self.external / "broken_mask.h5"
@@ -422,8 +428,12 @@ class Hdf5WorkingCopyTests(TestCase):
         self.volume.save(update_fields=["label_path"])
 
         with override_settings(MITO_DATA_ROOT=self.root):
-            mm, _ = _writable_label(self.volume, SHAPE)
-            self.assertEqual(int(np.asarray(mm).max()), 0)
+            with self.assertRaises(ValueError) as ctx:
+                _writable_label(self.volume, SHAPE)
+        self.assertIn("unreadable", str(ctx.exception))
+
+        # The unreadable source is still a source: never rewritten, never moved.
+        self.assertEqual(broken.read_bytes(), b"not hdf5 at all")
 
     def test_whole_volume_fallback_also_reads_the_h5_official_label(self):
         """``_load_or_init_label`` is the other place a registered label is
@@ -464,7 +474,11 @@ class Hdf5WorkingCopyTests(TestCase):
         self.assertEqual(slab.dtype, np.int32)
         np.testing.assert_array_equal(slab, self.mask_array[1:5])
 
-    def test_a_mismatched_shape_is_not_used_as_a_seed(self):
+    def test_a_mismatched_shape_is_refused_rather_than_ignored(self):
+        """A label whose shape disagrees with the image is a registration
+        error, and saying so beats quietly discarding it: the two cannot both
+        describe the same volume, and starting empty would hide which one is
+        wrong."""
         from annotation.services import _writable_label
 
         wrong = _write_h5(self.external / "wrong.h5", np.ones((3, 4, 5), np.uint16))
@@ -472,9 +486,12 @@ class Hdf5WorkingCopyTests(TestCase):
         self.volume.save(update_fields=["label_path"])
 
         with override_settings(MITO_DATA_ROOT=self.root):
-            mm, _ = _writable_label(self.volume, SHAPE)
-            self.assertEqual(tuple(mm.shape), SHAPE)
-            self.assertEqual(int(np.asarray(mm).max()), 0)
+            with self.assertRaises(ValueError) as ctx:
+                _writable_label(self.volume, SHAPE)
+        message = str(ctx.exception)
+        self.assertIn("does not match image shape", message)
+        # Both shapes are named, so the reader can tell which end is wrong.
+        self.assertIn("(3, 4, 5)", message)
 
 
 class Hdf5SeedCopyTests(SimpleTestCase):

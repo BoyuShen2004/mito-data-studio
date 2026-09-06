@@ -17,6 +17,7 @@ import type { Volume } from "../types/volume";
 import type { AnnotationTask } from "../types/task";
 import { useAuth } from "../auth/AuthContext";
 import { useAsync } from "../hooks/useAsync";
+import GoldStandardCard from "../components/GoldStandardCard";
 import ShareControl from "../components/ShareControl";
 
 /** One page for a volume: volume metadata + its task's details (no separate
@@ -156,6 +157,17 @@ export default function VolumeDetailPage() {
             <Link to={`/editor/tasks/${t.id}`}><button type="button">Annotate</button></Link>
           )}
         </>}
+      />
+
+      {/* Manager-only, and renders nothing at all when quality metrics are
+          disabled — so it never appears to an annotator who is about to be
+          assigned this volume. */}
+      <GoldStandardCard
+        volumeId={v.id}
+        isGoldStandard={Boolean(v.is_gold_standard)}
+        referenceSubmission={v.reference_submission ?? null}
+        isManager={isManager}
+        onChange={() => vol.reload()}
       />
 
       {tasks.loading && <p className="muted">Loading tasks…</p>}

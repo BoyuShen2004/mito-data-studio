@@ -5,6 +5,8 @@ import secrets
 from core.choices import (
     AnnotationType,
     MembershipSource,
+    MilestoneMetric,
+    MilestoneStatus,
     ProjectStatus,
     WorkflowType,
 )
@@ -222,3 +224,57 @@ class PublicShare(models.Model):
         if not self.token:
             self.token = secrets.token_urlsafe(32)
         super().save(*args, **kwargs)
+
+
+class Milestone(models.Model):
+    """A dated delivery target inside one project.
+
+    ``deadline`` on :class:`Project` answers "when is the whole thing due".
+    A milestone answers "what has to be true by when", which is the question a
+    manager actually schedules against, and there is normally more than one.
+
+    Progress is never stored. It is recomputed by a grouped query in
+    ``core.statistics`` on every read, because a cached counter that drifts
+    from the tasks it describes is worse than no counter — see the module
+    docstring there for the same rule applied to the dashboards.
+    """
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="milestones"
+    )
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    due_on = models.DateField()
+    order = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=20, choices=MilestoneStatus.choices, default=MilestoneStatus.PLANNED
+    )
+
+    # Empty means "every volume in the project". An explicit volume set beats a
+    # saved filter: a milestone has to keep meaning the same thing as the
+    # project grows, and a filter silently widens when new volumes land.
+    volumes = models.ManyToManyField(
+        "volumes.Volume", related_name="milestones", blank=True
+    )
+    target_metric = models.CharField(
+        max_length=32,
+        choices=MilestoneMetric.choices,
+        default=MilestoneMetric.TASKS_APPROVED,
+    )
+    target_value = models.PositiveIntegerField(default=0)
+
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_milestones",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["project_id", "order", "due_on", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.project.title}, due {self.due_on})"

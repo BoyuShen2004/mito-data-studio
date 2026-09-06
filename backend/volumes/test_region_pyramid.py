@@ -91,6 +91,20 @@ class RegionPyramidTestCase(TestCase):
             voxel_size_z=40.0, voxel_size_y=8.0, voxel_size_x=8.0,
         )
 
+    def another_image(self, name: str):
+        """A distinct registered image, for a second volume in this dataset.
+
+        ``unique_registered_image_per_dataset`` (volumes/0012) forbids two
+        volumes in one dataset sharing an ``image_path``. That is deliberate:
+        a duplicate registration makes the two rows disagree about which
+        working mask on disk is theirs, which is exactly the drift
+        ``label_paths.working_mask_basename`` documents. So a test that needs a
+        second volume registers a second image, as production would.
+        """
+        path = self.external / f"{name}.tif"
+        tifffile.imwrite(str(path), self.source)
+        return path
+
 
 class RegionBuild(RegionPyramidTestCase):
     def test_it_writes_a_sibling_group_and_leaves_the_image_layer_alone(self):
@@ -164,7 +178,7 @@ class RegionBuild(RegionPyramidTestCase):
     def test_a_volume_without_a_mask_is_refused_by_reason_not_by_crash(self):
         bare = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="bare",
-            image_path=str(self.image),
+            image_path=str(self.another_image("bare")),
         )
         with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON):
             with self.assertRaises(service.PyramidBuildError) as ctx:
@@ -215,7 +229,8 @@ class RegionSourceFormatParity(RegionPyramidTestCase):
         others = [
             Volume.objects.create(
                 project=self.project, dataset=self.dataset, name=f"cortex-{label}",
-                image_path=str(self.image), region_mask_path=str(path),
+                image_path=str(self.another_image(f"cortex-{label}")),
+                region_mask_path=str(path),
                 voxel_size_z=40.0, voxel_size_y=8.0, voxel_size_x=8.0,
             )
             for label, path in (("h5", h5_path), ("nii", nii_path))
@@ -289,12 +304,13 @@ class RegionJobs(RegionPyramidTestCase):
         with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON):
             paired = register_volume(
                 project=self.project, dataset=self.dataset, name="paired",
-                image_path=str(self.image), region_mask_path=str(self.region),
+                image_path=str(self.another_image("paired")),
+                region_mask_path=str(self.region),
                 created_by=self.user,
             )
             bare = register_volume(
                 project=self.project, dataset=self.dataset, name="bare",
-                image_path=str(self.image), created_by=self.user,
+                image_path=str(self.another_image("bare")), created_by=self.user,
             )
 
         def layers_for(volume):
@@ -348,7 +364,8 @@ class RegionJobs(RegionPyramidTestCase):
         with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON):
             volume = register_volume(
                 project=self.project, dataset=self.dataset, name="registered",
-                image_path=str(self.image), region_mask_path=str(self.region),
+                image_path=str(self.another_image("registered")),
+                region_mask_path=str(self.region),
                 created_by=self.user,
             )
             region_jobs = ProcessingJob.objects.filter(
@@ -392,11 +409,12 @@ class RegionBackfill(RegionPyramidTestCase):
     def test_it_queues_the_volumes_with_a_mask_and_no_roi_stream(self):
         bare = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="bare",
-            image_path=str(self.image),
+            image_path=str(self.another_image("bare")),
         )
         ready = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="ready",
-            image_path=str(self.image), region_mask_path=str(self.region),
+            image_path=str(self.another_image("ready")),
+            region_mask_path=str(self.region),
             region_ready_streaming=True,
         )
 
@@ -435,7 +453,8 @@ class RegionBackfill(RegionPyramidTestCase):
     def test_limit_leaves_the_rest_for_the_next_pass(self):
         other = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="second",
-            image_path=str(self.image), region_mask_path=str(self.region),
+            image_path=str(self.another_image("second")),
+            region_mask_path=str(self.region),
         )
         report = self.backfill(limit=1)
         self.assertEqual(len(report["eligible"]), 2)
@@ -491,7 +510,7 @@ class RegionStatusPayload(RegionPyramidTestCase):
     def test_a_volume_without_a_mask_reports_absent_not_unbuilt(self):
         bare = Volume.objects.create(
             project=self.project, dataset=self.dataset, name="bare",
-            image_path=str(self.image),
+            image_path=str(self.another_image("bare")),
         )
         data = self.status(bare)
         self.assertEqual(data["region_streaming_status"], "absent")

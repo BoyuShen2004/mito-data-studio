@@ -19,7 +19,34 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // Must stay comfortably above the `asyncUtilTimeout` set in
+    // `src/test/setup.ts` (5 s). Vitest's own default is also 5 s, so leaving
+    // it there made the two deadlines collide: a slow `waitFor` was killed by
+    // the outer test timeout before the inner one could report *what* it was
+    // waiting for, turning an actionable "unable to find role=alert" into a
+    // bare "Test timed out in 5000ms". The outer budget is a backstop for a
+    // genuinely hung test; the inner one is what should normally fire.
+    testTimeout: 20000,
+    hookTimeout: 20000,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // `scrubBenchmark.test.ts` asserts wall-clock p95 latency against a fixed
+    // 100 ms gate. That is a meaningful measurement on an idle machine and
+    // pure noise inside a parallel suite: it failed whenever the box was busy,
+    // reporting a performance regression that had not happened.
+    //
+    // A timing gate belongs in a deliberate run on a quiet machine, so it is
+    // held out of `npm test` and reachable through `npm run bench:phase13`,
+    // which sets MITO_RUN_BENCH. The switch is an env var rather than a plain
+    // `exclude` entry because vitest applies `exclude` even to a file named
+    // explicitly on the command line — excluding it outright made the
+    // benchmark script exit "No test files found".
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      ...(process.env.MITO_RUN_BENCH
+        ? []
+        : ["src/features/chunks/scrubBenchmark.test.ts"]),
+    ],
     // Vitest stubs CSS imports to an empty string by default, which makes the
     // stylesheet untestable. `topbarLayout.test.ts` asserts the reserved-width
     // rules that keep topbar controls from overlapping, and it needs the real

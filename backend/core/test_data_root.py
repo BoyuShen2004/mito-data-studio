@@ -197,15 +197,28 @@ class RegisteredSourceFilesAreReadOnly(DataRootTestCase):
         mask = next(self.root.rglob("*_mask.tif"))
         self.assertIn(3, np.unique(tifffile.imread(str(mask))))
 
-    def test_a_corrupt_external_official_label_does_not_block_editing(self):
-        """An unreadable registered label must degrade to "start empty".
+    def test_a_corrupt_external_official_label_is_refused_not_silently_emptied(self):
+        """An unreadable registered label must be reported, not seeded around.
 
         The official label can be registered *by reference* to a file this app
-        does not own — an external prediction, a truncated transfer, a path that
-        exists but is not a valid TIFF. Seeding used to call ``imread`` without
-        a guard, so the first read *or* save on such a volume raised straight
-        out of the editor's entry point and the annotator could not work on the
-        volume at all, not even from scratch.
+        does not own — an external prediction, a truncated transfer, a path
+        that exists but is not a valid TIFF. Seeding once degraded to "start
+        empty" here, on the reasoning that an annotator should never be blocked.
+        That reasoning was reversed deliberately: on a proofreading volume a
+        silent empty seed hands the annotator a blank mask where a prediction
+        should have been, so they correct nothing and submit work that looks
+        like they deleted every label. A named error is recoverable; that is
+        not.
+
+        The annotator is not left with a crash either — the editor's entry
+        point turns this into a 400 carrying the message
+        (``annotation.api.TaskLabelIdsView``).
+
+        Note which branch actually fires: ``tifffile.imread`` does not raise on
+        this file, it returns a degenerate ``(0,)`` array. So the refusal comes
+        from the shape check rather than the read guard, and the message the
+        operator sees names the shapes. Asserting on the shared refusal wording
+        keeps this test honest about either branch reaching the same verdict.
         """
         broken = self.external / "broken_official.tif"
         broken.write_bytes(b"II*\x00 definitely not a real tiff")
@@ -215,15 +228,14 @@ class RegisteredSourceFilesAreReadOnly(DataRootTestCase):
         with override_settings(MITO_DATA_ROOT=self.root.resolve()):
             from annotation.services import get_label_slice_ids
 
-            # Must not raise.
-            first_read = get_label_slice_ids(self.volume, "z", 0)
-            self.assertIn("shape", first_read)
-            # And editing still works, starting from empty.
-            self._edit(label=11)
-            reloaded = get_label_slice_ids(self.volume, "z", 0)
+            with self.assertRaises(ValueError) as ctx:
+                get_label_slice_ids(self.volume, "z", 0)
 
-        labels = {label_id for label_id, _count in reloaded["runs"]}
-        self.assertIn(11, labels)
+        message = str(ctx.exception)
+        self.assertIn("refusing to create an empty working copy", message)
+        # The registered shape is named, so the operator can see which end is
+        # wrong rather than only that something is.
+        self.assertIn("(0,)", message)
         # The unreadable source was left exactly as it was found.
         self.assertEqual(
             broken.read_bytes(), b"II*\x00 definitely not a real tiff"

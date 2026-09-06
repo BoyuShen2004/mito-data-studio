@@ -82,6 +82,17 @@ describe("SliceViewer Phase 14 data-source selection", () => {
   it("uses bottom arrows for layers and keyboard arrows for pan", async () => {
     const { container } = render(<SliceViewer volumeId={7} />);
     await screen.findByAltText("slice 1");
+    // Synchronise on the layer field too, not only on the image. Both derive
+    // from the same `index`, but `CommitNumberInput` holds a local draft that
+    // it syncs from the prop in a passive effect — so the field is always one
+    // commit behind the `alt` text. Waiting on the image alone left a window
+    // where the assertions below read the previous layer, which is exactly
+    // what made this test fail intermittently under parallel load.
+    await waitFor(() =>
+      expect(
+        (screen.getByTitle("Go to z layer (1–3)") as HTMLInputElement).value,
+      ).toBe("2"),
+    );
     const viewport = container.querySelector<HTMLElement>(".canvas-viewport")!;
     Object.defineProperty(viewport, "clientWidth", { configurable: true, value: 500 });
     Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 500 });

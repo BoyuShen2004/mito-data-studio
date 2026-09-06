@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "bench:phase13": "vitest run src/features/chunks/scrubBenchmark.test.ts --reporter=verbose --silent=false",
+    "bench:phase13": "MITO_RUN_BENCH=1 vitest run src/features/chunks/scrubBenchmark.test.ts --reporter=verbose --silent=false",
     "test:e2e:phase14": "playwright test",
     "bench:phase14": "playwright test --grep @phase14-benchmark"
   },

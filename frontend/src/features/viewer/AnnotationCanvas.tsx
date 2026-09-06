@@ -73,6 +73,7 @@ import { panCanvasHorizontally, panCanvasVertically } from "./canvasPan";
 import { labelColor, labelColorCss } from "./labelColor";
 import LabelsPanel, { type LabelsScope } from "./LabelsPanel";
 import Labels3DPanel from "./Labels3DPanel";
+import InstanceAnnotationPanel from "./annotate/InstanceAnnotationPanel";
 import AnnotateToolChrome from "./annotate/AnnotateToolChrome";
 import TrackRail, { type TrackingPromptTool } from "./annotate/TrackRail";
 import { canPropagatePrompt, trackRangeIssue } from "./annotate/trackRange";
@@ -6934,6 +6935,14 @@ export default function AnnotationCanvas({
         />
 
         <div className="labels-panel-slot">
+          {/* Morphology / QA flags for the Active instance. Renders nothing at
+              all when the deployment has not enabled the feature, so the
+              editor is unchanged where it is off. */}
+          <InstanceAnnotationPanel
+            taskId={taskId}
+            activeId={activeId}
+            readOnly={!editable}
+          />
           <LabelsPanel
             scope={labelsScope}
             onScopeChange={setLabelsScope}
