@@ -37,12 +37,18 @@ release dependencies (including the explicitly pinned CUDA wheel index):
 ./ops/staging/install-release-dependencies.sh
 ```
 
-Start with all flags off and `VITE_FEATURE_CHUNK_RENDERER=false` for v1.0.0
-parity. The isolated integrated candidate applies `upgrade.env.example`, runs
+Flags-off / `VITE_FEATURE_CHUNK_RENDERER=false` was the v1.0.0 parity baseline
+and is kept here only for a rollback rehearsal — it is **not** how anything
+currently runs. Production has been on `production_integrated_v1` since v1.1,
+and development matches it feature for feature (see "Feature flags" in
+`docs/development.md`). Staging should start from the shape it is meant to
+mirror, not from the retired one.
+
+The isolated integrated candidate applies `upgrade.env.example`, runs
 `verify_upgrade_readiness --strict`, and builds with `npm run build:upgrade`.
 That profile enables the complete Phase 1–14 stack while preserving explicit
-per-feature overrides for rollback. Never apply the overlay to the frozen
-production v1.0.0 checkout or environment.
+per-feature overrides for rollback. Never apply the overlay to a frozen
+production checkout or environment.
 
 With the candidate's protected environment already loaded, run the combined
 read-only/build gate (set `MITO_PYTHON` when the candidate virtualenv is not on
