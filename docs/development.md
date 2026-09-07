@@ -123,6 +123,43 @@ The root `.env` is copied from `.env.example`. Important settings include:
 Source images and region masks are immutable inputs. Annotation writes go to an
 application-owned working mask; approval creates the official checkpoint.
 
+### Feature flags — development runs what production runs
+
+Production sets `MITO_UPGRADE_PROFILE=production_integrated_v1`, which turns on
+nine `FEATURE_*` settings. Development lists the same nine explicitly in `.env`
+instead of adopting that profile, because the profile is not only a feature set
+— `core/checks.py` treats it as a *deployment identity* and demands the whole
+audited runtime contract from anything claiming it (metrics bearer token, CUDA
+device placement, model-file checksums, an empty job-environment allowlist). A
+development box is not that machine, and letting it say otherwise would turn
+that check into a no-op.
+
+```ini
+FEATURE_TEAMS=true
+FEATURE_AUTO_FILL_SCHEDULER=true
+FEATURE_REVIEW_HISTORY=true
+FEATURE_DASHBOARDS=true
+FEATURE_ANNOTATION_OPS=true
+FEATURE_INTERPOLATION=true
+FEATURE_ANNOTATION_TOOLS=true
+FEATURE_VOLUME_PYRAMIDS=true
+FEATURE_CHUNK_SERVICE=true
+```
+
+Leave any of them out and it defaults to **off** under the `legacy` profile, so
+development silently exercises a different application from the deployed one.
+Verify with:
+
+```bash
+python -c "import django,os;os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings');django.setup();
+from django.conf import settings;print({n:getattr(settings,n) for n in dir(settings) if n.startswith('FEATURE_')})"
+```
+
+The browser half has the same rule and lives in `frontend/package.json`: `npm
+run dev` and `npm run build:production` set an identical `VITE_*` set, so the
+dev server exercises the chunk pull queue and the chunk renderer that
+production ships. Change one, change the other.
+
 ## Tests
 
 ```bash

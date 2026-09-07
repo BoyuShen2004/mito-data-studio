@@ -407,11 +407,14 @@ class MyCompletedTasksView(APIView):
 
     def get(self, request):
         done = [TaskStatus.SUBMITTED, TaskStatus.APPROVED]
+        # `review_history` walks submissions -> reviews -> reviewer for every
+        # row, so the list needs the same chain every other task list prefetches.
         tasks = list(
             AnnotationTask.objects.filter(
                 assigned_to=request.user, status__in=done
             )
-            .select_related("volume", "volume__dataset", "project")
+            .select_related(*TASK_SELECT_RELATED)
+            .prefetch_related(*TASK_PREFETCH_RELATED)
         )
         data = list(
             AnnotationTaskSerializer(
@@ -421,11 +424,17 @@ class MyCompletedTasksView(APIView):
         for item in data:
             item["history_key"] = f"task-{item['id']}"
 
-        withdrawals = AssignmentWithdrawal.objects.filter(
-            annotator=request.user
-        ).select_related(
-            "task", "task__volume", "task__volume__dataset", "task__project",
-            "annotator", "transferred_to",
+        withdrawals = (
+            AssignmentWithdrawal.objects.filter(annotator=request.user)
+            .select_related(
+                "task",
+                "annotator",
+                "transferred_to",
+                *(f"task__{relation}" for relation in TASK_SELECT_RELATED),
+            )
+            .prefetch_related(
+                *(f"task__{relation}" for relation in TASK_PREFETCH_RELATED)
+            )
         )
         for withdrawal in withdrawals:
             transferred = (
@@ -593,9 +602,23 @@ class SubmissionListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = AnnotationSubmission.objects.select_related(
-            "task", "task__volume", "annotator"
-        ).prefetch_related("label_comments").filter(id__in=latest_submission_ids())
+        # `task_detail` embeds the whole AnnotationTaskSerializer, whose
+        # `review_history` walks the task's submissions and each one's reviews.
+        # Without the task's own chain prefetched that is one query per task
+        # per relation: 36 rows cost 415 queries before this was added. The
+        # same constants ProjectTasksView uses, re-rooted at `task__`.
+        qs = (
+            AnnotationSubmission.objects.select_related(
+                "task",
+                "annotator",
+                *(f"task__{relation}" for relation in TASK_SELECT_RELATED),
+            )
+            .prefetch_related(
+                "label_comments",
+                *(f"task__{relation}" for relation in TASK_PREFETCH_RELATED),
+            )
+            .filter(id__in=latest_submission_ids())
+        )
         if not is_manager(self.request.user):
             qs = qs.filter(annotator=self.request.user)
         task_status = self.request.query_params.get("task_status")
@@ -609,9 +632,16 @@ class SubmissionDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        # One row, but the same embedded task chain — and this is what the
+        # review box on a task page fetches.
         qs = AnnotationSubmission.objects.select_related(
-            "task", "task__volume", "annotator"
-        ).prefetch_related("label_comments")
+            "task",
+            "annotator",
+            *(f"task__{relation}" for relation in TASK_SELECT_RELATED),
+        ).prefetch_related(
+            "label_comments",
+            *(f"task__{relation}" for relation in TASK_PREFETCH_RELATED),
+        )
         if not is_manager(self.request.user):
             qs = qs.filter(annotator=self.request.user)
         return qs

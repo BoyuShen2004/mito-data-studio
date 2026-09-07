@@ -1,27 +1,45 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import type { ReactNode } from "react";
+import { Suspense, lazy, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthContext";
 import Layout from "../components/Layout";
 import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import HomePage from "../pages/HomePage";
-import RegisterDataPage from "../pages/RegisterDataPage";
 import ProjectListPage from "../pages/ProjectListPage";
 import NewProjectPage from "../pages/NewProjectPage";
 import ProjectDetailPage from "../pages/ProjectDetailPage";
 import VolumeDetailPage from "../pages/VolumeDetailPage";
 import TaskDetailPage from "../pages/TaskDetailPage";
-import { TaskViewerPage, VolumeViewerPage } from "../pages/ViewerPage";
-import HardCaseSharePage from "../pages/HardCaseSharePage";
-import TaskSharePage from "../pages/TaskSharePage";
-import PublicSharePage from "../pages/PublicSharePage";
-import HardCaseDetailPage from "../pages/HardCaseDetailPage";
 import PeoplePage from "../pages/PeoplePage";
 import ProfilePage from "../pages/ProfilePage";
 import PersonPage from "../pages/PersonPage";
 import AdminSettingsPage from "../pages/AdminSettingsPage";
 import SubmitTaskPage from "../pages/SubmitTaskPage";
 import ReviewSubmissionPage from "../pages/ReviewSubmissionPage";
+/**
+ * Split at the routes that mount a canvas.
+ *
+ * `AnnotationCanvas` imports `Labels3DPanel`, which imports the whole of
+ * `three` — so before this, a manager who only ever opened lists still
+ * downloaded the 3-D engine on first paint. These pages are the only ones that
+ * need it, and every one of them is a deliberate navigation (View, Annotate,
+ * opening a case or a share link), so a chunk fetch is already expected there.
+ *
+ * `RegisterDataPage` joins them because it is an 879-line wizard nobody sees
+ * until they choose to ingest data.
+ */
+const TaskViewerPage = lazy(() =>
+  import("../pages/ViewerPage").then((m) => ({ default: m.TaskViewerPage })),
+);
+const VolumeViewerPage = lazy(() =>
+  import("../pages/ViewerPage").then((m) => ({ default: m.VolumeViewerPage })),
+);
+const HardCaseDetailPage = lazy(() => import("../pages/HardCaseDetailPage"));
+const HardCaseSharePage = lazy(() => import("../pages/HardCaseSharePage"));
+const TaskSharePage = lazy(() => import("../pages/TaskSharePage"));
+const PublicSharePage = lazy(() => import("../pages/PublicSharePage"));
+const RegisterDataPage = lazy(() => import("../pages/RegisterDataPage"));
+
 import { effectiveRole, homePathForRole, homeLabelForRole } from "./roles";
 import type { HomeRole } from "./roles";
 
@@ -51,6 +69,7 @@ function RequireAuth({
 
 export default function AppRoutes() {
   return (
+    <Suspense fallback={<div className="center">Loading…</div>}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -217,5 +236,6 @@ export default function AppRoutes() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }

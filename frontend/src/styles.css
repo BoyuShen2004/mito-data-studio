@@ -143,32 +143,6 @@ a:hover {
   font-size: 1.05rem;
   font-weight: 650;
 }
-.dataset-review-groups,
-.assignment-dataset-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.dataset-group-card {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
-  border-radius: 8px;
-  background: var(--card);
-}
-.dataset-group-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.8rem 1rem;
-  border-bottom: 1px solid var(--border);
-  background: rgba(248, 250, 252, 0.88);
-}
-.dataset-group-heading h3 {
-  margin: 0.15rem 0 0;
-  font-size: 1.02rem;
-}
 .dataset-group-count {
   flex: 0 0 auto;
   color: var(--muted);
@@ -415,11 +389,6 @@ td.volume-name-cell {
   flex-direction: column;
   gap: 0.25rem;
 }
-.review-history-row + .review-history-row {
-  border-top: 1px solid var(--border);
-  margin-top: 0.65rem;
-  padding-top: 0.65rem;
-}
 .data-layer-lines > div + div {
   margin-top: 0.2rem;
 }
@@ -468,8 +437,7 @@ td.volume-name-cell {
 .section-heading p {
   margin: 0;
 }
-.page-actions,
-.project-header-actions {
+.page-actions {
   justify-content: flex-end;
 }
 .project-title-line {
@@ -506,28 +474,11 @@ td.volume-name-cell {
   color: var(--muted);
   font-size: 0.8rem;
 }
-.summary-metric-warn strong {
-  color: var(--warn);
-}
-
-.manager-workspace {
-  display: grid;
-  grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
-  gap: 1.25rem;
-  align-items: start;
-}
 .attention-rail {
   display: grid;
   gap: 0.85rem;
   position: sticky;
   top: 5rem;
-}
-.attention-panel,
-.requester-next-step {
-  padding: 1rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
 }
 .eyebrow {
   color: var(--muted);
@@ -539,50 +490,6 @@ td.volume-name-cell {
 .attention-panel .eyebrow,
 .shortcut-list .eyebrow {
   margin-bottom: 0.45rem;
-}
-.attention-link {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.65rem 0;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-}
-.attention-link:last-of-type {
-  border-bottom: 0;
-}
-.attention-link strong {
-  min-width: 1.6rem;
-  padding: 0.12rem 0.4rem;
-  border-radius: 999px;
-  text-align: center;
-  background: #fef3c7;
-  color: #92400e;
-}
-.attention-link-disabled {
-  color: var(--muted);
-}
-.attention-link-disabled strong {
-  background: #eef1f6;
-  color: var(--muted);
-}
-.attention-clear {
-  margin: 0.6rem 0 0;
-}
-.shortcut-list {
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.5rem 0.2rem;
-}
-.shortcut-list a {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.42rem 0.15rem;
-  color: var(--text);
-}
-.workspace-main {
-  min-width: 0;
 }
 .section-tabs {
   display: flex;
@@ -656,9 +563,6 @@ td.volume-name-cell {
   color: var(--muted);
   text-align: center;
 }
-.task-workspace {
-  border-top: 0;
-}
 
 .project-header-actions .share-control {
   justify-content: flex-end;
@@ -675,46 +579,6 @@ td.volume-name-cell {
   padding-bottom: 0;
   margin-bottom: 0;
   border-bottom: 0;
-}
-.next-actions {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-.access-share-note {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.requester-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 310px);
-  gap: 1.25rem;
-  align-items: start;
-}
-.requester-workspace > .workspace-main {
-  padding: 1.25rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.requester-next-step {
-  position: sticky;
-  top: 5rem;
-}
-.requester-next-step h2 {
-  margin: 0.35rem 0;
-  font-size: 1.1rem;
-}
-.requester-next-step button {
-  width: 100%;
-  margin: 0.4rem 0 0.7rem;
-}
-.secondary-link {
-  display: block;
-  font-size: 0.82rem;
-  text-align: center;
 }
 
 @media (max-width: 900px) {
@@ -1264,20 +1128,6 @@ button.dev-reset-btn:hover:not(:disabled) {
 .volume-meta-table .action-align-center .volume-meta-action-content {
   justify-content: center;
 }
-.task-table-annotator {
-  width: 100%;
-  min-width: 0 !important;
-  table-layout: fixed;
-}
-.task-table-annotator th {
-  white-space: normal;
-  line-height: 1.15;
-}
-.task-table-annotator th,
-.task-table-annotator td {
-  min-width: 0;
-  padding-inline: 0.45rem;
-}
 .task-table-annotator td.cell-name,
 .task-table-annotator td.mono-cell {
   min-width: 0;
@@ -1298,7 +1148,6 @@ button.dev-reset-btn:hover:not(:disabled) {
   .task-table-annotator { min-width: 0 !important; }
 }
 .cell-streaming { white-space: normal; }
-.task-lock { margin-left: 0.3rem; }
 .volume-meta-block h3 { margin-top: 0; }
 .meta-grid {
   display: grid;
@@ -1621,11 +1470,6 @@ button.dev-reset-btn:hover:not(:disabled) {
 .working-team-create {
   grid-column: 1 / -1;
   margin: 0;
-}
-.task-withdrawal-note {
-  margin-top: 0.2rem;
-  max-width: 14rem;
-  font-size: 0.78rem;
 }
 
 @media (max-width: 820px) {
@@ -3195,9 +3039,6 @@ button.dev-reset-btn:hover:not(:disabled) {
 .hard-case-row:last-child {
   border-bottom: none;
 }
-.hard-case-resolved {
-  opacity: 0.62;
-}
 .hard-case-note {
   max-width: 60ch;
   margin-top: 0.2rem;
@@ -3554,7 +3395,6 @@ button.dev-reset-btn:hover:not(:disabled) {
   align-items: center;
 }
 
-
 /* --- Annotation time ------------------------------------------------------
    `-` is not `0m`: a legacy-exempt volume's total is unknown, and the muted
    treatment plus the tooltip say so rather than letting it read as "no work". */
@@ -3638,8 +3478,7 @@ button.dev-reset-btn:hover:not(:disabled) {
   gap: 0.3rem;
   margin-top: 0.3rem;
 }
-.hard-case-category-chip,
-.hard-case-filter-chip {
+.hard-case-category-chip {
   padding: 0.2rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -3648,30 +3487,16 @@ button.dev-reset-btn:hover:not(:disabled) {
   font-size: 0.79rem;
   cursor: pointer;
 }
-.hard-case-category-chip:hover:not(:disabled),
-.hard-case-filter-chip:hover:not(:disabled) {
+.hard-case-category-chip:hover:not(:disabled) {
   border-color: var(--accent);
 }
-.hard-case-filter-chip:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-/* Selection carries weight and border as well as fill, never colour alone. */
-.hard-case-category-chip-active,
-.hard-case-filter-chip-active {
+/* Selection carries weight and border as well as fill,
+never colour alone. */
+.hard-case-category-chip-active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
-}
-.hard-case-category-badge {
-  margin-left: 0.4rem;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  font-size: 0.7rem;
-  color: var(--muted);
 }
 /* The three that mean "this labelling is wrong" read as warnings; the rest are
    neutral observations and should not shout. */
@@ -3683,12 +3508,6 @@ button.dev-reset-btn:hover:not(:disabled) {
 }
 .hard-case-category-section {
   margin-bottom: 0.8rem;
-}
-.hard-case-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0.6rem 0;
 }
 
 /* --- The work list ------------------------------------------------------ */

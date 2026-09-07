@@ -11,6 +11,20 @@ const port = Number(process.env.VITE_PORT || "5173");
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Without this, `three` lands in whichever shared chunk rollup happens
+        // to name first — it was being emitted as `RegionOnlyButton-*.js`, a
+        // 665 kB file named after a toolbar toggle. Naming it after what it
+        // actually contains is the difference between a readable build output
+        // and a mystery. The chunk is only fetched by the canvas routes, which
+        // are lazy (see routes/AppRoutes.tsx).
+        manualChunks: (id: string) =>
+          id.includes("node_modules/three") ? "three" : undefined,
+      },
+    },
+  },
   // Vitest. jsdom only for component/lifecycle tests; the pure modules
   // (pendingSliceBuffer, sliceHistory, revisionedFetch) do not need a DOM and
   // run in either environment. `setupFiles` installs the canvas stub jsdom

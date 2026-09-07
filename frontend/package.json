@@ -4,7 +4,7 @@
   "version": "1.1.5",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "VITE_MITO_UPGRADE_PROFILE=production_integrated_v1 VITE_FEATURE_CHUNK_PULL_QUEUE=true VITE_FEATURE_CHUNK_RENDERER=true VITE_SHOW_DEMO_ACCOUNTS=true vite",
     "build": "tsc --noEmit && VITE_SHOW_DEMO_ACCOUNTS=true vite build",
     "build:upgrade": "tsc --noEmit && VITE_MITO_UPGRADE_PROFILE=webknossos VITE_SHOW_DEMO_ACCOUNTS=true vite build",
     "build:production": "tsc --noEmit && VITE_MITO_UPGRADE_PROFILE=production_integrated_v1 VITE_FEATURE_CHUNK_PULL_QUEUE=true VITE_FEATURE_CHUNK_RENDERER=true VITE_SHOW_DEMO_ACCOUNTS=true vite build",

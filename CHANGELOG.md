@@ -5,7 +5,40 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+### Fixed
+
+- **The manager's home fired 415 database queries to draw 35 rows.**
+  `/api/submissions/` embeds each row's whole task, and the task serializer
+  walks that task's submissions and every review on them — but the view never
+  prefetched that chain, so it cost one query per task per relation. The
+  constants `ProjectTasksView` already used were sitting in the same file.
+  Measured against production data: **415 queries / 569 ms → 53 / 147 ms.**
+  `MyCompletedTasksView` (the annotator's Done tab) had the same gap and the
+  same fix. Both grew linearly with the queue, so the backlog was making it
+  worse every day.
+
+- **Application artifacts could land unreadable at `0600`.** See the entry
+  below; the same atomic-write flaw is fixed at both sites.
+
+- **Development ran a different application from production.** Nine
+  `FEATURE_*` settings are on in production through
+  `MITO_UPGRADE_PROFILE=production_integrated_v1`; development set no profile
+  at all, so every one of them defaulted **off**. The browser half diverged the
+  same way — `npm run build:production` enables the chunk pull queue and the
+  chunk renderer, `npm run dev` did not, so local work exercised an image path
+  nobody ships. Both are now aligned, and `docs/development.md` records the
+  rule. Four dead flags for modules removed in September
+  (`FEATURE_NOTIFICATIONS`, `FEATURE_MILESTONES`, `FEATURE_QUALITY_METRICS`,
+  `FEATURE_INSTANCE_ANNOTATION`) referenced no code and are gone.
+
 ### Changed
+
+- **First load no longer ships a 3-D engine to people reading lists.** The
+  annotation canvas imports `Labels3DPanel`, which imports the whole of
+  `three`, so every page paid for it. The canvas-bearing routes (viewer,
+  editor, hard case, the three share pages) and the data-registration wizard
+  are lazy now, and `three` is its own named chunk. **Entry bundle 1,057 kB →
+  342 kB (gzip 296 kB → 104 kB).** Nothing inside the viewer changed.
 
 - **The interface is reorganised around one primitive: a unit of work.** A task
   is a proposed change that gets submitted and reviewed, a hard case is a
