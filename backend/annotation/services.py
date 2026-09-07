@@ -2395,54 +2395,6 @@ def track_task_fork(
 # volume: ~8.75s per stroke (full imread + full imwrite). Fixed cost with a
 # writable memmap, touching one plane: ~0.015s.
 
-def _adopt_legacy_working_copy(volume) -> None:
-    """One-time, in-place migration of a volume's pre-``_mask``-scheme working
-    files to the current layout, run lazily the first time the editor touches
-    a volume. Prevents already-painted voxels from silently disappearing from
-    the Labels panel when the naming scheme changes without the operator
-    having run ``migrate_volume_artifacts`` first.
-
-    Renames ``<dataset>/volume_<id>_labels.tif`` →
-    ``<dataset>/<stem>_mask.tif`` and its sidecar into ``metadata/`` — only
-    when the new mask doesn't already exist (never overwrites current work)
-    and the legacy file does. A no-op (and cheap: two ``exists()`` checks)
-    once migrated. Failures are swallowed to a fresh start rather than
-    crashing the editor — the seed-from-official-label path below still runs.
-    """
-    from .label_paths import (
-        legacy_working_label_metadata_rel_path,
-        legacy_working_label_rel_path,
-        working_label_metadata_rel_path,
-        working_label_rel_path,
-    )
-    from .visualization.slice_io import resolve_path
-
-    new_path = resolve_path(working_label_rel_path(volume))
-    legacy_path = resolve_path(legacy_working_label_rel_path(volume))
-    try:
-        # Mask and metadata migrations are intentionally independent.  An
-        # earlier release could create the new mask before moving its legacy
-        # sidecar; returning as soon as the mask existed made every verified
-        # label look Proposed after the next reopen even though the durable
-        # metadata was still present under the old name.
-        if not new_path.exists() and legacy_path.exists():
-            new_path.parent.mkdir(parents=True, exist_ok=True)
-            legacy_path.replace(new_path)
-        legacy_meta = resolve_path(legacy_working_label_metadata_rel_path(volume))
-        new_meta = resolve_path(working_label_metadata_rel_path(volume))
-        if legacy_meta.exists() and not new_meta.exists():
-            new_meta.parent.mkdir(parents=True, exist_ok=True)
-            legacy_meta.replace(new_meta)
-    except OSError as exc:
-        # Never turn a failed migration into a fresh draft.  The legacy file
-        # is known to contain user work, so silently falling through would
-        # strand it and seed another file that looks like a reset.
-        raise OSError(
-            "Existing annotation data could not be moved to its current "
-            "location. No replacement working copy was created."
-        ) from exc
-
-
 def _seed_working_label(volume, owned_path, shape, source_location: str) -> None:
     """Create the working label file at ``owned_path``, seeded from
     ``source_location`` (the registered/official label) or from zeros.
@@ -2532,7 +2484,6 @@ def _writable_label(volume, shape):
     from .label_paths import working_label_rel_path
     from .visualization.slice_io import open_label_volume_writable, resolve_path
 
-    _adopt_legacy_working_copy(volume)
     owned_rel = working_label_rel_path(volume)
     owned_path = resolve_path(owned_rel)
 
@@ -2549,10 +2500,6 @@ def _load_label_metadata_store(volume):
     from .label_paths import working_label_metadata_rel_path
     from .visualization.slice_io import resolve_path
 
-    # The working mask can already use the current name while its sidecar is
-    # still at the legacy path.  Adopt both independently before loading so a
-    # reopen never silently drops lifecycle state.
-    _adopt_legacy_working_copy(volume)
     path = resolve_path(working_label_metadata_rel_path(volume))
     store = LabelMetadataStore()
     loaded = store.load(str(path))

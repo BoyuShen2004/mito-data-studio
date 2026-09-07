@@ -214,22 +214,6 @@ export interface TrackBatchResult {
   warnings?: TrackWarning[];
 }
 
-export const trackTaskFork = (
-  taskId: number,
-  seeds: SeedInput[],
-  zRange?: [number, number],
-  parentId?: number,
-  axis: Axis = "z",
-  pendingSlices: PendingToolSlice[] = [],
-) =>
-  api.post<TrackBatchResult>(`/tasks/${taskId}/track/`, {
-    seeds,
-    z_range: zRange,
-    parent_id: parentId,
-    axis,
-    pending_slices: pendingSlices,
-  });
-
 export const getTrackingPrompts = (taskId: number) =>
   api.get<TrackingPromptQueue>(`/tasks/${taskId}/track/prompts/`);
 
@@ -590,43 +574,6 @@ export interface InterpolationRequest {
   shape?: [number, number];
 }
 
-const interpolationBody = (req: InterpolationRequest) => ({
-  axis: req.axis,
-  first_index: req.firstIndex,
-  last_index: req.lastIndex,
-  label: req.label,
-  ...(req.overwriteMode ? { overwrite_mode: req.overwriteMode } : {}),
-  roi_only: Boolean(req.roiOnly),
-  ...(req.firstRuns && req.lastRuns && req.shape
-    ? { first_runs: req.firstRuns, last_runs: req.lastRuns, shape: req.shape }
-    : {}),
-});
-
-/** Plan the intermediate slices. Writes nothing — safe to discard. */
-export const planInterpolation = (
-  taskId: number,
-  req: InterpolationRequest,
-  signal?: AbortSignal,
-) =>
-  api.post<InterpolationPreview>(
-    `/tasks/${taskId}/interpolate/`,
-    { ...interpolationBody(req), mode: "preview" },
-    signal,
-  );
-
-/** Commit the plan as one undoable annotation operation.
- * `idempotencyKey` makes a retry after a lost response safe. */
-export const applyInterpolation = (
-  taskId: number,
-  req: InterpolationRequest,
-  idempotencyKey: string,
-) =>
-  api.post<InterpolationApplied>(`/tasks/${taskId}/interpolate/`, {
-    ...interpolationBody(req),
-    mode: "apply",
-    idempotency_key: idempotencyKey,
-  });
-
 export interface FloodFillRequest {
   axis: Axis;
   index: number;
@@ -650,28 +597,6 @@ export interface FloodFillResult {
   seq?: number;
   slices?: InterpolationSlice[];
 }
-
-const floodBody = (req: FloodFillRequest) => ({
-  axis: req.axis,
-  index: req.index,
-  row: req.row,
-  col: req.col,
-  label: req.label,
-  depth: req.depth ?? 1,
-  overwrite_mode: req.overwriteMode,
-  roi_only: Boolean(req.roiOnly),
-});
-
-export const planFloodFill = (taskId: number, req: FloodFillRequest) =>
-  api.post<FloodFillResult>(`/tasks/${taskId}/flood-fill/`, {
-    ...floodBody(req), mode: "preview",
-  });
-
-export const applyFloodFill = (
-  taskId: number, req: FloodFillRequest, idempotencyKey: string,
-) => api.post<FloodFillResult>(`/tasks/${taskId}/flood-fill/`, {
-  ...floodBody(req), mode: "apply", idempotency_key: idempotencyKey,
-});
 
 // --- Labels panel (Filters Options: state/origin/lifecycle) + 3D preview ---
 // Cellable parity — see progress/history/21-cellable-parity-followups.md.

@@ -274,28 +274,3 @@ def volume_embeddings_dir_rel_path(volume) -> str:
     """
     dataset_dir = dataset_folder_rel_path(volume.project, volume.dataset)
     return f"{dataset_dir}/embeddings"
-
-
-# --- Legacy paths (pre-``_mask`` scheme) — migration / lazy adoption only ---
-#
-# Before this scheme, the working copy was ``<dataset>/volume_<id>_labels.tif``
-# with its sidecar right next to it and embeddings in a top-level
-# ``embeddings/<variant>/volume_<id>/`` silo. These helpers let a one-time
-# migration command (``migrate_volume_artifacts``) and the lazy-adoption path
-# in ``services._writable_label`` find and relocate those without losing
-# already-painted voxels. Never *write* to a legacy path — read/move only.
-
-def legacy_working_label_rel_path(volume) -> str:
-    dataset_dir = dataset_folder_rel_path(volume.project, volume.dataset)
-    return f"{dataset_dir}/volume_{volume.id}_labels.tif"
-
-
-def legacy_working_label_metadata_rel_path(volume) -> str:
-    dataset_dir = dataset_folder_rel_path(volume.project, volume.dataset)
-    return f"{dataset_dir}/volume_{volume.id}_labels_metadata.json"
-
-
-def legacy_embeddings_dir_rel_path(volume, variant: str) -> str:
-    """The old global embedding silo for one volume + variant:
-    ``embeddings/<variant>/volume_<id>/``."""
-    return f"embeddings/{variant}/volume_{volume.id}"

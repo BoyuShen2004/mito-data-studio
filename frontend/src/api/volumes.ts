@@ -6,12 +6,6 @@ export const listProjectVolumes = (projectId: number) =>
 
 export const getVolume = (id: number) => api.get<Volume>(`/volumes/${id}/`);
 
-export const registerVolume = (projectId: number, form: FormData) =>
-  api.postForm<Volume>(`/projects/${projectId}/volumes/`, form);
-
-export const updateVolume = (id: number, form: FormData) =>
-  api.patchForm<Volume>(`/volumes/${id}/`, form);
-
 /** Edit a volume's fields (name, paths, label type, dataset) as JSON. */
 export interface VolumeEdit {
   name?: string;

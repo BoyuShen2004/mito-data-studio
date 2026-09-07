@@ -40,9 +40,6 @@ export const listDatasets = (projectId?: number) =>
     projectId ? `/datasets/?project=${projectId}` : "/datasets/",
   );
 
-export const createDataset = (data: DatasetInput) =>
-  api.post<Dataset>("/datasets/", data);
-
 export const updateDataset = (id: number, data: DatasetInput) =>
   api.patch<Dataset>(`/datasets/${id}/`, data);
 

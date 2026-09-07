@@ -657,23 +657,30 @@ class WorkingLabelRecoveryTests(TestCase):
         self.assertEqual(path.read_bytes(), before)
 
 
-class MigrateEmbeddingPrefixTests(TestCase):
-    """Regression guard: the embedding files `migrate_volume_artifacts` writes
-    must land where the runtime (`_ai_embedding_cache_path`) looks for them.
-    A mismatch here silently defeats the disk cache and makes every AI click
-    re-run the encoder (the ~3s → per-click latency regression)."""
+class EmbeddingCachePathAgreementTests(TestCase):
+    """The writer and the runtime lookup must resolve the same file.
 
-    def test_migrated_embedding_is_found_by_runtime_lookup(self):
+    This used to be proved through `migrate_volume_artifacts`, which wrote
+    embeddings under the pre-`_mask` scheme and had to land them where
+    `_ai_embedding_cache_path` looks. That migration is finished and gone, but
+    the two-sided invariant it guarded is not: `embed_cache.cache_path_for`
+    writes and `_ai_embedding_cache_path` reads, and a disagreement between
+    them silently defeats the disk cache — every AI click re-runs the encoder
+    (the ~3 s per-click latency regression) while looking perfectly healthy.
+    """
+
+    def test_runtime_lookup_matches_what_the_cache_writer_produces(self):
         import tempfile as _tf
 
-        from django.core.management import call_command
-
+        from annotation.cellable_port.ai import embed_cache
+        from annotation.label_paths import (
+            volume_embeddings_dir_rel_path,
+            working_mask_stem,
+        )
         from annotation.services import _ai_embedding_cache_path
-        from annotation.label_paths import legacy_embeddings_dir_rel_path
-        from annotation.visualization.slice_io import resolve_path
         from projects.models import Dataset, Project
 
-        root = _tf.mkdtemp(prefix="mito-migrate-prefix-")
+        root = _tf.mkdtemp(prefix="mito-embed-path-")
         with override_settings(MITO_DATA_ROOT=root):
             project = Project.objects.create(title="webknossos")
             dataset = Dataset.objects.create(project=project, name="wk_heart")
@@ -685,21 +692,22 @@ class MigrateEmbeddingPrefixTests(TestCase):
                 project=project, dataset=dataset, name="v", image_path=img_rel,
                 shape_z=4, shape_y=8, shape_x=8,
             )
-            mtime = int(os.stat(img_path).st_mtime)
 
-            # Plant a legacy-silo embedding under the OLD scheme
-            # (embeddings/vits/volume_<id>/z_2_<mtime>.npy).
-            legacy_dir = resolve_path(legacy_embeddings_dir_rel_path(volume, "vits"))
-            legacy_dir.mkdir(parents=True, exist_ok=True)
-            np.save(str(legacy_dir / f"z_2_{mtime}.npy"), np.ones((1, 4, 5, 5), np.float32))
-
-            call_command("migrate_volume_artifacts", "--apply", verbosity=0)
-
-            # The runtime cache path for (volume, z, 2) must now exist on disk.
             runtime_path = _ai_embedding_cache_path(volume, "z", 2)
-            self.assertTrue(
-                runtime_path.exists(),
-                f"migrated embedding not found at runtime lookup {runtime_path}",
+            self.assertIsNotNone(runtime_path)
+
+            written = embed_cache.cache_path_for(
+                volume_embeddings_dir_rel_path(volume),
+                working_mask_stem(volume),
+                "z",
+                2,
+                getattr(settings, "MITO_EFFICIENT_SAM_VARIANT", "vits"),
+                os.stat(img_path).st_mtime,
+            )
+            self.assertEqual(
+                os.path.realpath(written),
+                os.path.realpath(runtime_path),
+                "the embedding the writer produces is not where the runtime looks",
             )
 
 
@@ -1341,30 +1349,6 @@ class CellablePortApiTests(TestCase):
         self.assertEqual(change.status_code, 400, change.content)
         self.assertEqual(sidecar.read_text(encoding="utf-8"), "{broken-primary")
         self.assertEqual(backup.read_text(encoding="utf-8"), "{broken-backup")
-
-    def test_legacy_sidecar_is_adopted_even_when_new_mask_already_exists(self):
-        from annotation.label_paths import (
-            legacy_working_label_metadata_rel_path,
-            working_label_metadata_rel_path,
-        )
-        from annotation.visualization.slice_io import resolve_path
-
-        self._paint_instance(21, 1, 0, 4, 0, 4, origin="manual")
-        client = self._client(self.annotator)
-        client.post(
-            f"/api/tasks/{self.task.id}/labels/21/lifecycle/",
-            {"action": "verify"},
-            format="json",
-        )
-        current = resolve_path(working_label_metadata_rel_path(self.volume))
-        legacy = resolve_path(legacy_working_label_metadata_rel_path(self.volume))
-        legacy.parent.mkdir(parents=True, exist_ok=True)
-        current.replace(legacy)
-
-        row = self._lifecycle_row(21)
-        self.assertEqual(row["state"], "verified")
-        self.assertTrue(current.exists())
-        self.assertFalse(legacy.exists())
 
     def test_unverify_when_not_verified_is_400(self):
         self._paint_instance(15, 1, 0, 4, 0, 4, origin="manual")

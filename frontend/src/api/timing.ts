@@ -46,11 +46,6 @@ export interface TimingStatus {
   config: TimingConfig;
 }
 
-export const getTaskTiming = (taskId: number, sessionId?: string | null) =>
-  api.get<TimingStatus>(
-    `/tasks/${taskId}/timing/${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ""}`,
-  );
-
 export const startTaskTiming = (taskId: number, clientToken: string) =>
   api.post<TimingStatus>(`/tasks/${taskId}/timing/start/`, {
     client_token: clientToken,
