@@ -11,8 +11,26 @@ a named group of volumes inside it.
 
 A requester-created project waits for manager review. The manager opens its
 **Overview** and approves it before assignment. Approval does not assign an
-annotator and does not register data. Managers see **Overview**, **Data**,
-**Assign**, **Access**, and **Activity**; other roles see the permitted subset.
+annotator and does not register data.
+
+A project's tab strip is six nouns, and what changes a thing lives at the scope
+of the thing it changes:
+
+| Tab | What is there |
+| --- | --- |
+| **Overview** | Status, deadline, the approval banner, progress, annotator workload, and what is publicly shared (read-only here) |
+| **Data** | Datasets and volumes, with one **Add data** button at the top right |
+| **Tasks** | The work list for this project. Tick rows and press **Assign volumes** to edit just those; press it with nothing ticked to open the whole project's plan |
+| **Cases** | Hard cases raised on this project |
+| **People** | Project members and the working team (managers) |
+| **Settings** | Edit the project, control its public link, and — in a bordered **Danger zone** at the bottom — delete it |
+
+Other roles see the permitted subset: People is manager-only, and Settings
+appears for managers and the requester who created the project.
+
+The header carries the project's name and status and nothing else. If you are
+looking for a control, the tab strip is meant to tell you where it is without
+your having to hunt.
 
 ## Registration references files; it does not upload them
 

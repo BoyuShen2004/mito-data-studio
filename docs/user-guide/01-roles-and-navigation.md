@@ -77,6 +77,44 @@ Tasks, hard cases, and projects are rendered by one list. A row reads:
 Above the rows, `N Open / M Closed` doubles as a filter, alongside dropdowns
 that only ever offer values actually present in the list.
 
+## A task page is a conversation with a sidebar
+
+Opening a row from any list lands on that unit of work. `/tasks/42` is the same
+page for a manager and an annotator — a link you paste means one thing to
+everyone who can open it.
+
+```
+Cortex study  /  Tasks  /  cortex_01 z1–256  #42        ← breadcrumb, every segment a link
+
+cortex_01 z1–256   #42   [Submitted]                    [View] [Annotate]
+assigned to alice · volume cortex_01 · 3 submissions
+
+  Conversation 6     Labels     History 3
+```
+
+- **Conversation** (the default) is the history, oldest first: assigned,
+  submitted round 1, the reviewer's decision and comment, submitted round 2.
+  **What you do next is at the end of it**, where you finished reading — the
+  review form for a manager, Annotate and the offline-upload link for the
+  assignee. Whoever cannot act sees the state rather than a disabled button.
+- **Labels** is the annotation canvas. **View** is read-only; **Annotate**
+  paints. These two also sit in the header, because they are the primary verbs
+  of this application and nothing on the page outranks them.
+- **History** is the earlier submission rounds and their decisions.
+
+The right-hand sidebar holds assignee, priority, difficulty, deadline, task
+type, frame range, dataset, label type, measured time, instructions, and links
+to the hard cases raised on this volume. It is metadata, so it sits beside the
+narrative rather than interrupting it.
+
+A hard case page has the same skeleton — title, `#id`, state, the discussion
+with its reply box at the end, metadata in a sidebar — with the canvas above,
+because for a hard case the picture is the subject.
+
+**Unmeasured time reads `-`, never `0m`.** A volume whose annotation began
+before time tracking exists cannot report a real total, and crediting somebody
+with zero effort they were never measured on would be worse than saying so.
+
 ## Three permissions that are easy to confuse
 
 1. **Project access** lets a person see a project and collaborate on its
@@ -97,7 +135,10 @@ annotator cannot find a task.
 - If **Annotate** is absent, confirm the task is open and assigned to the current
   annotator. Managers may inspect more broadly, but inspection does not accrue
   the annotator's time.
-- If the page seems stale after a role or access change, return to the role home
-  and reopen the project.
+- If the page seems stale after a role or access change, return to **Home** and
+  reopen the project.
+- A list that looks empty may simply be filtered: the dropdowns and the
+  Open / Closed strip persist in the address bar, so a link somebody sent you
+  arrives with their filters applied. Clear them to see everything.
 
 [User guide](../user-guide.md) · Next: [Projects and data](02-projects-and-data.md)
