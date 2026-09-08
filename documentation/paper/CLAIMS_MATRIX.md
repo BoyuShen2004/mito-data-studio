@@ -22,9 +22,15 @@ and tests; it does not automatically mean scientifically validated.
 | Tasks, hard cases, and projects share one list presentation, and review occurs on the task's own page | `components/WorkList.tsx`, `pages/TaskDetailPage.tsx`, `components/ReviewBox.tsx`, UI tests | May be described as implemented interface design |
 | A task's history is derived from durable records rather than a per-event table | `features/worklist/timeline.ts` is a pure function over `AnnotationTaskSerializer` output; no event table exists; unit tests | May be described as an implementation method with its storage rationale |
 | The interface reorganisation improved usability, task-completion time, or error rate | No prespecified usability study, no baseline, no participants, no measurements | **Requires a controlled usability study.** Do not infer this from the redesign itself |
-| The system has been operated on a real annotation project | Deployment recorded 2 projects, 7 datasets, 83 volumes, 83 tasks, 39 submissions, 35 hard cases, 20 accounts and ~295 GB on 2026-09-08 | May be described as deployment scale, with the capture date. It is **not** evidence of accuracy, throughput, or fitness for purpose |
+| The system has been operated on a real annotation project | Not recorded here. Deployment figures must be read from the deployment by its operator, with a capture date | May be described as deployment scale once the author supplies the figures. It is **not** evidence of accuracy, throughput, or fitness for purpose |
 | Review turnaround, annotator throughput, or hard-case rates from the deployment | Operational database counts only; no protocol, no inclusion rules, no denominators, no consent for reporting participant activity | Must not be reported as a Result without a prespecified analysis and approvals |
-| The list endpoints scale to large queues | One embedded-serialiser N+1 was fixed and measured (415 -> 53 queries for 35 rows) on the deployment | May be described as an implementation fix with the measured before/after; not a scalability claim |
+| The list endpoints scale to large queues | An embedded-serialiser N+1 in `SubmissionListView` / `MyCompletedTasksView` was fixed; see the CHANGELOG for the measured before/after | May be described as an implementation fix, quoting a benchmark the author reproduces; not a scalability claim |
+
+Operational records of the running deployment are annotator activity, not study
+data. Read them only as the operator, with a stated purpose, and do not import
+them into this repository: aggregate counts still describe identifiable people's
+work in a twenty-person lab, and reporting them needs a prespecified analysis
+and participant consent.
 
 For every Results claim, link the archived dataset, protocol, raw output,
 analysis script, statistical result, software tag, environment, and hardware
