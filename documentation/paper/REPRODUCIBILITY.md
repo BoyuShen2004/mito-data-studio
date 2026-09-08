@@ -2,16 +2,25 @@
 
 ## Software snapshot
 
-At documentation capture on 2026-08-23:
+At documentation capture on 2026-09-08:
 
 - branch: `main`;
-- base commit: `69faf4a8c6370f46dc4da8c70a6f3489191df561`;
-- worktree: modified, containing unreleased development changes;
+- base commit: `90df543dfb579edb42464813c20fa2414f810773`;
+- worktree: **clean** — no uncommitted changes;
 - frontend package version: 1.1.5;
-- production baseline noted by the changelog: 1.1.5.
+- production baseline noted by the changelog: 1.1.5;
+- annotated tags in this repository: **none**.
 
-Therefore the current tree must not be cited simply as “version 1.1.5.” Create a
-clean release commit and immutable tag before experiments intended for a paper.
+The tree being clean is necessary but not sufficient. `1.1.5` is a package
+version string that has been reused across many commits, so it does not
+identify software: the commit above does. **There is still no immutable tag.**
+Create a release commit and an annotated tag, and cite that tag together with
+its commit hash, before running anything intended for a manuscript. Without a
+tag, a reader cannot retrieve the exact software a figure came from.
+
+An earlier capture (2026-08-23, commit `69faf4a8…`) recorded a *modified*
+worktree. Do not cite that snapshot: the interface, several API querysets, and
+the label-artifact file mode have all changed since.
 
 ## Environment authorities
 

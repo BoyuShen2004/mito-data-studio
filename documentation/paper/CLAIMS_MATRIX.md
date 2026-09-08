@@ -19,6 +19,12 @@ and tests; it does not automatically mean scientifically validated.
 | The software is hardware adaptive | Probe-derived worker/device/memory/crop recommendations and Docker env wiring | May be described with the exact scope and limitations |
 | The software is open source | Root license currently grants no first-party reuse permission | Must not be claimed until licensing changes |
 | Unit tests establish biological validity | Tests establish software behavior only | Must not be claimed |
+| Tasks, hard cases, and projects share one list presentation, and review occurs on the task's own page | `components/WorkList.tsx`, `pages/TaskDetailPage.tsx`, `components/ReviewBox.tsx`, UI tests | May be described as implemented interface design |
+| A task's history is derived from durable records rather than a per-event table | `features/worklist/timeline.ts` is a pure function over `AnnotationTaskSerializer` output; no event table exists; unit tests | May be described as an implementation method with its storage rationale |
+| The interface reorganisation improved usability, task-completion time, or error rate | No prespecified usability study, no baseline, no participants, no measurements | **Requires a controlled usability study.** Do not infer this from the redesign itself |
+| The system has been operated on a real annotation project | Deployment recorded 2 projects, 7 datasets, 83 volumes, 83 tasks, 39 submissions, 35 hard cases, 20 accounts and ~295 GB on 2026-09-08 | May be described as deployment scale, with the capture date. It is **not** evidence of accuracy, throughput, or fitness for purpose |
+| Review turnaround, annotator throughput, or hard-case rates from the deployment | Operational database counts only; no protocol, no inclusion rules, no denominators, no consent for reporting participant activity | Must not be reported as a Result without a prespecified analysis and approvals |
+| The list endpoints scale to large queues | One embedded-serialiser N+1 was fixed and measured (415 -> 53 queries for 35 rows) on the deployment | May be described as an implementation fix with the measured before/after; not a scalability claim |
 
 For every Results claim, link the archived dataset, protocol, raw output,
 analysis script, statistical result, software tag, environment, and hardware

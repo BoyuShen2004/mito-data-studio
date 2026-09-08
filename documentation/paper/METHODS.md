@@ -47,6 +47,33 @@ The conservative overwrite policy modified only background voxels unless the
 user explicitly selected overwrite-all. Verified labels were protected from
 Track overwrite.
 
+## Interface organisation
+
+The interface was organised around a single unit of work rather than around
+roles. A task — one volume, one assignee, one reviewing manager — was presented
+as a numbered, stateful item with a discussion history, and a flagged label
+("hard case") used the same presentation. Tasks, hard cases, and projects were
+therefore rendered by one list component with one row layout (state, title,
+stable numeric identifier, most recent event and its actor, category, assignee),
+and one personal home presented each role's queues as saved filters over that
+list rather than as separate screens. Filter state was held in the URL query
+string so that a narrowed view was a shareable address.
+
+A task's page presented its history as a single chronological sequence
+interleaving assignment, each submission round with its channel, and each
+review decision with the reviewer's comment, with the corresponding action —
+the review form for a manager, painting and submission for the assignee —
+placed at the end of that sequence. Reviewing therefore occurred on the page
+that carried the evidence, and the resulting state change was displayed in
+place rather than by navigation.
+
+This history was **derived at request time** from durable records (assignment
+timestamps, submission rounds, and immutable review decisions) rather than
+materialised in a per-event table. The system consequently stores no row per
+user action, which was a deliberate constraint: an earlier notification inbox
+that grew one row per action per recipient was removed, and derived quantities
+such as progress and elapsed time are likewise recomputed rather than cached.
+
 ## Interactive segmentation
 
 Point-, box-, and boundary-prompted masks were generated with the EfficientSAM-S
