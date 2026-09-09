@@ -12,7 +12,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.models import UserProfile
-from annotation.models import AnnotationTask, HardCase
+from annotation.models import AnnotationTask
 from annotation.services import (
     create_hard_case,
     normalize_hard_case_category,

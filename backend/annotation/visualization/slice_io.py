@@ -394,19 +394,6 @@ def _create_label_memmap(
     return tifffile.memmap(str(path), mode="r+")
 
 
-def _quarantine_corrupt(path: Path) -> Path | None:
-    """Move a corrupt/unreadable label file aside to ``<name>.corrupt.bak``
-    instead of deleting it — so raw/header recovery or a filesystem-snapshot
-    restore stays possible (a real incident: an erroneous delete was only
-    saved by a Weka snapshot; treat destroying a working label as a last
-    resort, never the default repair path). Only an *older* ``.corrupt.bak``
-    is removed to make room. Returns the backup path, or ``None`` if even the
-    rename failed (last-resort unlink attempted).
-    """
-    if not path.exists():
-        return None
-
-
 def _preserve_recovery_backup(path: Path) -> Path:
     """Keep the exact pre-conversion bytes before replacing a readable TIFF."""
     bak = path.with_suffix(path.suffix + f".recovery.{time.time_ns()}.bak")
@@ -421,14 +408,6 @@ def _preserve_recovery_backup(path: Path) -> Path:
                 "bytes could not be backed up; no replacement was written."
             ) from exc
     return bak
-    stamp = time.time_ns()
-    bak = path.with_suffix(path.suffix + f".corrupt.{stamp}.bak")
-    try:
-        path.replace(bak)
-        return bak
-    except OSError:
-        # Failure to preserve evidence is not permission to delete it.
-        return None
 
 
 def open_label_volume_readonly(path: Path):
@@ -460,10 +439,12 @@ def read_label_array(path: Path) -> np.ndarray:
     tracking) that genuinely need a real in-memory array, unlike the hot
     per-slice path (which uses a writable memmap via
     :func:`open_label_volume_writable`). Tries ``memmap`` first, then a full
-    ``imread``; if the file is unreadable by both it is quarantined
-    (:func:`_quarantine_corrupt`) and a :class:`SliceIOError` is raised so the
-    API surfaces a clean recoverable error instead of an uncaught 500 — the
-    next editor touch rebuilds a fresh working copy at the same path.
+    ``imread``; if the file is unreadable by both it is left **exactly as it
+    is** and a :class:`SliceIOError` is raised, so the API surfaces a clean
+    recoverable error instead of an uncaught 500. Nothing moves or replaces
+    the file: an unreadable working label is the only remaining copy of
+    somebody's annotation, and repairing it is a decision for a person with
+    the backups in front of them.
     """
     import tifffile
 

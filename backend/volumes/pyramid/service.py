@@ -26,7 +26,7 @@ from django.conf import settings
 from django.db import transaction
 
 from . import store
-from .downsample import REDUCTION_MEAN, REDUCTION_MODE, default_reduction, reduce_slab, slab_plan
+from .downsample import REDUCTION_MEAN, default_reduction, reduce_slab, slab_plan
 from .ladder import build_ladder, chunk_shape_for, relative_factors
 from .validate import DEFAULT_SAMPLES_PER_LEVEL, validate_pyramid
 

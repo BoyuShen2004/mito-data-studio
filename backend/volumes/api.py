@@ -8,7 +8,7 @@ from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.roles import is_manager, is_requester
+from accounts.roles import is_manager
 from annotation.services import can_view_volume, ensure_volume_tasks, is_project_member
 from core.permissions import CanRegisterData, CanViewProjectData, IsManager
 from projects.models import Project

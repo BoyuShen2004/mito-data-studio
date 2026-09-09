@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
 from django.conf import settings
 from django.db import transaction
 

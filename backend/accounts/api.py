@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from core.choices import UserRole
 from core.permissions import IsManager
 
-from .models import AnnotatorProfile, AuditEvent
+from .models import AnnotatorProfile
 from .roles import get_role, is_annotator, is_requester
 from .serializers import (
     CurrentUserSerializer,

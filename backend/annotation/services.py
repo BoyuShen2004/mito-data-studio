@@ -2981,45 +2981,6 @@ def _ai_embedding_cache_path(volume, axis, index):
     return embedding_cache_path(volume, axis, index)
 
 
-# Small bounded cache of AI-normalized slices. `normalize_for_ai` is a
-# full-slice percentile stretch (O(pixels) — ~300ms on a ~7MP EM slice) and
-# was being recomputed on *every* warm and *every* predict click of the same
-# slice, even though the raw slice is already cached in `slice_io`. Both the
-# warm and predict paths key their in-process embedding cache off the
-# normalized image's bytes, so caching the normalized array here means a
-# warmed slice's subsequent clicks skip that full-slice work entirely. Keyed
-# by (image path, axis, index, mtime) so a replaced image invalidates it.
-from collections import OrderedDict as _OrderedDict  # noqa: E402
-
-_MAX_NORMALIZED_SLICE_CACHE = 16
-_normalized_slice_cache: "_OrderedDict[tuple, object]" = _OrderedDict()
-
-
-def _normalized_ai_slice(volume, axis, index):
-    """AI-normalized (uint8) slice for (volume, axis, index), bounded-LRU
-    cached so warm + repeated predicts on one slice don't re-run the
-    full-slice percentile stretch each time."""
-    from .cellable_port.ai.normalize import normalize_for_ai
-    from .visualization.slice_io import read_slice, resolve_path
-
-    p = resolve_path(volume.image_location)
-    try:
-        mtime = p.stat().st_mtime
-    except OSError:
-        mtime = 0.0
-    key = (str(p), axis, int(index), mtime)
-    cached = _normalized_slice_cache.get(key)
-    if cached is not None:
-        _normalized_slice_cache.move_to_end(key)
-        return cached
-    image = normalize_for_ai(read_slice(volume.image_location, axis, index))
-    _normalized_slice_cache[key] = image
-    _normalized_slice_cache.move_to_end(key)
-    while len(_normalized_slice_cache) > _MAX_NORMALIZED_SLICE_CACHE:
-        _normalized_slice_cache.popitem(last=False)
-    return image
-
-
 def predict_ai_mask(
     task, axis, index, mode, *, points=None, point_labels=None, box=None,
     roi_only: bool = False,

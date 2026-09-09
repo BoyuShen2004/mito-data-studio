@@ -4,8 +4,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from accounts.models import Institution, UserProfile
-from annotation.models import AnnotationTask
-from core.choices import TaskStatus, UserRole
+from core.choices import UserRole
 from projects.models import Dataset, Project, ProjectMembership, PublicShare
 from volumes.models import Volume
 

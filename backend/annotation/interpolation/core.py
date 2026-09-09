@@ -182,7 +182,11 @@ def validate_inputs(first, last, *, depth, label_id, spacing,
 # policies as a tool-level P1, not an interpolation detail, so leaving them here
 # would force every future tool to import from interpolation. Re-exported under
 # the original names so nothing that referenced them has to change.
-from annotation.tools.overwrite import (  # noqa: E402
+# `OVERWRITE_ALL` is unused *inside* this module and re-exported on purpose —
+# `annotation.test_tools` asserts `interpolation.core.OVERWRITE_ALL is` the
+# shared constant, which is what stops interpolation from quietly growing its
+# own copy of the policy. Do not drop it as an unused import.
+from annotation.tools.overwrite import (  # noqa: E402,F401
     OVERWRITE_ALL,
     OVERWRITE_EMPTY,
     OVERWRITE_MODES,
