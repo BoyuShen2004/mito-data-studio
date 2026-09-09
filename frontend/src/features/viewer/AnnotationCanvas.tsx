@@ -995,6 +995,12 @@ export default function AnnotationCanvas({
     padY: 0,
   });
   const lastShellRef = useRef({ w: 0, h: 0 });
+  /** Natural pixel size of the plane the fit base was measured on. A view-axis
+   * switch changes plane geometry (z ⇒ (y,x), y ⇒ (z,x), x ⇒ (z,y)), so a base
+   * frozen on the previous axis would stretch the new plane into the old
+   * plane's box — an anisotropic volume then looks like it kept its original
+   * dimensions. Refit whenever this changes. */
+  const fitSourceRef = useRef({ w: 0, h: 0 });
   /** Keep image point under the cursor/center stable across a zoom step. */
   const zoomAnchorRef = useRef<{
     offsetX: number;
@@ -1030,6 +1036,7 @@ export default function AnnotationCanvas({
     needsOpenCenterRef.current = true;
     fitBaseRef.current = { w: 0, h: 0, padX: 0, padY: 0 };
     lastShellRef.current = { w: 0, h: 0 };
+    fitSourceRef.current = { w: 0, h: 0 };
     setFitEpoch((e) => e + 1);
   }, [surfaceMode]);
   /** Bumped on every Fit click so re-fitting at zoom=1 / same mode still relayouts. */
@@ -6034,6 +6041,12 @@ export default function AnnotationCanvas({
     if (vw <= 0 || vh <= 0) return;
 
     const prevLayout = stageLayoutRef.current;
+    // The plane itself changed shape (view-axis switch): its aspect no longer
+    // matches the frozen base, and any remembered pan belongs to the old
+    // plane's coordinates.
+    const planeChanged =
+      fitSourceRef.current.w !== img.naturalWidth ||
+      fitSourceRef.current.h !== img.naturalHeight;
     // Before a shell-driven refit, remember which stage point sits under the
     // viewport center so we can keep pan stable (otherwise padX/padY rebuild
     // leaves scroll on the black padding and the canvas looks empty until Fit).
@@ -6049,6 +6062,7 @@ export default function AnnotationCanvas({
       vp &&
       prevLayout &&
       fitBaseRef.current.w > 0 &&
+      !planeChanged &&
       !needsOpenCenterRef.current &&
       pendingFitRef.current == null &&
       !zoomAnchorRef.current
@@ -6075,6 +6089,7 @@ export default function AnnotationCanvas({
       pendingFitRef.current != null ||
       needsOpenCenterRef.current ||
       firstFit ||
+      planeChanged ||
       allowShellRefit;
 
     if (mustRefit) {
@@ -6097,6 +6112,7 @@ export default function AnnotationCanvas({
         padY: vh / 2,
       };
       lastShellRef.current = { w: vw, h: vh };
+      fitSourceRef.current = { w: nw, h: nh };
     }
 
     const { w: fitW, h: fitH, padX, padY } = fitBaseRef.current;
@@ -6110,7 +6126,10 @@ export default function AnnotationCanvas({
     };
 
     const shouldFit =
-      pendingFitRef.current != null || needsOpenCenterRef.current || firstFit;
+      pendingFitRef.current != null ||
+      needsOpenCenterRef.current ||
+      firstFit ||
+      planeChanged;
     const fitModeForScroll = pendingFitRef.current ?? fitMode;
     justForcedCenterRef.current = false;
     if (shouldFit) {
