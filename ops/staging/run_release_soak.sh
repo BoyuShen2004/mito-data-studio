@@ -119,7 +119,7 @@ sudo -u "$staging_user" env HOME="$staging_home" bash -c '
     MITO_STAGING_FAILURE_WORKFLOWS=1 \
     MITO_STAGING_BASE_URL="'$staging_url'" \
       npx playwright test --config=playwright.staging.config.ts --grep \
-        "manager collaboration|integrated organization|full-task share|restored annotators|same-task stale|staging brush Save|autosave retries|enabled EfficientSAM"
+        "manager collaboration|integrated organization|full-task share|restored annotators|same-task stale|staging brush Save|autosave retries|enabled SAM2 mask tools"
   fi
   MITO_STAGING_SOAK_SECONDS="'$duration_seconds'" \
   MITO_STAGING_SOAK_WARMUP_SECONDS="'$warmup_seconds'" \
@@ -133,7 +133,7 @@ sudo -u "$staging_user" env HOME="$staging_home" bash -c '
     MITO_STAGING_FAILURE_WORKFLOWS=1 \
     MITO_STAGING_BASE_URL="'$staging_url'" \
       npx playwright test --config=playwright.staging.config.ts --grep \
-        "manager collaboration|full-task share|restored annotators|same-task stale|staging brush Save|autosave retries|enabled EfficientSAM"
+        "manager collaboration|full-task share|restored annotators|same-task stale|staging brush Save|autosave retries|enabled SAM2 mask tools"
   fi
 ' 2>&1 | tee "$evidence_dir/playwright.log"
 playwright_status=${PIPESTATUS[0]}

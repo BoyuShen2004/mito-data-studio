@@ -54,7 +54,7 @@ experience is organized around these three roles.
   fill, 3-D watershed, and between-slice interpolation.
 - Conservative empty-voxel-only overwrite by default, with explicit
   overwrite-all mode where supported.
-- Point-, box-, and boundary-prompted EfficientSAM proposals.
+- Point-, box-, and boundary-prompted SAM 2 proposals.
 - SAM 2.1 propagation across inclusive z ranges with automatic branch
   inference, contact handling, merge/reseed continuation, and batch preview.
 - Pending browser edits, Undo/Redo, explicit Save, and revision-aware writes.

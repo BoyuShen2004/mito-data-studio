@@ -385,15 +385,12 @@ def check_upgrade_feature_dependencies(app_configs, **kwargs):
             "MITO_SAM2_CUDA_DEVICE": 0,
             "MITO_PROCESSING_BACKEND": "local",
             "MITO_LOCAL_EXECUTABLE_ALLOWLIST": "",
-            "MITO_AI_CUDA_DEVICE": "1",
         }
         runtime_drift = [
             f"{name}={getattr(settings, name)!r} (expected {expected!r})"
             for name, expected in runtime_contract.items()
             if getattr(settings, name) != expected
         ]
-        if not settings.MITO_AI_ONNX_CUDA:
-            runtime_drift.append("MITO_AI_ONNX_CUDA=False (expected True)")
         if settings.MITO_PROCESSING_ENV_ALLOWLIST:
             runtime_drift.append(
                 "MITO_PROCESSING_ENV_ALLOWLIST is not empty (expected no external job env)"
@@ -404,17 +401,16 @@ def check_upgrade_feature_dependencies(app_configs, **kwargs):
                     "production_integrated_v1 runtime contract drift: "
                     + "; ".join(runtime_drift),
                     hint=(
-                        "Use the audited v1.1 environment template. SAM2 uses CUDA "
-                        "device 0 and EfficientSAM ONNX uses device 1; nnU-Net/Slurm "
-                        "and arbitrary local executables remain disabled."
+                        "Use the audited v1.1 environment template. SAM 2 uses CUDA "
+                        "device 0 and serves both Track and the interactive mask "
+                        "tools; nnU-Net/Slurm and arbitrary local executables "
+                        "remain disabled."
                     ),
                     id="deployment.E030",
                 )
             )
 
         required_assets = {
-            Path(settings.MITO_CELLABLE_MODELS_ROOT) / "efficient_sam_vits_encoder.onnx": 89_558_337,
-            Path(settings.MITO_CELLABLE_MODELS_ROOT) / "efficient_sam_vits_decoder.onnx": 16_565_728,
             Path(settings.MITO_SAM2_CHECKPOINT): 898_083_611,
         }
         invalid_assets = [
@@ -427,7 +423,7 @@ def check_upgrade_feature_dependencies(app_configs, **kwargs):
                 Error(
                     "production_integrated_v1 model assets are missing or wrong-sized: "
                     + "; ".join(invalid_assets),
-                    hint="Install the three hash-verified offline LFS assets before startup.",
+                    hint="Install the hash-verified offline LFS checkpoint before startup.",
                     id="deployment.E031",
                 )
             )

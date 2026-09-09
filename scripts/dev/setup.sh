@@ -68,7 +68,7 @@ Usage: scripts/dev/setup.sh [--install-deps] [--smoke] [--check-git]
   (default)        Check tools/deps/vendor, create .env only if missing,
                    npm only if needed, then Django check + migrate.
                    Does NOT pip/conda-install into your environment.
-  --install-deps   Also pip-install missing light packages (hydra, onnxruntime, …).
+  --install-deps   Also pip-install missing light packages (hydra, iopath, …).
                    Still never runs conda env update / pytorch install.
   --smoke          After setup, prove the install actually works: load the AI
                    runtimes, open a vendor model, and build the frontend.
@@ -100,8 +100,8 @@ if [[ "${CONDA_DEFAULT_ENV:-}" != "$CONDA_ENV_NAME" ]]; then
 fi
 
 # --- 2. Backend / AI dependencies ------------------------------------------
-# Core = needed for Django + EfficientSAM Point/Box Mask.
-# Track helpers = SAM2 (hydra/iopath/tqdm); torch is separate (conda, heavy).
+# Core = needed for Django and the slice/annotation stack.
+# SAM 2 helpers = hydra/iopath/tqdm; torch is separate (conda, heavy).
 
 DEP_REPORT="$(
 AUTO_INSTALL="$AUTO_INSTALL" REPO_ROOT="$REPO_ROOT" python - <<'PY'
@@ -118,7 +118,6 @@ CORE = [
     ("numpy", "numpy"),
     ("tifffile", "tifffile"),
     ("PIL", "Pillow>=10"),
-    ("onnxruntime", "onnxruntime>=1.17"),
     ("skimage", "scikit-image>=0.22"),
     ("scipy", "scipy>=1.11"),
 ]
@@ -254,7 +253,6 @@ fi
 [[ -n "$TORCH_NOTE" ]] && warn "$TORCH_NOTE"
 
 # --- 2b. Vendored model weights (Git LFS) ----------------------------------
-EFF_ENC="$REPO_ROOT/vendor/efficient_sam/efficient_sam_vits_encoder.onnx"
 SAM2_CKPT="$REPO_ROOT/vendor/sam2/checkpoints/sam2.1_hiera_large.pt"
 lfs_hint() {
   if command -v git-lfs >/dev/null 2>&1 || git lfs version >/dev/null 2>&1; then
@@ -263,13 +261,12 @@ lfs_hint() {
     printf '%s' "git-lfs is not installed. Install it (conda install -c conda-forge git-lfs, apt install git-lfs, or brew install git-lfs), then: git lfs install && git lfs pull"
   fi
 }
-if [[ ! -f "$EFF_ENC" ]] || [[ ! -f "$SAM2_CKPT" ]]; then
-  die "vendor model weights missing ($(basename "$EFF_ENC") / $(basename "$SAM2_CKPT")). $(lfs_hint)"
+if [[ ! -f "$SAM2_CKPT" ]]; then
+  die "vendor model weights missing ($(basename "$SAM2_CKPT")). $(lfs_hint)"
 fi
-eff_sz=$(wc -c <"$EFF_ENC" | tr -d ' ')
 sam_sz=$(wc -c <"$SAM2_CKPT" | tr -d ' ')
-if [[ "$eff_sz" -lt 1000000 ]] || [[ "$sam_sz" -lt 1000000 ]]; then
-  die "vendor weights are Git LFS pointer files, not the real weights (${eff_sz} / ${sam_sz} bytes). $(lfs_hint)"
+if [[ "$sam_sz" -lt 1000000 ]]; then
+  die "vendor weights are a Git LFS pointer file, not the real checkpoint (${sam_sz} bytes). $(lfs_hint)"
 fi
 # --- 3. Local configuration (.env) -----------------------------------------
 if [[ ! -f "$REPO_ROOT/.env" ]]; then
@@ -347,17 +344,6 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 sys.path.insert(0, str(root / "backend"))
-import onnxruntime
-
-# The app's own session options (thread count from the real CPU budget) — using
-# onnxruntime's defaults here would flood a cgroup-limited node with
-# `pthread_setaffinity_np failed` noise that has nothing to do with the app.
-from annotation.cellable_port.ai.efficient_sam import _session_options
-
-encoder = root / "vendor/efficient_sam/efficient_sam_vits_encoder.onnx"
-session = onnxruntime.InferenceSession(str(encoder), sess_options=_session_options())
-assert session.get_inputs(), "EfficientSAM encoder loaded but exposes no inputs"
-print(f"  EfficientSAM encoder OK ({encoder.name})")
 
 try:
     import torch

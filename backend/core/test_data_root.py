@@ -749,7 +749,6 @@ class DeploymentSystemChecks(DataRootTestCase):
         with override_settings(
             MITO_UPGRADE_PROFILE="production_integrated_v1",
             MITO_TRACKING_PROVIDER="local",
-            MITO_AI_ONNX_CUDA=True,
             MITO_LOCAL_EXECUTABLE_ALLOWLIST="bash",
             MITO_PROCESSING_ENV_ALLOWLIST={"PATH"},
             MITO_METRICS_BEARER_TOKEN="test-token",

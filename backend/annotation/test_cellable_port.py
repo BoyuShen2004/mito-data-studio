@@ -43,125 +43,17 @@ User = get_user_model()
 _TMP = tempfile.mkdtemp(prefix="mito-cellable-port-test-")
 
 
-@override_settings(MITO_DATA_ROOT=_TMP)
-class EfficientSamRuntimeUnitTests(TestCase):
-    """Thread-count resolution (ORT affinity-spam fix) and the on-disk
-    embedding cache — no ONNX session needed for either.
+def _sam2_available() -> bool:
+    """Whether this machine can actually run the interactive mask tools."""
+    try:
+        import torch
 
-    ``MITO_DATA_ROOT`` overridden to the shared tempdir: ``embed_cache``
-    resolves paths under this setting, and writing cache files under the
-    *real* data root from a test is exactly the mistake
-    `progress/history/04-incident-data-safety.md` exists to prevent.
-    """
-
-    def test_thread_count_prefers_slurm_env(self):
-        from annotation.cellable_port.ai.efficient_sam import _resolve_thread_count
-
-        with unittest.mock.patch.dict(os.environ, {"SLURM_CPUS_PER_TASK": "3"}):
-            self.assertEqual(_resolve_thread_count(), 3)
-
-    def test_thread_count_caps_at_max(self):
-        from annotation.cellable_port.ai.efficient_sam import (
-            _MAX_INTRA_OP_THREADS,
-            _resolve_thread_count,
-        )
-
-        with unittest.mock.patch.dict(os.environ, {"SLURM_CPUS_PER_TASK": "999"}):
-            self.assertEqual(_resolve_thread_count(), _MAX_INTRA_OP_THREADS)
-
-    def test_thread_count_ignores_garbage_slurm_value(self):
-        from annotation.cellable_port.ai.efficient_sam import _resolve_thread_count
-
-        with unittest.mock.patch.dict(os.environ, {"SLURM_CPUS_PER_TASK": "not-a-number"}):
-            self.assertGreaterEqual(_resolve_thread_count(), 1)
-
-    @override_settings(MITO_AI_ONNX_CUDA=True, MITO_AI_CUDA_DEVICE="1")
-    def test_encoder_and_decoder_both_request_cuda(self):
-        from annotation.cellable_port.ai import efficient_sam
-
-        session = unittest.mock.Mock()
-        session.get_providers.return_value = [
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        ]
-        with (
-            unittest.mock.patch.object(
-                efficient_sam, "_session_options", return_value=object()
-            ),
-            unittest.mock.patch.object(
-                efficient_sam, "_make_session", return_value=session
-            ) as make_session,
-        ):
-            efficient_sam.EfficientSam("encoder.onnx", "decoder.onnx")
-
-        self.assertEqual(make_session.call_count, 2)
-        self.assertEqual(
-            [call.kwargs["cuda"] for call in make_session.call_args_list],
-            [True, True],
-        )
-
-    def test_embed_cache_round_trip(self):
-        from annotation.cellable_port.ai import embed_cache
-
-        path = embed_cache.cache_path_for("proj/ds/embeddings", "img", "z", 5, "vits", 12345.0)
-        self.assertIsNone(embed_cache.load(path))  # nothing written yet
-        arr = np.random.rand(1, 4, 5, 5).astype(np.float32)
-        embed_cache.save(path, arr)
-        loaded = embed_cache.load(path)
-        self.assertIsNotNone(loaded)
-        np.testing.assert_array_equal(loaded, arr)
-        # Lives under the volume's dataset embeddings/ folder, not a global silo.
-        self.assertIn(os.path.join("proj", "ds", "embeddings", "vits"), str(path))
-
-    def test_embed_cache_key_changes_with_variant_mtime_and_volume(self):
-        from annotation.cellable_port.ai import embed_cache
-
-        a = embed_cache.cache_path_for("proj/ds/embeddings", "img", "z", 5, "vits", 100.0)
-        b = embed_cache.cache_path_for("proj/ds/embeddings", "img", "z", 5, "vitt", 100.0)
-        c = embed_cache.cache_path_for("proj/ds/embeddings", "img", "z", 5, "vits", 200.0)
-        # Two volumes sharing one dataset folder must not collide — the stem
-        # (image-derived) disambiguates them.
-        d = embed_cache.cache_path_for("proj/ds/embeddings", "other", "z", 5, "vits", 100.0)
-        self.assertNotEqual(a, b)
-        self.assertNotEqual(a, c)
-        self.assertNotEqual(a, d)
-
-    def test_embed_cache_key_includes_prompt_roi(self):
-        from annotation.cellable_port.ai import embed_cache
-
-        full = embed_cache.cache_path_for(
-            "proj/ds/embeddings", "img", "z", 5, "vits", 100.0
-        )
-        roi = embed_cache.cache_path_for(
-            "proj/ds/embeddings",
-            "img",
-            "z",
-            5,
-            "vits",
-            100.0,
-            roi_token="y0-1024_x64-1088",
-        )
-        self.assertNotEqual(full, roi)
-
-    def test_decoder_selects_highest_iou_candidate(self):
-        from annotation.cellable_port.ai.efficient_sam import _decode_mask
-
-        masks = np.zeros((1, 1, 3, 4, 4), dtype=np.float32)
-        masks[0, 0, 2, 1:3, 1:3] = 1
-        decoder = unittest.mock.Mock()
-        decoder.run.return_value = (
-            masks,
-            np.array([[[0.1, 0.2, 0.9]]], dtype=np.float32),
-            None,
-        )
-        result = _decode_mask(
-            decoder,
-            np.zeros((4, 4), dtype=np.uint8),
-            np.zeros((1, 1), dtype=np.float32),
-            [[2, 2]],
-            [1],
-        )
-        self.assertTrue(result[1:3, 1:3].all())
+        if not torch.cuda.is_available():
+            return False
+    except ImportError:
+        return False
+    checkpoint = getattr(settings, "MITO_SAM2_CHECKPOINT", "")
+    return bool(checkpoint) and os.path.exists(checkpoint)
 
 
 class WatershedUnitTests(TestCase):
@@ -663,16 +555,16 @@ class EmbeddingCachePathAgreementTests(TestCase):
     This used to be proved through `migrate_volume_artifacts`, which wrote
     embeddings under the pre-`_mask` scheme and had to land them where
     `_ai_embedding_cache_path` looks. That migration is finished and gone, but
-    the two-sided invariant it guarded is not: `embed_cache.cache_path_for`
+    the two-sided invariant it guarded is not: `sam2_feature_cache.cache_path_for`
     writes and `_ai_embedding_cache_path` reads, and a disagreement between
     them silently defeats the disk cache — every AI click re-runs the encoder
-    (the ~3 s per-click latency regression) while looking perfectly healthy.
+    while looking perfectly healthy.
     """
 
     def test_runtime_lookup_matches_what_the_cache_writer_produces(self):
         import tempfile as _tf
 
-        from annotation.cellable_port.ai import embed_cache
+        from annotation.cellable_port.ai import sam2_feature_cache
         from annotation.label_paths import (
             volume_embeddings_dir_rel_path,
             working_mask_stem,
@@ -696,12 +588,11 @@ class EmbeddingCachePathAgreementTests(TestCase):
             runtime_path = _ai_embedding_cache_path(volume, "z", 2)
             self.assertIsNotNone(runtime_path)
 
-            written = embed_cache.cache_path_for(
+            written = sam2_feature_cache.cache_path_for(
                 volume_embeddings_dir_rel_path(volume),
                 working_mask_stem(volume),
                 "z",
                 2,
-                getattr(settings, "MITO_EFFICIENT_SAM_VARIANT", "vits"),
                 os.stat(img_path).st_mtime,
             )
             self.assertEqual(
@@ -723,7 +614,7 @@ class CellablePortApiTests(TestCase):
         rel = "images/task2.tif"
         path = os.path.join(_TMP, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        # A bright square on a dark background — gives EfficientSAM a real
+        # A bright square on a dark background — gives the segmenter a real
         # object to find if the model is available.
         image = np.full((6, 32, 32), 20, dtype=np.uint8)
         image[:, 8:24, 8:24] = 220
@@ -787,30 +678,42 @@ class CellablePortApiTests(TestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_predict_mask_unavailable_reports_503_not_500(self):
-        with override_settings(MITO_CELLABLE_MODELS_ROOT="/nonexistent/path"):
-            # Force a fresh load attempt regardless of any earlier test run.
-            from annotation.cellable_port.ai import registry
+        # The mask tools are SAM 2 only: when it cannot load there is no
+        # second model to quietly drop to, so the endpoint must say so.
+        from annotation.cellable_port.ai import registry
 
-            registry._model = None
-            registry._load_error = None
+        registry.reset_mask_model()
+        self.addCleanup(registry.reset_mask_model)
+        with unittest.mock.patch(
+            "annotation.tracking.registry.get_tracking_provider",
+            side_effect=RuntimeError("no CUDA"),
+        ):
             resp = self._client(self.annotator).post(
                 f"/api/tasks/{self.task.id}/predict-mask/",
                 {"axis": "z", "index": 2, "mode": "points", "points": [[16, 16]], "point_labels": [1]},
                 format="json",
             )
-            self.assertEqual(resp.status_code, 503)
-            registry._model = None
-            registry._load_error = None
 
-    @unittest.skipUnless(
-        os.path.exists(
-            os.path.join(
-                getattr(settings, "MITO_CELLABLE_MODELS_ROOT", ""),
-                f"efficient_sam_{getattr(settings, 'MITO_EFFICIENT_SAM_VARIANT', 'vitt')}_encoder.onnx",
+        self.assertEqual(resp.status_code, 503)
+
+    def test_warm_embedding_unavailable_reports_200_not_error(self):
+        from annotation.cellable_port.ai import registry
+
+        registry.reset_mask_model()
+        self.addCleanup(registry.reset_mask_model)
+        with unittest.mock.patch(
+            "annotation.tracking.registry.get_tracking_provider",
+            side_effect=RuntimeError("no CUDA"),
+        ):
+            resp = self._client(self.annotator).post(
+                f"/api/tasks/{self.task.id}/warm-embedding/", {"axis": "z", "index": 2}, format="json",
             )
-        ),
-        "EfficientSAM ONNX weights not available in this environment",
-    )
+
+        # Warming is opportunistic; an unavailable model is not an error for it.
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.json()["warmed"])
+
+    @unittest.skipUnless(_sam2_available(), "SAM 2 runtime/checkpoint not available here")
     def test_predict_mask_from_point_finds_bright_square(self):
         resp = self._client(self.annotator).post(
             f"/api/tasks/{self.task.id}/predict-mask/",
@@ -818,39 +721,32 @@ class CellablePortApiTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, 200, resp.content)
-        body = resp.json()
-        runs = body["runs"]
+        runs = resp.json()["runs"]
         total_on = sum(count for value, count in runs if value == 1)
-        # The bright square is 16x16 = 256px; a real point-prompt mask
-        # should land roughly in that ballpark, not empty or the whole image.
+        # The bright square is 16x16 = 256px; a real point-prompt mask should
+        # land roughly in that ballpark, not empty and not the whole image.
         self.assertGreater(total_on, 50)
         self.assertLess(total_on, 32 * 32)
 
-    @unittest.skipUnless(
-        os.path.exists(
-            os.path.join(
-                getattr(settings, "MITO_CELLABLE_MODELS_ROOT", ""),
-                f"efficient_sam_{getattr(settings, 'MITO_EFFICIENT_SAM_VARIANT', 'vits')}_encoder.onnx",
-            )
-        ),
-        "EfficientSAM ONNX weights not available in this environment",
-    )
+    @unittest.skipUnless(_sam2_available(), "SAM 2 runtime/checkpoint not available here")
     def test_warm_embedding_populates_disk_cache_and_predict_still_works(self):
-        from annotation.cellable_port.ai import embed_cache
+        # The disk cache is what lets a *different* gunicorn worker answer the
+        # next click without re-encoding, so "the file exists after a warm" is
+        # the load-bearing assertion, not an implementation detail.
+        from annotation.cellable_port.ai import sam2_feature_cache
         from annotation.services import _ai_embedding_cache_path
 
         cache_path = _ai_embedding_cache_path(self.volume, "z", 2)
-        self.assertIsNone(embed_cache.load(cache_path))
+        self.assertIsNone(sam2_feature_cache.load(cache_path))
 
         resp = self._client(self.annotator).post(
             f"/api/tasks/{self.task.id}/warm-embedding/", {"axis": "z", "index": 2}, format="json",
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertTrue(resp.json()["warmed"])
-        self.assertIsNotNone(embed_cache.load(cache_path))
+        self.assertIsNotNone(sam2_feature_cache.load(cache_path))
 
-        # A predict against the now-warmed slice still returns a sane mask
-        # (i.e. the disk-cached embedding is actually usable, not just present).
+        # And the cached features are actually usable, not merely present.
         resp2 = self._client(self.annotator).post(
             f"/api/tasks/{self.task.id}/predict-mask/",
             {"axis": "z", "index": 2, "mode": "points", "points": [[16, 16]], "point_labels": [1]},
@@ -859,20 +755,6 @@ class CellablePortApiTests(TestCase):
         self.assertEqual(resp2.status_code, 200, resp2.content)
         total_on = sum(count for value, count in resp2.json()["runs"] if value == 1)
         self.assertGreater(total_on, 50)
-
-    def test_warm_embedding_unavailable_reports_200_not_error(self):
-        with override_settings(MITO_CELLABLE_MODELS_ROOT="/nonexistent/path"):
-            from annotation.cellable_port.ai import registry
-
-            registry._model = None
-            registry._load_error = None
-            resp = self._client(self.annotator).post(
-                f"/api/tasks/{self.task.id}/warm-embedding/", {"axis": "z", "index": 2}, format="json",
-            )
-            self.assertEqual(resp.status_code, 200, resp.content)
-            self.assertFalse(resp.json()["warmed"])
-            registry._model = None
-            registry._load_error = None
 
     def test_watershed_requires_seed_inside_label(self):
         self._paint_instance(7, 2, 4, 20, 4, 20)

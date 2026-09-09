@@ -10,7 +10,7 @@
 #   core     (default)  ~570 MB. No torch/ONNX. Full annotation, viewing,
 #                       export, sharing. AI-assist tools report unavailable and
 #                       tracking falls back to the 'local' provider.
-#   ai-cpu              ~3 GB.  EfficientSAM + SAM2 on CPU. Slow but complete.
+#   ai-cpu              ~3 GB.  SAM2 on CPU. Slow but complete.
 #   ai-gpu              ~8 GB.  CUDA 12.4 build. Needs an NVIDIA driver and the
 #                       NVIDIA Container Toolkit on the host.
 #
@@ -36,7 +36,7 @@ COPY frontend/ ./
 # Do not switch this to `build:production` on its own. That script builds for
 # MITO_UPGRADE_PROFILE=production_integrated_v1, which backend/core/checks.py
 # enforces as a hard contract: it refuses to start without a metrics bearer
-# token, SAM2 + EfficientSAM weights of exact byte sizes, and specific CUDA
+# token, the SAM2 checkpoint at its exact byte size, and specific CUDA
 # device assignments. The SPA build and the backend profile must always agree —
 # see the "Upgrade profiles" section of docs/docker.md.
 ARG FRONTEND_BUILD_SCRIPT=build
@@ -119,7 +119,6 @@ ENV MITO_DATA_ROOT=/data \
     MITO_SQLITE_NAME=/state/db.sqlite3 \
     MITO_SAM2_ROOT=/vendor/sam2 \
     MITO_SAM2_CHECKPOINT=/vendor/sam2/checkpoints/sam2.1_hiera_large.pt \
-    MITO_CELLABLE_MODELS_ROOT=/vendor/efficient_sam \
     PORT=8000 \
     GUNICORN_WORKERS=3 \
     GUNICORN_THREADS=2

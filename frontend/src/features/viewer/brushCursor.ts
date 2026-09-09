@@ -12,8 +12,12 @@
  *   size 1 -> radius 0.5 -> only (0,0) satisfies dx²+dy² <= 0.25
  *   size 3 -> radius 1.5 -> the full 3x3 block
  *
- * `paintAt` and every cursor style take their geometry from here, so the ring
- * the annotator aims with and the pixels that change are the same disc.
+ * `paintAt` and the brush cursor ring both take their geometry from here, so
+ * the disc the annotator aims with and the pixels that change are the same
+ * disc on every volume. The ring is scaled into CSS pixels where it is drawn
+ * (`cursorChrome.ts` explains why that layer works in screen units); only its
+ * line weight and centre pip are screen-constant chrome. Point-prompt reticles
+ * are the opposite case — they mark one voxel, so they are pure chrome.
  *
  * ## Hotspot
  *

@@ -1452,7 +1452,7 @@ class TaskPredictMaskView(APIView):
 
 class TaskWarmEmbeddingView(APIView):
     """``POST /api/tasks/<id>/warm-embedding/`` — body ``{"axis", "index"}``.
-    Pre-computes the EfficientSAM embedding for one slice so a subsequent
+    Pre-computes the SAM 2 image features for one slice so a subsequent
     Point/Box/Boundary predict on it is decoder-only. Fire-and-forget from
     the frontend (slice-open / AI-tool entry / neighbor prefetch — see
     ``progress/history/23-cellable-parity-ort-and-prompt-ux.md``); a missing

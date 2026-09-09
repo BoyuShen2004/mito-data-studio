@@ -766,7 +766,7 @@ test("browser autosave retries one injected transport failure without edit loss"
   test.skip(true, "Removed with Phase 10 autosave/recovery");
 });
 
-test("enabled EfficientSAM and SAM2 execute through the restored browser workflow", async ({ page }) => {
+test("enabled SAM2 mask tools and Track execute through the restored browser workflow", async ({ page }) => {
   test.skip(
     process.env.MITO_STAGING_AI_WORKFLOWS !== "1",
     "Explicit restored-data AI write opt-in only",

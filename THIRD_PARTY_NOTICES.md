@@ -3,7 +3,7 @@
 Third-party software distributed with, vendored into, or reused by
 mito-data-studio, with its original licence.
 
-**Status of this file:** authoritative and current as of 2026-08-01.
+**Status of this file:** authoritative and current as of 2026-09-09.
 Every entry must be added *before* the corresponding code is committed.
 The concise companion register is
 [`docs/attribution.md`](docs/attribution.md).
@@ -18,27 +18,30 @@ vendored material.
 
 | Component | Path | Upstream | Licence | Relationship |
 |---|---|---|---|---|
-| EfficientSAM | `vendor/efficient_sam/` | labelmeai/efficient-sam `onnx-models-20231225` (`6aebcba09318c4dfe2f9560f7a3f8c42d8b01657`) | Apache-2.0 (`vendor/efficient_sam/LICENSE`) | 2 ONNX weight files, exact release bytes, no source |
 | SAM 2 | `vendor/sam2/` | facebookresearch/sam2 (`2b90b9f5ceec907a1c18123530e92e794ad901a4`) | Apache-2.0 (`vendor/sam2/LICENSE`) | 22 source/config files matching the pinned tree + official SAM 2.1 checkpoint |
 
-### Verified state as of 2026-08-01
+### Verified state as of 2026-09-09
 
 Checked directly, not inferred:
 
-| Question | `vendor/efficient_sam` | `vendor/sam2` |
-|---|---|---|
-| `LICENSE`/`COPYING` present? | **Yes** — Apache-2.0 | **Yes** — Apache-2.0 |
-| Upstream commit pinned? | **Yes** — tag and commit above | **Yes** — commit above |
-| Tracked in git? | Yes — 2 files | Yes — 25 files |
-| Source code or weights only? | Weights only (`.onnx`) | **Source** (21 `.py`) + `.pt` checkpoint |
-| Copyright headers present? | n/a (binary) | **Yes** — `Copyright (c) Meta Platforms, Inc. and affiliates.` |
+| Question | `vendor/sam2` |
+|---|---|
+| `LICENSE`/`COPYING` present? | **Yes** — Apache-2.0 |
+| Upstream commit pinned? | **Yes** — commit above |
+| Tracked in git? | Yes — 25 files |
+| Source code or weights only? | **Source** (21 `.py`) + `.pt` checkpoint |
+| Copyright headers present? | **Yes** — `Copyright (c) Meta Platforms, Inc. and affiliates.` |
 
-The EfficientSAM files were downloaded again from the named GitHub release and
-matched the repository bytes exactly (`4cacbb23…` encoder, `4727baf2…` decoder).
 The SAM2 source/config files matched every corresponding file at the pinned
 official commit, and the checkpoint downloaded from the official URL matched
-`2647878d…`. The two upstream Apache-2.0 texts are byte-identical and are now
-carried in-tree beside each component.
+`2647878d…`. The upstream Apache-2.0 text is carried in-tree beside it.
+
+**Removed 2026-09-09:** EfficientSAM (`vendor/efficient_sam/`, two ONNX weight
+files under Apache-2.0) was vendored as the interactive segmenter and is no
+longer distributed or used — SAM 2 answers those prompts now. Nothing in the
+tree links against it. This note stays so the removal is legible to anyone
+auditing an older tag, where the component and its licence are still present
+and still governed by the entry above as it read then.
 
 ---
 

@@ -2,16 +2,16 @@
 
 ## Design principle
 
-Model output is assistive. EfficientSAM and SAM2 create proposals or pending
-plans that remain subject to human inspection, Confirm/Reject where applicable,
-and the editor's explicit Save. The software does not retrain either model and
-does not represent their output as validated biological ground truth.
+Model output is assistive. SAM 2 creates proposals or pending plans that
+remain subject to human inspection, Confirm/Reject where applicable, and the
+editor's explicit Save. The software does not retrain the model and does not
+represent its output as validated biological ground truth.
 
-## EfficientSAM interactive segmentation
+## Interactive segmentation
 
-Mito Data Studio vendors the EfficientSAM-S (`vits`) ONNX encoder and decoder
-from the `onnx-models-20231225` release. The locally recorded upstream commit is
-`6aebcba09318c4dfe2f9560f7a3f8c42d8b01657`; exact provenance and hashes are in
+Point, box and boundary prompts run on the vendored SAM 2 checkpoint — the same
+weights Track propagates with, loaded once per worker and shared between the
+two rather than held twice. Provenance and hashes are in
 `THIRD_PARTY_NOTICES.md`.
 
 The application:
@@ -19,19 +19,24 @@ The application:
 1. reads a 2-D plane in the selected axis;
 2. computes a bounded prompt-centered ROI;
 3. normalizes the image and converts grayscale to RGB;
-4. obtains or computes an ONNX encoder embedding;
+4. obtains or computes the image-encoder features;
 5. decodes positive/negative point or box prompts;
 6. removes small predicted components;
 7. optionally derives a boundary using binary dilation XOR erosion;
 8. returns the mask as a run-length encoded pending proposal.
 
-Embeddings use an in-process LRU and optional disk cache. ONNX Runtime prefers
-CUDA when configured and falls back to CPU while logging the effective
-provider. Thread counts respect SLURM/cgroup CPU allocation and are capped.
+Encoder features are cached twice: an in-process LRU per worker, and a shared
+float16 on-disk cache so a worker that has not seen a plane loads it instead of
+re-encoding. The model requires CUDA; where it is unavailable the tools report
+themselves unavailable rather than substituting a weaker model.
 
-Primary reference: Xiong et al., “EfficientSAM: Leveraged Masked Image
-Pretraining for Efficient Segment Anything,” arXiv:2312.00863 (2023),
-<https://arxiv.org/abs/2312.00863>.
+Until 2026-09-09 these prompts ran on a vendored EfficientSAM-S ONNX model.
+It was replaced because on volumes whose mitochondria are large and mutually
+adjacent it returned a fragment of the clicked object rather than the object,
+and no choice among its mask candidates corrected that.
+
+Primary reference: Ravi et al., “SAM 2: Segment Anything in Images and
+Videos,” arXiv:2408.00714 (2024), <https://arxiv.org/abs/2408.00714>.
 
 ## SAM 2.1 volumetric Track
 
@@ -90,7 +95,7 @@ repository: <https://github.com/facebookresearch/sam2>.
 
 ## Licensing and provenance
 
-EfficientSAM and SAM2 are carried with Apache-2.0 license texts. The application
+SAM 2 is carried with its Apache-2.0 license text. The application
 also contains clearly identified Cellable-ported mechanisms and an MTS-derived
 SAM2 wrapper; provenance is recorded in source docstrings and third-party
 notices. WEBKNOSSOS informed architecture and behavior, but no WEBKNOSSOS source

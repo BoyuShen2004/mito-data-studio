@@ -383,7 +383,7 @@ export const predictBoundary = (
     signal,
   );
 
-/** Pre-computes the EfficientSAM embedding for one slice so a following
+/** Pre-computes the SAM2 image features for one slice so a following
  * Point/Box/Boundary predict is decoder-only — fire-and-forget from the
  * frontend (slice change, entering an AI tool, neighbor prefetch). Never
  * throws for "model unavailable" (`{warmed: false}`, HTTP 200) — only a

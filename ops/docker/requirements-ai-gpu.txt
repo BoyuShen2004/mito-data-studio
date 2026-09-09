@@ -17,8 +17,6 @@ torchvision==0.20.1+cu124
 
 # CUDA build; it also carries the CPU execution provider, so this single
 # package covers GPU and fallback. Never install it alongside plain
-# onnxruntime — they provide the same module.
-onnxruntime-gpu==1.26.0
 
 # SAM2 helpers.
 hydra-core==1.3.4

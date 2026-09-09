@@ -421,15 +421,24 @@ MITO_SAM2_CHECKPOINT = os.getenv(
 MITO_SAM2_CONFIG = os.getenv("MITO_SAM2_CONFIG", "configs/sam2.1/sam2.1_hiera_l.yaml")
 MITO_SAM2_CUDA_DEVICE = int(os.getenv("MITO_SAM2_CUDA_DEVICE", "0"))
 
-# Cellable-ported interactive AI-mask tools (Point Mask / Box Mask / Boundary
-# — see backend/annotation/cellable_port/). Weights under vendor/efficient_sam/
-# (vits ONNX). onnxruntime/skimage/scipy come from environment.yml —
-# see cellable_port/ai/registry.py for graceful "unavailable" if missing.
-_default_efficient_sam_root = BASE_DIR.parent / "vendor" / "efficient_sam"
-MITO_CELLABLE_MODELS_ROOT = os.getenv(
-    "MITO_CELLABLE_MODELS_ROOT", str(_default_efficient_sam_root)
-)
-MITO_EFFICIENT_SAM_VARIANT = os.getenv("MITO_EFFICIENT_SAM_VARIANT", "vits")
+# The interactive AI-mask tools (Point Mask / Box Mask / Boundary — see
+# backend/annotation/cellable_port/) run on the SAM 2 checkpoint configured
+# above, shared with Track rather than loaded separately. There is no second
+# model and no knob to pick one: see cellable_port/ai/registry.py for why a
+# silent fallback was removed, and for the "unavailable" path when the
+# runtime or weights are missing.
+
+# How many slices' SAM 2 encoder features to keep resident. Scrubbing z back
+# and forth is the case this exists for: a cached slice is ready to click
+# without the ~240ms encode. Measured at 16 MiB per slot, so the default
+# holds 128 MiB beside the ~1 GB model it shares with Track.
+MITO_SAM2_IMAGE_CACHE_SLOTS = int(os.getenv("MITO_SAM2_IMAGE_CACHE_SLOTS", "8"))
+
+# Load SAM 2 on a background thread as each worker boots (see config/wsgi.py)
+# rather than on the first click, which otherwise pays the ~5 s checkpoint
+# load. Turn off for a CPU-only box that never uses the mask tools and would
+# rather not hold the memory.
+MITO_AI_PRELOAD = _env_bool("MITO_AI_PRELOAD", True)
 
 MITO_AI_ROI_TARGET_SIZE = int(os.getenv("MITO_AI_ROI_TARGET_SIZE", "1024"))
 MITO_AI_ROI_MAX_SIZE = int(os.getenv("MITO_AI_ROI_MAX_SIZE", "1536"))
@@ -437,17 +446,12 @@ MITO_AI_ROI_POINT_PAD = int(os.getenv("MITO_AI_ROI_POINT_PAD", "256"))
 MITO_AI_ROI_BOX_PAD = int(os.getenv("MITO_AI_ROI_BOX_PAD", "64"))
 MITO_AI_ROI_SNAP = int(os.getenv("MITO_AI_ROI_SNAP", "64"))
 
-# Optional acceleration: session creation always falls back to CPU, but logs
-# the effective providers so a production CUDA misconfiguration is visible.
-MITO_AI_ONNX_CUDA = _env_bool("MITO_AI_ONNX_CUDA", True)
-MITO_AI_CUDA_DEVICE = os.getenv("MITO_AI_CUDA_DEVICE") or None
-
 MITO_SAM2_XY_PAD = int(os.getenv("MITO_SAM2_XY_PAD", "256"))
 MITO_SAM2_XY_MAX = int(os.getenv("MITO_SAM2_XY_MAX", "2048"))
 MITO_SAM2_XY_MIN = int(os.getenv("MITO_SAM2_XY_MIN", "512"))
 
-# When on, the EfficientSAM path logs per-request timing (embed source —
-# in-process / disk / encoder — plus decode ms) via the "mito.ai.timing"
+# When on, the interactive mask path logs per-request timing (feature source
+# — in-process / disk / encoder — plus decode ms) via the "mito.ai.timing"
 # logger at INFO, so a latency regression (e.g. a cold encoder running on
 # every click because the disk cache stopped hitting) is obvious in the
 # server log. Off by default; turn on with MITO_AI_TIMING=1.
@@ -461,11 +465,11 @@ MITO_AI_TIMING = _env_bool("MITO_AI_TIMING", False)
 # this app emits — including the two the flag above and the SAM adapters exist
 # to produce:
 #
-#   * ``mito.ai.timing`` / ``mito.track.timing`` — the per-request EfficientSAM
+#   * ``mito.ai.timing`` / ``mito.track.timing`` — the per-request mask-tool
 #     and SAM2 timings ``MITO_AI_TIMING=1`` is supposed to turn on;
-#   * ``annotation.cellable_port.ai.efficient_sam`` — the one line that says
-#     which ONNX execution provider actually attached, i.e. whether the AI path
-#     is on CUDA or has quietly fallen back to CPU.
+#   * ``annotation.cellable_port.ai.registry`` — the one line that says which
+#     model actually backs the interactive tools, i.e. whether SAM 2 came up
+#     or the tools are unavailable.
 #
 # Both matter operationally and neither reached the log. Handlers write to
 # stderr, which the gunicorn unit captures into ``logs/error.log`` via

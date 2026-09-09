@@ -116,9 +116,8 @@ account exists.
 
 ## Build profiles
 
-The AI-assist stack (PyTorch + ONNX Runtime) is roughly ten times the size of
-everything else, so it is opt-in. Every `import torch` and `import onnxruntime`
-in the codebase is lazy, and `annotation/tracking/registry.py` falls back to the
+The AI-assist stack (PyTorch) is roughly ten times the size of everything
+else, so it is opt-in. Every `import torch` in the codebase is lazy, and `annotation/tracking/registry.py` falls back to the
 `local` tracking provider with a logged warning when torch is missing — so the
 default image starts, serves and annotates normally. Only the
 AI-assisted tools degrade.
@@ -128,7 +127,7 @@ Set `MITO_DEPS` in `.env.docker`:
 | Profile | Size | What you get |
 | --- | --- | --- |
 | `core` *(default)* | ~570 MB | Everything except AI assist. Annotation, viewing, 3-D meshes, watershed split, review and sharing. |
-| `ai-cpu` | ~3 GB | Adds EfficientSAM Point/Box Mask and SAM2 tracking on CPU. Complete, but slow enough that it is best kept for trying the tools out. |
+| `ai-cpu` | ~3 GB | Adds SAM2 tracking and the Point/Box Mask tools on CPU. Complete, but slow enough that it is best kept for trying the tools out. |
 | `ai-gpu` | ~8 GB | The same on CUDA 12.4. Needs a GPU host — see below. |
 
 Both AI profiles also need the `vendor/` weights fetched with `git lfs pull`
@@ -181,7 +180,6 @@ It suggests (without overwriting existing values):
 | --- | --- |
 | `GUNICORN_WORKERS` / `GUNICORN_THREADS` | Web concurrency; keep workers low on single-GPU hosts |
 | `MITO_SAM2_CUDA_DEVICE` | GPU index for SAM2 Track |
-| `MITO_AI_CUDA_DEVICE` | Second GPU for EfficientSAM when `nvidia-smi -L` shows 2+ devices |
 | `MITO_TRACK_PLAN_MAX_VOXELS` | Max slab size for Propagate all |
 | `MITO_SAM2_XY_PAD` / `MITO_SAM2_XY_MIN` / `MITO_SAM2_XY_MAX` | SAM2 crop padding and window bounds (VRAM vs speed tradeoff) |
 | `OMP_NUM_THREADS` | CPU threads for merge/contact steps between GPU passes |
@@ -223,7 +221,7 @@ timer for the entire request; Confirm/Reject remains a single batch review.
 | Laptop, 16 GB RAM, no GPU | `MITO_DEPS=core`, workers 3–4, skip Track GPU |
 | Workstation, 1× 12 GB GPU | `MITO_DEPS=ai-gpu`, `GUNICORN_WORKERS=1`, `MITO_SAM2_XY_MAX=1536` |
 | Server, 1× 24 GB GPU | `GUNICORN_WORKERS=2`, `MITO_TRACK_PLAN_MAX_VOXELS=256000000` |
-| Server, 2× GPU (24 GB each) | `MITO_SAM2_CUDA_DEVICE=0`, `MITO_AI_CUDA_DEVICE=1`, workers 2 |
+| Server, 2× GPU (24 GB each) | `MITO_SAM2_CUDA_DEVICE=0`, workers 2 |
 | Large RAM (64 GB+), big EM planes | Raise `MITO_TRACK_PLAN_MAX_VOXELS` and `MITO_SAM2_XY_MAX` after profiling |
 
 Re-run the probe after hardware changes.
@@ -245,8 +243,8 @@ mismatch.
 audited contract for one specific two-GPU host, and `backend/core/checks.py`
 refuses to start unless every clause holds: PostgreSQL, a non-empty
 `MITO_METRICS_BEARER_TOKEN`, an empty `MITO_PROCESSING_ENV_ALLOWLIST`, SAM2
-pinned to CUDA device 0 with EfficientSAM on device 1, and SAM2 +
-EfficientSAM weight files matching exact byte sizes. Selecting it without all
+pinned to CUDA device 0, and the SAM2 checkpoint matching its exact byte
+size. Selecting it without all
 of that produces `deployment.E029`/`E030` and a container that restarts
 forever.
 

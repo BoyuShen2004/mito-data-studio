@@ -177,6 +177,77 @@ function lastSavedSeedRuns(): [number, number][] | null {
   return seeds.find((seed) => seed.z === 0)?.rle ?? [];
 }
 
+describe("Annotate Point Mask prompts", () => {
+  beforeEach(() => {
+    for (const fn of Object.values(track)) fn.mockReset();
+    track.fetchObjectUrl.mockImplementation(async (path: string) => `blob:${path}`);
+    track.getTrackingPrompts.mockResolvedValue({ version: 1, items: [emptyPrompt], pending_review: null });
+    track.predictMaskFromPoints.mockResolvedValue({ shape: [4, 4], runs: topLeftPair });
+  });
+
+  it("previews the hovered position as a provisional extra prompt", async () => {
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: /^Point Mask$/ }));
+    const overlay = document.querySelector(".canvas-stage canvas:not([aria-label])")!;
+
+    // Nothing is proposed before the first click.
+    pointer(overlay, "pointermove", { clientX: 210, clientY: 210 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(track.predictMaskFromPoints).not.toHaveBeenCalled();
+
+    pointer(overlay, "pointerdown", { clientX: 110, clientY: 110 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1));
+    expect(track.predictMaskFromPoints.mock.calls[0][3]).toEqual([[1, 1]]);
+    expect(track.predictMaskFromPoints.mock.calls[0][4]).toEqual([1]);
+
+    // Now a move previews what clicking there would give: the committed point
+    // plus the hovered one, which is never committed by the move itself.
+    pointer(overlay, "pointermove", { clientX: 390, clientY: 390 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(2));
+    expect(track.predictMaskFromPoints.mock.calls[1][3]).toEqual([[1, 1], [3, 3]]);
+    expect(track.predictMaskFromPoints.mock.calls[1][4]).toEqual([1, 1]);
+  });
+
+  it("holds Alt while hovering to preview a negative prompt", async () => {
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: /^Point Mask$/ }));
+    const overlay = document.querySelector(".canvas-stage canvas:not([aria-label])")!;
+
+    pointer(overlay, "pointerdown", { clientX: 110, clientY: 110 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1));
+
+    pointer(overlay, "pointermove", { clientX: 390, clientY: 390, altKey: true });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(2));
+    expect(track.predictMaskFromPoints.mock.calls[1][4]).toEqual([1, 0]);
+  });
+
+  it("commits Alt-click as a negative point, not as the hovered preview", async () => {
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: /^Point Mask$/ }));
+    const overlay = document.querySelector(".canvas-stage canvas:not([aria-label])")!;
+
+    pointer(overlay, "pointerdown", { clientX: 110, clientY: 110 });
+    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1));
+
+    pointer(overlay, "pointerdown", { clientX: 390, clientY: 390, altKey: true });
+    await waitFor(() =>
+      expect(
+        track.predictMaskFromPoints.mock.calls.some(
+          (call) =>
+            JSON.stringify(call[3]) === JSON.stringify([[1, 1], [3, 3]]) &&
+            JSON.stringify(call[4]) === JSON.stringify([1, 0]),
+        ),
+      ).toBe(true),
+    );
+  });
+});
+
 /** Click the tracking overlay at an image pixel, then finalize with Enter. */
 async function seedAt(clientX: number, clientY: number) {
   const overlay = screen.getByLabelText("SAM tracking prompt overlay");

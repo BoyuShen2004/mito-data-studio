@@ -57,8 +57,6 @@ dependencies:
       # 3.0.6 is yanked upstream (zarr.load() deletes data), hence the floor.
       - zarr>=3.1,<4
       - Pillow>=10
-      # EfficientSAM Point / Box Mask (CUDA 12.x with CPU fallback)
-      - onnxruntime-gpu>=1.21,<1.27
       - scikit-image>=0.22
       - scipy>=1.11
       # SAM2 Track helpers (torch comes from conda above)

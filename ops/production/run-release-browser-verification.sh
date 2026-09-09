@@ -55,7 +55,7 @@ sudo -u "$service_user" env HOME="$service_home" bash -c '
     MITO_STAGING_INTEGRATED_WORKFLOWS=1 \
     MITO_STAGING_AI_WORKFLOWS=1 \
       npx playwright test --config=playwright.staging.config.ts --grep \
-        "manager collaboration|integrated organization|full-task share|disabled chunk renderer|enabled EfficientSAM"
+        "manager collaboration|integrated organization|full-task share|disabled chunk renderer|enabled SAM2 mask tools"
   else
     export MITO_STAGING_WORKER_B_USERNAME="$MITO_PUBLIC_PUBLIC_ANNOTATOR_USERNAME"
     export MITO_STAGING_WORKER_B_PASSWORD="$MITO_PUBLIC_PUBLIC_ANNOTATOR_PASSWORD"
@@ -67,7 +67,7 @@ sudo -u "$service_user" env HOME="$service_home" bash -c '
     MITO_STAGING_AI_WORKFLOWS=1 \
     MITO_STAGING_FAILURE_WORKFLOWS=1 \
       npx playwright test --config=playwright.staging.config.ts --grep \
-        "manager collaboration|reserved second annotator|full-task share|disabled chunk renderer|restored annotators|same-task stale|staging brush Save|autosave retries|enabled EfficientSAM"
+        "manager collaboration|reserved second annotator|full-task share|disabled chunk renderer|restored annotators|same-task stale|staging brush Save|autosave retries|enabled SAM2 mask tools"
   fi
 ' 2>&1 | tee "$evidence_dir/playwright.log"
 status=${PIPESTATUS[0]}

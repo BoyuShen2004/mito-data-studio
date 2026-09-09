@@ -30,6 +30,12 @@ A committed proposal is still only a pending label edit. Inspect the complete
 boundary and neighboring planes, refine it, then use the normal **Save**.
 Unavailable AI controls do not prevent manual annotation.
 
+These proposals come from SAM 2 — the same model Track propagates with. It
+needs a GPU; where one is unavailable the tools report themselves unavailable
+rather than answering with a weaker model, so a proposal you do get is always
+from the model the results were validated on. Manual annotation is unaffected
+either way.
+
 ## SAM2 Track workflow
 
 Track propagates prompted instances across an inclusive z-layer range:

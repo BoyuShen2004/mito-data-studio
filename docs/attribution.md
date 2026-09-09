@@ -8,8 +8,10 @@ code. Preserve upstream copyright and license notices.
 
 | Component | Upstream revision | License | Repository path | Relationship |
 | --- | --- | --- | --- | --- |
-| EfficientSAM | labelmeai/efficient-sam `6aebcba09318c4dfe2f9560f7a3f8c42d8b01657` | Apache-2.0 | `vendor/efficient_sam/` | Official ONNX weights |
 | SAM 2 | facebookresearch/sam2 `2b90b9f5ceec907a1c18123530e92e794ad901a4` | Apache-2.0 | `vendor/sam2/` | Pinned source, config, and checkpoint |
+
+EfficientSAM was vendored here until 2026-09-09 and has been removed along with
+its weights; see `THIRD_PARTY_NOTICES.md` for the full record.
 
 ## WEBKNOSSOS provenance
 

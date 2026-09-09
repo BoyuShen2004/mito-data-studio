@@ -93,7 +93,7 @@ until it passes through the normal confirmation and Save workflow.
 | Watershed | Split a bounded 3-D target from user-provided seeds |
 | Interpolate | Generate intermediate masks between two reviewed endpoint layers |
 
-### EfficientSAM prompt workflow
+### Prompted-mask workflow
 
 - **Point:** ordinary clicks are positive; Alt-clicks are negative.
 - **Box:** drag a rectangle around the desired object.

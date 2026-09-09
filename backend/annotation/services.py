@@ -2968,14 +2968,13 @@ def get_label_max_id_readonly(volume) -> int:
 # merges the returned mask into its already-loaded slice locally (same as a
 # brush stroke) and commits through the existing ``set_label_slice_ids`` path
 # above, so no new persistence code is needed here. See
-# ``cellable_port/ai/efficient_sam.py`` (ported from Cellable's
-# ``labelme/ai/efficient_sam.py``) for the model itself.
+# ``cellable_port/ai/sam2_masks.py`` for the model itself.
 
 def _ai_embedding_cache_path(volume, axis, index):
-    """Resolve the on-disk embedding-cache path for one (volume, axis,
-    index) under the currently-configured EfficientSAM variant — see
-    ``cellable_port/ai/embed_cache.py`` for the key/invalidation design.
-    Returns ``None`` if there's no image to key off of."""
+    """Resolve the on-disk feature-cache path for one (volume, axis, index)
+    — see ``cellable_port/ai/sam2_feature_cache.py`` for the key/invalidation
+    design and why the file is shared across workers. Returns ``None`` if
+    there's no image to key off of."""
     from .cellable_port.ai.application import embedding_cache_path
 
     return embedding_cache_path(volume, axis, index)
@@ -2985,7 +2984,7 @@ def predict_ai_mask(
     task, axis, index, mode, *, points=None, point_labels=None, box=None,
     roi_only: bool = False,
 ) -> dict:
-    """Run the ported EfficientSAM model on one image slice.
+    """Run the interactive segmentation model on one image slice.
 
     ``mode`` is ``"points"`` (Point Mask tool), ``"box"`` (Box Mask tool), or
     ``"boundary"`` (Boundary tool — the same points-mask prediction, then
@@ -3037,13 +3036,13 @@ def predict_ai_mask(
 
 
 def warm_ai_embedding(task, axis, index, *, point=None) -> bool:
-    """Pre-compute (and cache, in-process + on-disk) the EfficientSAM
-    embedding for one slice, without predicting anything — called when the
+    """Pre-compute (and cache, in-process + on-disk) the image features
+    for one slice, without predicting anything — called when the
     Annotate slice changes or an AI tool is entered, so the *first* actual
     click only has to run the (fast) decoder. Mirrors the intent of
     Cellable's background embedding thread (`app.py`'s
     ``_compute_and_cache_image_embedding``), adapted to a stateless request
-    instead of a long-lived Qt session — see ``EfficientSam.warm``.
+    instead of a long-lived Qt session — see ``Sam2Masks.warm``.
 
     Returns ``True`` if it ran, ``False`` if there's simply no image at this
     slice (not an error). Raises :class:`AiUnavailable` the same way

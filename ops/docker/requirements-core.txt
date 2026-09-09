@@ -2,9 +2,9 @@
 # to serve, read volumes and write labels, with no deep-learning stack.
 #
 # Versions are the ones pinned in ../../requirements-release.in, minus the
-# torch / ONNX Runtime entries. Keep them in step when that file moves.
+# torch entries. Keep them in step when that file moves.
 #
-# Why the split: every `import torch` and `import onnxruntime` in the codebase
+# Why the split: every `import torch` in the codebase
 # is deliberately lazy (see annotation/tracking/registry.py, which falls back to
 # the 'local' tracking provider with a warning when torch is absent). So the
 # app starts, serves, annotates and exports without them — the AI-assist tools

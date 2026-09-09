@@ -158,7 +158,7 @@ $([ -n "$rec_ai_device" ] && echo "  MITO_AI_CUDA_DEVICE=${rec_ai_device}")
 
 Notes
   - On a single GPU, keep GUNICORN_WORKERS low: each worker loads SAM2 separately.
-  - With 2+ GPUs, pin SAM2 to device 0 and EfficientSAM to device 1 when both run.
+  - With 2+ GPUs, SAM2 uses device 0; the others are free for other work.
   - Raise MITO_TRACK_PLAN_MAX_VOXELS only when RAM headroom is confirmed.
   - Run: ops/docker/detect-hardware.sh --apply .env.docker
 EOF

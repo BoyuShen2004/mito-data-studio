@@ -53,7 +53,8 @@ OMP_NUM_THREADS=16
 MITO_DEPS=ai-gpu
 ```
 
-This pins Track to GPU 0 and EfficientSAM to GPU 1. It does not automatically
+This pins SAM 2 — which serves both Track and the prompted-mask tools — to
+GPU 0. It does not automatically
 use GPUs 2–3 for one Track batch.
 
 ## Supported deployment shapes
@@ -63,7 +64,7 @@ use GPUs 2–3 for one Track batch.
 | CPU-only, modest RAM | Core image and local Track provider, or AI-CPU for evaluation; smaller slab/crop limits |
 | Single 12 GiB GPU | One or two gunicorn workers, SAM2 on device 0, approximately 1536px crop ceiling |
 | Single 24 GiB GPU | Up to two workers and a larger crop/slab only after profiling |
-| Two or more GPUs | Separate SAM2 and EfficientSAM devices; no automatic intra-batch Track sharding |
+| Two or more GPUs | SAM 2 uses one device; no automatic intra-batch Track sharding |
 
 Run `ops/docker/detect-hardware.sh` on every deployment and archive its output
 with experiment logs. Container limits and scheduler allocations can differ

@@ -44,11 +44,28 @@ class PromptRoiTests(SimpleTestCase):
             [[0, 1, 1, 0], [1, 1, 0, 0], [0, 0, 0, 1]], dtype=bool
         )
         runs = encode_roi_bool_rle((8, 10), roi, crop)
+        self.assertEqual(sum(count for _, count in runs), 8 * 10)
         decoded = np.concatenate(
             [np.full(count, value, dtype=bool) for value, count in runs]
         ).reshape(8, 10)
         expected = np.zeros((8, 10), dtype=bool)
         expected[2:5, 3:7] = crop
+        np.testing.assert_array_equal(decoded, expected)
+
+    def test_non_square_crop_remaps_xy_and_preserves_row_padding(self):
+        roi = RoiWindow(10, 13, 20, 25)
+        self.assertEqual(roi.remap_points([[22, 11], [24, 12]]), [[2.0, 1.0], [4.0, 2.0]])
+        crop = np.zeros((3, 5), dtype=bool)
+        crop[1, 2:5] = True
+
+        runs = encode_roi_bool_rle((31, 47), roi, crop)
+        self.assertEqual(sum(count for _, count in runs), 31 * 47)
+        decoded = np.concatenate(
+            [np.full(count, value, dtype=bool) for value, count in runs]
+        ).reshape(31, 47)
+
+        expected = np.zeros((31, 47), dtype=bool)
+        expected[11, 22:25] = True
         np.testing.assert_array_equal(decoded, expected)
 
     def test_rejects_mask_shape_mismatch(self):

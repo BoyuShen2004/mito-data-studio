@@ -1,4 +1,4 @@
-"""Single application boundary for interactive EfficientSAM inference."""
+"""Single application boundary for interactive segmentation inference."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ from django.conf import settings
 from annotation.label_paths import volume_embeddings_dir_rel_path, working_mask_stem
 from annotation.visualization.slice_io import AXES, read_slice, resolve_path
 
-from . import embed_cache
+from . import sam2_feature_cache
 from .normalize import normalize_for_ai
 from .prompt_roi import RoiWindow, compute_prompt_roi, encode_roi_bool_rle
-from .registry import get_efficient_sam
+from .registry import get_mask_model
 
 _timing_log = logging.getLogger("mito.ai.timing")
 
@@ -47,12 +47,11 @@ def embedding_cache_path(
         image_mtime = image_path.stat().st_mtime
     except OSError:
         image_mtime = 0.0
-    return embed_cache.cache_path_for(
+    return sam2_feature_cache.cache_path_for(
         volume_embeddings_dir_rel_path(volume),
         working_mask_stem(volume),
         axis,
         index,
-        getattr(settings, "MITO_EFFICIENT_SAM_VARIANT", "vits"),
         image_mtime,
         roi_token=roi_token,
     )
@@ -130,7 +129,7 @@ def predict_mask(
             prepared.roi.cache_token(),
             (time.perf_counter() - prepare_started) * 1000.0,
         )
-    model = get_efficient_sam()
+    model = get_mask_model()
     if mode in {"points", "boundary"}:
         mask = model.predict_mask_from_points(
             prepared.image,
@@ -161,17 +160,55 @@ def predict_mask(
     return result
 
 
+def _plane_shape(volume, axis: str) -> tuple[int, int] | None:
+    """The ``(height, width)`` of one plane, from the volume's recorded shape.
+
+    Matches ``slice_io.read_slice``'s orientation per axis. Returns ``None``
+    when any needed dimension is missing, so the caller falls back to reading
+    the image rather than guessing.
+    """
+    z, y, x = volume.shape_z, volume.shape_y, volume.shape_x
+    dims = {"z": (y, x), "y": (z, x), "x": (z, y)}.get(axis)
+    if not dims or not all(dims):
+        return None
+    return int(dims[0]), int(dims[1])
+
+
 def warm_embedding(task, axis: str, index: int, *, point=None) -> bool:
     volume = task.volume
     if axis not in AXES or not volume.image_location:
         return False
     timed = bool(getattr(settings, "MITO_AI_TIMING", False))
     started = time.perf_counter() if timed else 0.0
+    model = get_mask_model()
+
+    # Answer an already-warm slice without touching the image at all. The
+    # viewer re-warms the plane and its neighbours on every slice change, so
+    # on a scrub most of these are repeats, and decoding a plane just to
+    # discover it was cached is the request that made scrubbing feel slow.
+    # The volume's recorded shape is enough to resolve the ROI and its cache
+    # key; only a volume with no shape on record has to read pixels first.
+    plane = _plane_shape(volume, axis)
+    if plane is not None and getattr(model, "is_warm", None) is not None:
+        height, width = plane
+        probe = point if point is not None else [width // 2, height // 2]
+        roi = compute_prompt_roi(height, width, points=[probe])
+        token = None if roi.covers(height, width) else roi.cache_token()
+        if model.is_warm(embedding_cache_path(volume, axis, index, roi_token=token)):
+            if timed:
+                _timing_log.info(
+                    "warm cached axis=%s index=%d %.1fms",
+                    axis,
+                    index,
+                    (time.perf_counter() - started) * 1000.0,
+                )
+            return True
+
     raw = read_slice(volume.image_location, axis, index)
     height, width = raw.shape[:2]
     point = point if point is not None else [width // 2, height // 2]
     prepared = _prepare_array(volume, axis, index, raw, points=[point])
-    get_efficient_sam().warm(prepared.image, disk_path=prepared.cache_path)
+    model.warm(prepared.image, disk_path=prepared.cache_path)
     if timed:
         _timing_log.info(
             "warm total axis=%s index=%d roi=%s %.1fms",

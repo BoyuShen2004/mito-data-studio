@@ -14,7 +14,10 @@ source file/function it was ported from, with the Qt/desktop-specific parts
 embedding-directory cache) stripped since this runs inside a stateless
 Django request instead of a single long-lived desktop session:
 
-- ``ai/efficient_sam.py`` — ``cellable/labelme/ai/efficient_sam.py``
+- ``ai/`` — ``cellable/labelme/ai/``'s prompt handling and image
+  normalisation. Cellable's own EfficientSAM runtime is *not* ported: the
+  interactive tools run on SAM 2 (``ai/sam2_masks.py``), which measured
+  better on every volume here.
 - ``watershed.py`` — ``cellable/labelme/app.py``'s ``apply_3d_watershed`` /
   ``_label_bbox_3d`` / ``compute_bbox_3d``
 - ``split_components.py`` — ``cellable/labelme/app.py``'s ``split_label``

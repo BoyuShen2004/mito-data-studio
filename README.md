@@ -42,7 +42,7 @@ AI-assisted masks and SAM2 tracking are optional profiles; see
 | --- | --- | --- |
 | Docker Compose | Docker Engine 24+ and the Compose plugin | Running the complete application; recommended |
 | Conda development | git, git-lfs, conda, and about 10 GB free | Editing code with Django and Vite on the host |
-| Optional AI/GPU | Git LFS; NVIDIA driver and Container Toolkit for CUDA | EfficientSAM and SAM2 Track |
+| Optional AI/GPU | Git LFS; NVIDIA driver and Container Toolkit for CUDA | SAM2 mask tools and Track |
 
 `docker-compose.yml` is the complete application stack. In contrast,
 `docker-compose.dev.yml` starts only a development PostgreSQL database for a
@@ -91,7 +91,7 @@ frontend/     React/Vite application and browser tests
 docs/         user, developer, and deployment documentation
 scripts/dev/  local setup and live-reload entry points
 ops/          container, staging, production, and release assets
-vendor/       optional EfficientSAM/SAM2 assets managed with Git LFS
+vendor/       optional SAM2 assets managed with Git LFS
 manage.py     repository-wide Django command entry point
 Makefile      common setup, run, check, test, and build commands
 ```

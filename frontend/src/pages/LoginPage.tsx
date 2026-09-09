@@ -106,8 +106,8 @@ export default function LoginPage() {
           </div>
           <ul className="brand-features">
             <li>
-              <span className="tick">✓</span> View &amp; Annotate with paint,
-              EfficientSAM &amp; SAM2
+              <span className="tick">✓</span> View &amp; Annotate with paint
+              and SAM2
             </li>
             <li>
               <span className="tick">✓</span> Submit/review: latest wins;

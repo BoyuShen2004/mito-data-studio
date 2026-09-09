@@ -11,7 +11,6 @@ It recommends or applies:
 
 - gunicorn worker and thread counts;
 - the CUDA device used by SAM2 Track;
-- a second CUDA device for EfficientSAM when at least two GPUs are visible;
 - the maximum Track planning slab size;
 - SAM2 crop padding and window bounds;
 - CPU threads for merge/contact work;
@@ -155,7 +154,7 @@ batch across all GPUs.
 | --- | --- |
 | CPU-only laptop/server | Core or AI-CPU image; Track can use the local provider, with a smaller slab/crop recommendation |
 | One NVIDIA GPU | SAM2 uses device 0; worker count and crop maximum are limited according to VRAM |
-| Two or more NVIDIA GPUs | SAM2 defaults to device 0 and EfficientSAM to device 1; remaining GPUs are not automatically used for one Track batch |
+| Two or more NVIDIA GPUs | SAM2 defaults to device 0 and serves both Track and the interactive mask tools; remaining GPUs are not automatically used for one Track batch |
 | Explicit env overrides | The probe reports recommendations but does not replace the operator's values |
 
 For all environment variables and troubleshooting, continue with

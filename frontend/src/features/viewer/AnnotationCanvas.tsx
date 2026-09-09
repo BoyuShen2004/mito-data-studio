@@ -97,6 +97,13 @@ import {
   type InterpolateLayerMemory,
 } from "./interpolateLayerMemory";
 import {
+  POINT_RETICLE_ARM_SCREEN_PX,
+  POINT_RETICLE_RADIUS_SCREEN_PX,
+  cursorLayerBackingSize,
+  imageToCssScale,
+  screenPxToImagePx,
+} from "./cursorChrome";
+import {
   applyMergeCanvasClick,
   mergeClickSlotForInputs,
 } from "./annotate/mergeClick";
@@ -136,7 +143,20 @@ import {
 // canvas.py's `createMode`), laid out horizontally:
 //   Select / Brush / Erase / Box Erase / Point Mask / Box Mask / Boundary / Seeds
 // Track propagates the active instance across z via fork-aware SAM2.
-// EfficientSAM (Point/Box/Boundary) is the interactive single-slice segmenter.
+// Point/Box/Boundary are the interactive single-slice tools, on the same SAM2
+// model as Track.
+
+/**
+ * Floor between cursor-follow predicts (#27's live proposal).
+ *
+ * The preview follows the cursor because that is how the tool reads as
+ * interactive — you see what the click would give before you commit it.
+ * With the slice's features cached a predict is decode-only, so the only
+ * thing stopping a mouse sweep from firing continuously is this floor;
+ * ~20/s is smooth to a person and leaves the GPU free for the click that
+ * actually matters.
+ */
+const LIVE_PREDICT_MIN_INTERVAL_MS = 50;
 
 const LABEL_ALPHA = 150;
 // Proposed-mask look, matching Cellable's AI preview (canvas.py paintEvent):
@@ -276,7 +296,7 @@ function strokeHiVis(
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  const halo = lineWidth + Math.max(lineWidth * 0.9, 1.5);
+  const halo = lineWidth * 1.9;
   ctx.strokeStyle = "rgba(0,0,0,0.9)";
   ctx.lineWidth = halo;
   path();
@@ -291,9 +311,9 @@ function strokeHiVis(
 /**
  * Brush/erase footprint cursor, in one of five styles.
  *
- * `cx`/`cy` are the *centre* of the hovered pixel and `radius` comes from
- * `brushRadius`, so every style outlines exactly the disc `paintAt` will
- * change — see `brushCursor.ts` for why both of those matter.
+ * `cx`/`cy` are the *centre* of the hovered pixel. `radius` is cursor chrome
+ * in screen-derived image units; it is deliberately separate from the voxel
+ * footprint used by `paintAt`, so fitted small planes cannot inflate it.
  *
  * Only `disc` (the default, unchanged in look) fills its footprint. The other
  * four exist because that fill is opaque enough to hide the membrane an
@@ -312,14 +332,14 @@ function drawBrushCursor(
   pipRadius: number,
   style: BrushCursorStyle,
 ) {
-  const r = Math.max(radius, 0.5);
+  const r = Math.max(radius, 0.05);
   const ring = () => {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
   };
   const pip = (fill: string, size: number) => {
     ctx.beginPath();
-    ctx.arc(cx, cy, Math.max(size, 0.35), 0, Math.PI * 2);
+    ctx.arc(cx, cy, Math.max(size, 0.05), 0, Math.PI * 2);
     ctx.fillStyle = fill;
     ctx.fill();
   };
@@ -339,16 +359,16 @@ function drawBrushCursor(
   if (style === "outline") {
     // Ring only, at roughly half the default weight: the footprint stays
     // legible while the tissue inside it is completely unobscured.
-    strokeHiVis(ctx, Math.max(ringWidth * 0.5, 0.6), color, ring);
+    strokeHiVis(ctx, ringWidth * 0.5, color, ring);
     return;
   }
 
   if (style === "crosshair") {
     // Four short ticks that stop short of the centre, so the exact pixel being
     // painted is never covered by the cursor that aims at it.
-    const gap = Math.max(r * 0.35, 0.6);
-    const arm = r + Math.max(r * 0.5, 1.5);
-    strokeHiVis(ctx, Math.max(ringWidth * 0.5, 0.6), color, () => {
+    const gap = Math.max(r * 0.35, pipRadius * 0.5);
+    const arm = r + Math.max(r * 0.5, ringWidth);
+    strokeHiVis(ctx, ringWidth * 0.5, color, () => {
       ctx.beginPath();
       ctx.moveTo(cx - arm, cy);
       ctx.lineTo(cx - gap, cy);
@@ -359,15 +379,15 @@ function drawBrushCursor(
       ctx.moveTo(cx, cy + gap);
       ctx.lineTo(cx, cy + arm);
     });
-    pip(color, Math.max(pipRadius * 0.45, 0.35));
+    pip(color, pipRadius * 0.45);
     return;
   }
 
   if (style === "brackets") {
     // L-marks at the footprint's bounding box corners. Nothing at all is drawn
     // over the footprint itself — the least occluding of the five.
-    const arm = Math.max(r * 0.45, 1);
-    strokeHiVis(ctx, Math.max(ringWidth * 0.55, 0.6), color, () => {
+    const arm = Math.max(r * 0.45, ringWidth);
+    strokeHiVis(ctx, ringWidth * 0.55, color, () => {
       ctx.beginPath();
       for (const [sx, sy] of [
         [-1, -1],
@@ -388,11 +408,11 @@ function drawBrushCursor(
   // dashed: a broken ring. The gaps let detail through while the dashes keep
   // the outline visible over both bright and dark tissue.
   ctx.save();
-  const dash = Math.max(r * 0.5, 1);
+  const dash = Math.max(r * 0.5, ringWidth);
   ctx.setLineDash([dash, dash]);
-  strokeHiVis(ctx, Math.max(ringWidth * 0.55, 0.6), color, ring);
+  strokeHiVis(ctx, ringWidth * 0.55, color, ring);
   ctx.restore();
-  pip(color, Math.max(pipRadius * 0.4, 0.35));
+  pip(color, pipRadius * 0.4);
 }
 
 /** Full-frame crosshair with dark halo + bright core + center pip. */
@@ -419,7 +439,7 @@ function drawCrosshairCursor(
   ctx.fillStyle = "#000";
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(hx, hy, Math.max(pipRadius * 0.55, 0.4), 0, Math.PI * 2);
+  ctx.arc(hx, hy, pipRadius * 0.55, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.restore();
@@ -446,7 +466,7 @@ function drawPointPromptCursor(
   });
   ctx.save();
   ctx.beginPath();
-  ctx.arc(hx, hy, Math.max(lineWidth * 0.65, 0.55), 0, Math.PI * 2);
+  ctx.arc(hx, hy, lineWidth * 0.65, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.restore();
@@ -1076,27 +1096,18 @@ export default function AnnotationCanvas({
   const roiWarmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRoiWarmRef = useRef("");
   // The Point Mask/Boundary transient cursor tip (#27) — Cellable's `line`
-  // rubber-band tip: null until ≥1 point is committed (no preview at all
-  // before the first click, matching Cellable's `if not self.current:
-  // return`), then tracks the cursor with label flipped by Shift on every
-  // move. Not in `aiPointsRef` — it's never committed until a click/Ctrl-
-  // click/Enter promotes it.
+  // rubber-band tip: null until ≥1 point is committed, then tracks the
+  // cursor for visual aiming only. It is deliberately not sent to the model:
+  // an unclicked hover coordinate is not a prompt and previously turned one
+  // stable positive click into a stream of changing two-positive-point masks.
   const aiTipRef = useRef<AiPoint | null>(null);
-  // Cursor-follow live predict (#27), coalesced over HTTP (#28/#29) — an
-  // earlier version aborted the in-flight predict on every pointer move
-  // (Cellable's own "predict on every repaint" is an in-process call, not a
-  // network round trip); that left the green mask visibly frozen, since the
-  // constantly-superseded request never got a chance to land. Coalescing
-  // instead: at most one predict in flight at a time, `dirty` marks that a
-  // newer tip arrived while it was running, and the `finally` below fires
-  // exactly one follow-up request for the latest position once the current
-  // one finishes — never a queue, never an abort-storm. Both live and
-  // committed-only predicts still share the single `aiSeqRef`/`aiAbortRef`
-  // guard above, so a click can never be overwritten by a stale hover
-  // response or vice versa.
-  const livePredictRef = useRef<{ inFlight: boolean; dirty: boolean }>({
+  // Coalesced prediction is retained for dragging an already committed point:
+  // unlike hover, that really changes prompt geometry. At most one request is
+  // in flight and `dirty` asks for one follow-up at the settled position.
+  const livePredictRef = useRef<{ inFlight: boolean; dirty: boolean; lastAt: number }>({
     inFlight: false,
     dirty: false,
+    lastAt: 0,
   });
   // `runPredictPointsWith` chains its own follow-up call from inside its
   // `finally` block (see `livePredictRef.dirty` above) — going through a ref
@@ -1431,7 +1442,7 @@ export default function AnnotationCanvas({
     (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, w: number, h: number) => {
       const screenRect = canvas.getBoundingClientRect();
       const scale = screenRect.width > 0 ? screenRect.width / w : 1;
-      const toImagePx = (screenPx: number) => screenPx / Math.max(scale, 0.001);
+      const toImagePx = (screenPx: number) => screenPxToImagePx(screenPx, scale);
       const pointRadius = toImagePx(6); // ~12px on-screen diameter — denser on EM
       const penWidth = Math.max(toImagePx(2), 0.5);
 
@@ -1455,7 +1466,7 @@ export default function AnnotationCanvas({
         const lastCommitted = aiPointsRef.current[aiPointsRef.current.length - 1];
         const tip = aiTipRef.current;
         if (lastCommitted && tip) {
-          strokeHiVis(ctx, Math.max(toImagePx(2.5), 1), tip.label === 1 ? "#22c55e" : "#ef4444", () => {
+          strokeHiVis(ctx, toImagePx(2.5), tip.label === 1 ? "#22c55e" : "#ef4444", () => {
             ctx.beginPath();
             ctx.moveTo(lastCommitted.x, lastCommitted.y);
             ctx.lineTo(tip.x, tip.y);
@@ -1468,7 +1479,7 @@ export default function AnnotationCanvas({
           ctx.arc(p.x, p.y, pointRadius * 1.35, 0, Math.PI * 2);
           ctx.fillStyle = color;
           ctx.fill();
-          strokeHiVis(ctx, Math.max(toImagePx(2), 1), "#ffffff", () => {
+          strokeHiVis(ctx, toImagePx(2), "#ffffff", () => {
             ctx.beginPath();
             ctx.arc(p.x, p.y, pointRadius * 1.35, 0, Math.PI * 2);
           });
@@ -1510,7 +1521,7 @@ export default function AnnotationCanvas({
           ctx.arc(sc.px, sc.py, seedR, 0, Math.PI * 2);
           ctx.fillStyle = "#facc15";
           ctx.fill();
-          strokeHiVis(ctx, Math.max(toImagePx(2.5), 1.2), "#facc15", () => {
+          strokeHiVis(ctx, toImagePx(2.5), "#facc15", () => {
             ctx.beginPath();
             ctx.moveTo(sc.px - arm, sc.py);
             ctx.lineTo(sc.px + arm, sc.py);
@@ -1523,56 +1534,79 @@ export default function AnnotationCanvas({
     [paintTool, wsSeeds, index],
   );
 
-  /** Custom overlay cursors — brush/erase rings, box crosshairs, point reticle. */
+  /** Custom overlay cursors — brush/erase rings, box crosshairs, point reticle.
+   *
+   * Drawn in **CSS pixels on a display-resolution buffer**, not in image
+   * coordinates like every other layer. See `cursorLayerBackingSize` for why:
+   * screen-constant chrome rendered into the plane's own 256-wide buffer and
+   * magnified by `image-rendering: pixelated` is what made the cursor look
+   * clean on large volumes and like blocky noise on small ones. Here one unit
+   * is one CSS pixel on every volume, so the constants below are literally
+   * the on-screen size. */
   const paintToolCursor = useCallback(() => {
     const canvas = cursorLayerRef.current;
-    const overlay = overlayRef.current;
     const [h, w] = shapeRef.current;
-    if (!canvas || !overlay || h === 0 || w === 0) return;
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
+    if (!canvas || h === 0 || w === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const cssW = rect.width;
+    const cssH = rect.height;
+    // A stage that has not been laid out yet has no size to draw against;
+    // drawing anyway would fall back to a 1:1 scale and flash a reticle
+    // sized in voxels for one frame.
+    if (cssW <= 0 || cssH <= 0) return;
+    const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+    const [backingW, backingH] = cursorLayerBackingSize(cssW, cssH, dpr);
+    if (canvas.width !== backingW) canvas.width = backingW;
+    if (canvas.height !== backingH) canvas.height = backingH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, w, h);
+    // One canvas unit = one CSS pixel, at the device's real resolution.
+    ctx.setTransform(backingW / cssW, 0, 0, backingH / cssH, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
     if (!usesCustomOverlayCursor(paintTool)) return;
     const hover = hoverPosRef.current;
     if (!hover || !editable || swapped) return;
-    const screenRect = canvas.getBoundingClientRect();
-    const scale = screenRect.width > 0 ? screenRect.width / w : 1;
-    const toImagePx = (screenPx: number) => screenPx / Math.max(scale, 0.001);
+    const [sx, sy] = imageToCssScale(cssW, cssH, w, h);
     const [hy, hx] = hover;
+    // Image pixel -> CSS pixel. The prompt-point dots on the label overlay
+    // anchor to the pixel's top-left corner, so the reticle does too; the
+    // brush ring keeps its half-pixel offset onto the pixel's centre.
+    const cx = hx * sx;
+    const cy = hy * sy;
     if (paintTool === "point_mask" || paintTool === "boundary") {
       const color = paintTool === "point_mask" ? "#22c55e" : "#38bdf8";
-      const radius = paintTool === "point_mask" ? brushSize : eraserSize;
       drawPointPromptCursor(
         ctx,
-        hx,
-        hy,
+        cx,
+        cy,
         color,
-        Math.max(toImagePx(2), 1),
-        radius * 1.25,
-        radius,
+        2,
+        POINT_RETICLE_ARM_SCREEN_PX,
+        POINT_RETICLE_RADIUS_SCREEN_PX,
       );
       return;
     }
     if (paintTool === "box_mask" || paintTool === "box_eraser") {
       const color = paintTool === "box_mask" ? "#f59e0b" : "#38bdf8";
-      drawCrosshairCursor(ctx, hx, hy, w, h, color, Math.max(toImagePx(2.5), 1.2), toImagePx(3.5));
+      drawCrosshairCursor(ctx, cx, cy, cssW, cssH, color, 2.5, 3.5);
       return;
     }
     if (paintTool === "brush" || paintTool === "eraser") {
       const color = paintTool === "brush" ? "#22c55e" : "#38bdf8";
       const size = paintTool === "brush" ? brushSize : eraserSize;
-      // +0.5 puts the cursor on the hovered pixel's centre rather than its
-      // top-left corner, so the ring and the painted disc coincide.
+      // The ring is the *footprint*, not chrome: `brushRadius` is the exact
+      // disc `paintAt` will change, scaled into CSS pixels. It therefore
+      // grows with zoom and with a small plane's fit — because that is how
+      // much tissue the stroke really covers. Only the line weight and the
+      // centre pip below stay screen-constant.
       drawBrushCursor(
         ctx,
-        hx + 0.5,
-        hy + 0.5,
-        brushRadius(size),
+        (hx + 0.5) * sx,
+        (hy + 0.5) * sy,
+        brushRadius(size) * sx,
         color,
-        Math.max(toImagePx(3), 1.5),
-        toImagePx(3.5),
+        3,
+        3.5,
         cursorStyle,
       );
     }
@@ -2186,7 +2220,7 @@ export default function AnnotationCanvas({
         aiPointsRef.current = [];
         aiPreviewRef.current = null;
         aiTipRef.current = null;
-        livePredictRef.current = { inFlight: false, dirty: false };
+        livePredictRef.current = { inFlight: false, dirty: false, lastAt: 0 };
         // A deferred Box-Mask commit ("double-clicked while the prediction was
         // still running") belongs to the slice it was requested on. Clearing
         // hasAiPreview alone only postpones it: the intent would survive here
@@ -2305,7 +2339,7 @@ export default function AnnotationCanvas({
     };
   }, [index, axis, axisLen, meta.data, firstImageReady, sliceImageUrl, labelRunsFor, sliceRegionUrl]);
 
-  // Warm the EfficientSAM embedding (encoder-only, see
+  // Warm the SAM2 image features (encoder-only, see
   // `services.warm_ai_embedding`) whenever the slice settles while an AI
   // tool is active, *or* when switching into one on the current slice —
   // fire-and-forget, same ~100ms coalescing as the slice load above so
@@ -2818,7 +2852,7 @@ export default function AnnotationCanvas({
     // guard; the controller covers Box and committed-point requests.
     aiSeqRef.current += 1;
     aiAbortRef.current?.abort();
-    livePredictRef.current = { inFlight: false, dirty: false };
+    livePredictRef.current = { inFlight: false, dirty: false, lastAt: 0 };
     aiPointsRef.current = [];
     aiPreviewRef.current = null;
     aiTipRef.current = null;
@@ -2934,7 +2968,7 @@ export default function AnnotationCanvas({
       }
       aiSeqRef.current += 1;
       aiAbortRef.current?.abort();
-      livePredictRef.current = { inFlight: false, dirty: false };
+      livePredictRef.current = { inFlight: false, dirty: false, lastAt: 0 };
       historyRef.current.cancelStroke();
       drawingRef.current = false;
       lastPointRef.current = null;
@@ -3055,9 +3089,8 @@ export default function AnnotationCanvas({
   }, []);
 
   // Index into `aiPointsRef` of the committed point nearest an image-space
-  // click, if any is within `toleranceScreenPx` on-screen pixels — shared by
-  // Alt+click-to-remove (#25 item E) and drag-to-move (#29 item U8) so both
-  // "clicked on an existing point" checks use the exact same hit-test.
+  // click, if any is within `toleranceScreenPx` on-screen pixels. Plain-click
+  // uses this to drag an existing point; Alt is reserved for negative prompts.
   const nearestCommittedPointIndex = useCallback((px: number, py: number, toleranceScreenPx: number): number => {
     const pts = aiPointsRef.current;
     if (pts.length === 0) return -1;
@@ -3200,7 +3233,7 @@ export default function AnnotationCanvas({
     [paintTool, activeId, brushSize, eraserSize, paintAt, renderOverlay],
   );
 
-  // --- Point Mask / Boundary: accumulate prompt points, live-predict ------
+  // --- Point Mask / Boundary: accumulate prompt points, predict ----------
   //
   // Every predict call is sequence-guarded: a rapid extra click (or a new
   // box drag) starts a new sequence number and aborts whatever was still
@@ -3211,12 +3244,9 @@ export default function AnnotationCanvas({
   // loop calling `_finaliseImpl`/paintEvent one at a time; a browser has no
   // such guarantee once two `fetch`es are in flight together).
 
-  // Shared core: predict from an explicit point set. Used two ways —
-  // committed-only (`runPredictPoints`, the click/Alt-click/finalize path)
-  // and committed∪{live cursor tip} (`scheduleLivePredict`, #27's
-  // cursor-follow). Both share one `aiSeqRef`/`aiAbortRef` pair so whichever
-  // call is most recent always wins regardless of which path fired it —
-  // a click predict racing a hover predict can't corrupt either's result.
+  // Shared core: predict from an explicit committed point set. Both ordinary
+  // clicks and coalesced committed-point dragging share one sequence guard so
+  // an older request can never overwrite newer prompt geometry.
   const runPredictPointsWith = useCallback(
     async (pts: AiPoint[], opts?: { silent?: boolean; live?: boolean }) => {
       const silent = opts?.silent === true;
@@ -3227,7 +3257,7 @@ export default function AnnotationCanvas({
       // remained on screen).
       if (!live) {
         aiAbortRef.current?.abort();
-        livePredictRef.current = { inFlight: false, dirty: false };
+        livePredictRef.current = { inFlight: false, dirty: false, lastAt: 0 };
       }
       if (pts.length === 0) {
         aiPreviewRef.current = null;
@@ -3308,23 +3338,35 @@ export default function AnnotationCanvas({
   );
   runPredictPointsWithRef.current = runPredictPointsWith;
 
-  // Committed-only predict (no cursor tip) — click / Alt-click / Enter path.
+  // Predict from the committed points — click / Alt-click / Enter path.
   const runPredictPoints = useCallback(
     () => runPredictPointsWith(aiPointsRef.current),
     [runPredictPointsWith],
   );
 
-  // Cursor-follow: coalesce to latest tip (Cellable paintEvent feel over HTTP).
+  // Coalesce predictions while an existing committed point is dragged.
   const scheduleLivePredict = useCallback(() => {
     const pts = aiPointsRef.current;
     if (pts.length === 0) return;
     const st = livePredictRef.current;
     if (st.inFlight) {
+      // Never queue: mark that a newer position exists and let the `finally`
+      // above fire exactly one follow-up for wherever the cursor ended up.
+      st.dirty = true;
+      return;
+    }
+    // A predict is decode-only once the slice's features are cached (~10ms),
+    // so the coalescing above would otherwise let a fast drag issue ~60
+    // requests a second. This floor keeps it at a rate a person can see
+    // without turning a mouse sweep into a burst against the GPU.
+    const now = Date.now();
+    if (now - st.lastAt < LIVE_PREDICT_MIN_INTERVAL_MS) {
       st.dirty = true;
       return;
     }
     st.inFlight = true;
     st.dirty = false;
+    st.lastAt = now;
     const tip = aiTipRef.current;
     void runPredictPointsWith(tip ? [...pts, tip] : pts, { silent: true, live: true });
   }, [runPredictPointsWith]);
@@ -3461,10 +3503,9 @@ export default function AnnotationCanvas({
   }, [paintTool, hasAiPreview, commitAiPreview]);
 
   // Enter/Ctrl-click/double-click finalize: match Cellable exactly — a
-  // fresh committed-only predict, THEN commit that (not whatever the last
-  // hover frame happened to show) — see #27 item L4. No-ops with no
-  // committed points; `commitAiPreview` itself no-ops if the fresh predict
-  // came back empty.
+  // fresh predict from the committed points, THEN commit that (not an older
+  // response) — see #27 item L4. No-ops with no committed points;
+  // `commitAiPreview` itself no-ops if the fresh predict came back empty.
   const finalizeAiPoints = useCallback(async () => {
     if (aiPointsRef.current.length === 0) return;
     const axisAtStart = axisRef.current;
@@ -3514,7 +3555,7 @@ export default function AnnotationCanvas({
     aiPreviewRef.current = null;
     aiTipRef.current = null;
     finalizeBoxWhenReadyRef.current = false;
-    livePredictRef.current = { inFlight: false, dirty: false };
+    livePredictRef.current = { inFlight: false, dirty: false, lastAt: 0 };
     draggingPointIdxRef.current = null;
     // Also cancels an in-progress Box Mask rubber-band — Escape must clear
     // Box the same as Point/Boundary (#25 item C.2/C.5), and this is also
@@ -4115,8 +4156,9 @@ export default function AnnotationCanvas({
         return;
       }
 
-      // Select tool (or Shift+click, except while placing AI points — there
-      // Shift means "negative point") = eyedropper, never paints.
+      // Select tool (or Shift+click, except while placing AI points) =
+      // eyedropper, never paints. Point prompts accept Alt as the documented
+      // negative modifier; Shift remains a compatibility alias.
       if (paintTool === "select" || (e.shiftKey && !AI_POINT_TOOLS.includes(paintTool))) {
         if (ids) {
           const [, w] = shapeRef.current;
@@ -4127,26 +4169,11 @@ export default function AnnotationCanvas({
       }
 
       if (AI_POINT_TOOLS.includes(paintTool)) {
-        if (e.altKey) {
-          // Alt+click an existing prompt point removes it and re-predicts
-          // (or clears the preview if none remain) — Cellable-level prompt
-          // editing fluency (#25 item E).
-          const nearestIdx = nearestCommittedPointIndex(px, py, 12);
-          if (nearestIdx >= 0) {
-            const next = aiPointsRef.current.slice();
-            next.splice(nearestIdx, 1);
-            aiPointsRef.current = next;
-            setAiPointCount(next.length);
-            renderOverlay();
-            runPredictPoints();
-          }
-          return;
-        }
-        if (!e.ctrlKey && !e.metaKey) {
+        if (!e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
           // Clicking on (not near-but-off) an existing committed point
           // drags it instead of adding a new one — Cellable-level vertex
           // drag for AI prompts (#29 item U8). Re-predicts live while
-          // dragging (cheap — same coalesced path as the cursor tip) and
+          // dragging (cheap — coalesced, at most one request in flight) and
           // once more, non-live, on release.
           const dragIdx = nearestCommittedPointIndex(px, py, 10);
           if (dragIdx >= 0) {
@@ -4157,13 +4184,16 @@ export default function AnnotationCanvas({
             return;
           }
         }
-        // Plain click pins the cursor tip as a new committed point — the
+        // Plain click commits a point where the cursor tip was drawn — the
         // tip itself resets to null; the very next pointermove repopulates
         // it at the (possibly unchanged) cursor position, so the free-
         // floating marker "continues from the new last point" (Cellable's
         // `addPoint(line.points[1])`) without drawing a duplicate dot on
         // top of the just-committed one in the meantime.
-        aiPointsRef.current = [...aiPointsRef.current, { x: px, y: py, label: e.shiftKey ? 0 : 1 }];
+        aiPointsRef.current = [
+          ...aiPointsRef.current,
+          { x: px, y: py, label: e.altKey || e.shiftKey ? 0 : 1 },
+        ];
         aiTipRef.current = null;
         setAiPointCount(aiPointsRef.current.length);
         renderOverlay();
@@ -4433,8 +4463,9 @@ export default function AnnotationCanvas({
       }
       if (draggingPointIdxRef.current != null) {
         // Dragging a committed AI prompt point (#29 item U8) — update its
-        // position in place and live-predict (cheap, coalesced — same path
-        // as the cursor tip); a final non-live predict fires on release.
+        // position in place and live-predict. This is the one pointer-move
+        // path that may predict: the drag really moves prompt geometry,
+        // unlike a hover. A final non-live predict fires on release.
         if (pt) {
           const idx = draggingPointIdxRef.current;
           const pts = aiPointsRef.current;
@@ -4463,13 +4494,16 @@ export default function AnnotationCanvas({
         return;
       }
       if (AI_POINT_TOOLS.includes(paintTool)) {
-        // Cursor-follow live proposal (#27) — no tip (and no preview at
-        // all) until ≥1 point is committed, matching Cellable's `if not
-        // self.current: return`. `renderCursorOverlay` moves the tip vertex
-        // immediately every move (smooth tracking); `scheduleLivePredict`
-        // is throttled and only actually updates the green fill once its
-        // (possibly delayed) network response lands.
-        aiTipRef.current = pt && aiPointsRef.current.length > 0 ? { x: pt[1], y: pt[0], label: e.shiftKey ? 0 : 1 } : null;
+        // Cursor-follow proposal: no tip (and no preview) until at least one
+        // point is committed, then the hovered position rides along as a
+        // provisional extra prompt so the mask previews what clicking here
+        // would give. `renderCursorOverlay` moves the marker every frame;
+        // the green fill only updates when a (throttled, coalesced) response
+        // lands. The tip is never committed — a click, Enter or Ctrl-click
+        // always re-predicts from the committed points alone.
+        aiTipRef.current = pt && aiPointsRef.current.length > 0
+          ? { x: pt[1], y: pt[0], label: e.altKey || e.shiftKey ? 0 : 1 }
+          : null;
         renderCursorOverlay();
         scheduleLivePredict();
         return;
@@ -4546,10 +4580,10 @@ export default function AnnotationCanvas({
     // re-predict once more) — `onPointerUp()` below already covers this
     // since it's the same function, just also reachable via leave.
     onPointerUp();
-    // Tip leaves the canvas (#27 item 5) — drop it and immediately (not
-    // throttled — this is a discrete leave, not a move stream) re-predict
-    // committed-only so the proposal snaps back rather than sitting on a
-    // stale off-canvas tip until the next move.
+    // The tip leaves with the cursor. Re-predict committed-only right away
+    // (not throttled — a leave is one discrete event, not a move stream) so
+    // the proposal snaps back to what the committed points actually give,
+    // instead of sitting on a stale off-canvas hover.
     if (AI_POINT_TOOLS.includes(paintTool) && aiTipRef.current) {
       aiTipRef.current = null;
       runPredictPoints();
@@ -5848,8 +5882,8 @@ export default function AnnotationCanvas({
       } else if (e.shiftKey && e.key.toLowerCase() === "s") {
         resetVisibility(); // #29 item U12 ("show all")
       } else if (e.key === "Enter" && AI_POINT_TOOLS.includes(paintTool)) {
-        // Point/Boundary: re-predict committed-only, then commit that —
-        // never whatever the last hover frame happened to show (#27 item
+        // Point/Boundary: re-predict from the committed points, then
+        // commit that result — never an older in-flight response (#27 item
         // L4, Cellable's `finalise()` semantics).
         finalizeAiPoints();
       } else if (e.key === "Enter" && paintTool === "box_mask") {
@@ -6911,7 +6945,10 @@ export default function AnnotationCanvas({
                       inset: 0,
                       width: "100%",
                       height: "100%",
-                      imageRendering: "pixelated",
+                      // No `image-rendering: pixelated` here, unlike the image
+                      // and label layers: this buffer is already at display
+                      // resolution, so nearest-neighbour would only re-alias
+                      // the chrome it now draws smoothly.
                       pointerEvents: "none",
                     }}
                   />

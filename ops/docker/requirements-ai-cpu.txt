@@ -1,12 +1,12 @@
 # Core + the AI-assist stack, CPU-only builds.
 #
-# Enables EfficientSAM Point/Box Mask and SAM2 tracking without a GPU. Both run
-# noticeably slower than the CUDA path — this profile exists so a machine with
-# no NVIDIA driver can still exercise the full feature set, not as the
+# Enables SAM 2 tracking and the interactive mask tools without a GPU. Both
+# run noticeably slower than the CUDA path — this profile exists so a machine
+# with no NVIDIA driver can still exercise the full feature set, not as the
 # recommended way to annotate at volume.
 #
-# Same package versions as requirements-ai-gpu.txt; only the wheel index and
-# the ONNX Runtime package differ.
+# Same package versions as requirements-ai-gpu.txt; only the wheel index
+# differs.
 
 -r requirements-core.txt
 
@@ -17,10 +17,6 @@
 
 torch==2.5.1
 torchvision==0.20.1
-
-# CPU ONNX Runtime. Never install this alongside onnxruntime-gpu — the two
-# packages provide the same module and the last one installed silently wins.
-onnxruntime==1.26.0
 
 # SAM2 helpers.
 hydra-core==1.3.4

@@ -26,6 +26,8 @@ from __future__ import annotations
 import logging
 import sys
 import tempfile
+import threading
+from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Literal
@@ -39,6 +41,25 @@ PropagationDirection = Literal["forward", "backward", "both"]
 
 DEFAULT_CHECKPOINT_NAME = "checkpoints/sam2.1_hiera_large.pt"
 DEFAULT_CONFIG = "configs/sam2.1/sam2.1_hiera_l.yaml"
+
+# How many slices' encoder features to keep on the GPU. Scrubbing is the
+# motivating case: an annotator steps z back and forth over a handful of
+# planes, and re-encoding one costs ~240 ms while replaying cached features
+# costs nothing. Eight slots covers the working set of a scrub without
+# meaningfully denting a 2080 Ti — see `image_cache_bytes` for the real
+# number, measured at 16 MiB per slot here (the encoder's output is a fixed
+# size, so this does not grow with the plane).
+DEFAULT_IMAGE_CACHE_SLOTS = 8
+
+
+def _setting_int(name: str, default: int) -> int:
+    """Read a Django setting without making this module import Django."""
+    try:
+        from django.conf import settings
+
+        return int(getattr(settings, name, default))
+    except Exception:
+        return default
 
 
 class SAM2Wrapper:
@@ -102,6 +123,24 @@ class SAM2Wrapper:
         self._temp_dir: tempfile.TemporaryDirectory | None = None
         self._image_stack: np.ndarray | None = None
         self._image_predictor = None
+        # LRU of image-encoder output, keyed by slice identity — see
+        # `_ensure_image_features`. Ordered newest-last.
+        self._image_cache: OrderedDict[str, dict] = OrderedDict()
+        self._image_cache_slots = max(
+            1, _setting_int("MITO_SAM2_IMAGE_CACHE_SLOTS", DEFAULT_IMAGE_CACHE_SLOTS)
+        )
+        self._image_cache_stats = {
+            "hit": 0, "disk_hit": 0, "miss": 0, "uncached": 0, "evicted": 0
+        }
+        # Optional L2 behind the LRU, injected by the Annotate layer (see
+        # `cellable_port/ai/sam2_feature_cache`) so this module keeps knowing
+        # only about SAM 2 and nothing about the data root.
+        self._feature_store = None
+        # Guards the image predictor's single feature slot, which only one
+        # caller uses (Annotate's mask tools — Track prompts the *video*
+        # predictor instead). Held for one encode/decode, never a propagation,
+        # so an Annotate click can never queue behind Track's long lock.
+        self._image_lock = threading.RLock()
 
     @contextmanager
     def _inference_context(self) -> Iterator[None]:
@@ -192,7 +231,7 @@ class SAM2Wrapper:
         Bounded by the frames themselves, by an env-tunable ceiling, and by the
         CPUs this process may actually use — ``sched_getaffinity`` rather than
         ``cpu_count`` so a cgroup-restricted service does not size a pool from
-        the whole node (the same distinction ``efficient_sam._resolve_thread_
+        the whole node (the same distinction the ported ``_resolve_thread_
         count`` documents). Kept modest because up to three gunicorn workers can
         be in here at once.
         """
@@ -251,17 +290,25 @@ class SAM2Wrapper:
             list(pool.map(export, range(frames)))
 
     def _get_image_predictor(self):
+        """The image predictor, built on the **already-loaded** video model.
+
+        `SAM2VideoPredictor` is a `SAM2Base`, and `SAM2ImagePredictor` only
+        reads its argument — every piece of mutable state it owns
+        (`_features`, `_is_image_set`, `_orig_hw`) lives on the predictor,
+        while tracking's `inference_state` is passed around as an argument
+        and never stored on the model. So the two predictors can share one
+        set of weights.
+
+        That matters on this deployment: `build_sam2` here would load a
+        second ~2 GB copy of hiera_large per gunicorn worker, and the
+        production GPU already sits at 9.2 of 11.3 GB with three workers
+        holding the video model. Sharing makes the image path cost nothing
+        extra whenever tracking is loaded, which it always is here.
+        """
         if self._image_predictor is None:
-            from sam2.build_sam import build_sam2
             from sam2.sam2_image_predictor import SAM2ImagePredictor
 
-            model = build_sam2(
-                config_file=self.config,
-                ckpt_path=str(self.checkpoint),
-                device=self.device,
-                apply_postprocessing=False,
-            )
-            self._image_predictor = SAM2ImagePredictor(model)
+            self._image_predictor = SAM2ImagePredictor(self.predictor)
         return self._image_predictor
 
     def predict_single_frame(
@@ -271,14 +318,31 @@ class SAM2Wrapper:
         points: list[tuple[int, int]] | None = None,
         point_labels: list[int] | None = None,
         box: tuple[int, int, int, int] | None = None,
+        cache_key: str | None = None,
     ) -> np.ndarray:
-        """Fast single-slice SAM 2 (image model only — no full-stack JPEG export)."""
+        """Fast single-slice SAM 2 (image model only — no full-stack JPEG export).
+
+        ``cache_key`` identifies the *image* being prompted. Interactive mask
+        editing prompts the same slice over and over — click, refine, negative
+        click — and `set_image` (the image encoder) is ~95% of the cost of a
+        call, while the prompt decoder that follows it is a few milliseconds.
+        Passing a stable key lets a repeat prompt replay the encoder output
+        from the LRU in `_ensure_image_features` instead of recomputing it,
+        which is what makes scrubbing back to a recent slice free rather than
+        a fresh quarter-second encode.
+        """
         if box is None and not points:
             raise ValueError("predict_single_frame requires box and/or points")
 
         predictor = self._get_image_predictor()
-        predictor.set_image(self._slice_to_rgb(slice_2d))
 
+        # Deliberately *not* under `_inference_context()`, unlike every other
+        # CUDA path here. That looks like an oversight and is not: measured on
+        # this deployment, autocasting the image encoder runs 343 ms against
+        # 229 ms in plain fp32 — the casts cost more than the reduced-precision
+        # matmuls save at this one-image size, and the cached features come
+        # out fp32 either way. The masks agree to IoU 0.996, so there is
+        # nothing to buy here. Re-measure before "fixing" this.
         kwargs: dict = {"multimask_output": bool(points and len(points) == 1 and box is None)}
         if box is not None:
             x1, y1, x2, y2 = box
@@ -291,11 +355,188 @@ class SAM2Wrapper:
                 dtype=np.int32,
             )
 
-        masks, ious, _ = predictor.predict(normalize_coords=True, **kwargs)
+        # One lock across encode *and* decode: `predict` reads the feature slot
+        # that `_ensure_image_features` just filled, so releasing in between
+        # would let a second caller overwrite it mid-prompt.
+        with self._image_lock:
+            self._ensure_image_features(predictor, slice_2d, cache_key)
+            masks, ious, _ = predictor.predict(normalize_coords=True, **kwargs)
         if masks.ndim == 3 and masks.shape[0] > 1:
             best = int(np.argmax(ious))
             return masks[best].astype(bool)
         return np.squeeze(masks).astype(bool)
+
+    def set_feature_store(self, store) -> None:
+        """Attach an L2 for encoder features (``load``/``save``/``compute_lock``)."""
+        self._feature_store = store
+
+    def is_slice_warm(self, cache_key: str) -> bool:
+        """Whether prompting this slice would avoid the image encoder — in
+        this worker's LRU, or on disk where any worker can reach it."""
+        if cache_key is None:
+            return False
+        if cache_key in self._image_cache:
+            return True
+        store = self._feature_store
+        return store is not None and store.has(cache_key)
+
+    def warm_slice(self, slice_2d: np.ndarray, *, cache_key: str) -> str:
+        """Encode a slice *opportunistically*, for the viewer's slice-open warm.
+
+        Unlike `encode_slice`, this never waits. Warming is speculative work
+        on behalf of a click that may not come, and the viewer fires three of
+        them per slice change (the plane and its two neighbours); letting
+        them block meant a warm sat on a gunicorn worker thread waiting for
+        the GPU lock while the slice image and label requests the annotator
+        is actually waiting for queued up behind it. Scrubbing felt slow
+        *because* of the prefetch meant to speed it up.
+
+        Skipping is close to free: the slice gets encoded on demand at click
+        time, or by the next warm once the GPU is idle.
+        """
+        if self.is_slice_warm(cache_key):
+            return "hit"
+        if not self._image_lock.acquire(blocking=False):
+            return "busy"
+        try:
+            return self._ensure_image_features(
+                self._get_image_predictor(), slice_2d, cache_key
+            )
+        finally:
+            self._image_lock.release()
+
+    def encode_slice(self, slice_2d: np.ndarray, *, cache_key: str) -> str:
+        """Fill the cache for a slice without prompting it.
+
+        This is what "warm on slice open" should call: it pays the encoder
+        cost off the click path and returns "hit" when the work was already
+        done, so warming a slice the annotator scrubbed back to is free.
+        """
+        predictor = self._get_image_predictor()
+        with self._image_lock:
+            return self._ensure_image_features(predictor, slice_2d, cache_key)
+
+    def _ensure_image_features(self, predictor, slice_2d, cache_key) -> str:
+        """Put `cache_key`'s encoder features into the predictor's feature slot.
+
+        `SAM2ImagePredictor` writes `_features` only in `set_image`, and
+        `predict` merely reads it, so the output of an encode is a plain value
+        that can be stashed and replayed. Restoring it skips `forward_image`,
+        which is ~95% of the cost of a prompt on an already-seen slice.
+
+        Returns "hit" / "miss" / "uncached", for timing and for tests.
+        """
+        if cache_key is None:
+            # No stable identity for this image — encode it and do not let it
+            # into the cache, where it could later be served for a different
+            # slice that happens to arrive with no key either.
+            predictor.set_image(self._slice_to_rgb(slice_2d))
+            self._image_cache_stats["uncached"] += 1
+            return "uncached"
+
+        cached = self._image_cache.get(cache_key)
+        if cached is not None:
+            self._image_cache.move_to_end(cache_key)
+            self._install(predictor, cached["features"], cached["orig_hw"])
+            self._image_cache_stats["hit"] += 1
+            return "hit"
+
+        store = self._feature_store
+        if store is None:
+            predictor.set_image(self._slice_to_rgb(slice_2d))
+            self._remember(cache_key, predictor._features, predictor._orig_hw)
+            self._image_cache_stats["miss"] += 1
+            return "miss"
+
+        payload = store.load(cache_key)
+        if payload is None:
+            # Hold the cross-process lock across the encode so that the
+            # viewer's three concurrent slice warms cost one encode between
+            # them, not one each — then re-check, because the worker that
+            # held the lock before us has just written the answer.
+            with store.compute_lock(cache_key):
+                payload = store.load(cache_key)
+                if payload is None:
+                    predictor.set_image(self._slice_to_rgb(slice_2d))
+                    self._remember(cache_key, predictor._features, predictor._orig_hw)
+                    store.save(cache_key, self._export(predictor._features, predictor._orig_hw))
+                    self._image_cache_stats["miss"] += 1
+                    return "miss"
+
+        features, orig_hw = self._import(payload)
+        self._install(predictor, features, orig_hw)
+        self._remember(cache_key, features, orig_hw)
+        self._image_cache_stats["disk_hit"] += 1
+        return "disk_hit"
+
+    @staticmethod
+    def _install(predictor, features, orig_hw) -> None:
+        predictor._features = features
+        predictor._orig_hw = orig_hw
+        predictor._is_image_set = True
+        predictor._is_batch = False
+
+    def _remember(self, cache_key, features, orig_hw) -> None:
+        self._image_cache[cache_key] = {"features": features, "orig_hw": orig_hw}
+        self._image_cache.move_to_end(cache_key)
+        while len(self._image_cache) > self._image_cache_slots:
+            # Dropping the entry drops the last reference to those GPU
+            # tensors, unless the predictor still points at them, in which
+            # case the next encode releases them.
+            self._image_cache.popitem(last=False)
+            self._image_cache_stats["evicted"] += 1
+
+    @staticmethod
+    def _export(features, orig_hw) -> dict:
+        """GPU tensors -> float16 arrays for the L2. Half precision is exact
+        for this purpose (see `sam2_feature_cache`) and halves both the file
+        and the time to read it back."""
+        return {
+            "image_embed": features["image_embed"].detach().half().cpu().numpy(),
+            "high_res_feats": [
+                feat.detach().half().cpu().numpy() for feat in features["high_res_feats"]
+            ],
+            "orig_hw": orig_hw,
+        }
+
+    def _import(self, payload) -> tuple[dict, list]:
+        import torch
+
+        def restore(array):
+            # Back to fp32 on the device: the decoder runs fp32, and casting
+            # here keeps that the only place precision is decided.
+            return torch.from_numpy(np.ascontiguousarray(array)).to(self.device).float()
+
+        features = {
+            "image_embed": restore(payload["image_embed"]),
+            "high_res_feats": [restore(feat) for feat in payload["high_res_feats"]],
+        }
+        return features, [tuple(hw) for hw in payload["orig_hw"]]
+
+    def image_cache_stats(self) -> dict:
+        with self._image_lock:
+            return {
+                **self._image_cache_stats,
+                "slots": self._image_cache_slots,
+                "held": len(self._image_cache),
+            }
+
+    def image_cache_bytes(self) -> int:
+        """GPU bytes currently held by cached features (0 for CPU tensors)."""
+        total = 0
+        with self._image_lock:
+            for entry in self._image_cache.values():
+                tensors = [entry["features"]["image_embed"]]
+                tensors += list(entry["features"]["high_res_feats"])
+                for t in tensors:
+                    total += t.element_size() * t.nelement()
+        return total
+
+    def reset_image_cache(self) -> None:
+        with self._image_lock:
+            self._image_cache.clear()
+            for key in self._image_cache_stats:
+                self._image_cache_stats[key] = 0
 
     def _require_state(self) -> None:
         if self.inference_state is None:
