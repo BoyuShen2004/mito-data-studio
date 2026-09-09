@@ -2,10 +2,11 @@ from django.contrib.auth import get_user_model
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 
 from accounts.roles import is_manager, is_requester
-from annotation.services import calculate_annotator_workload
+from annotation.services import calculate_annotator_workload, visible_project_q
 from core.lifecycle import (
     Lifecycle,
     filter_projects_by_lifecycle,
@@ -48,13 +49,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Project.objects.select_related("institution", "created_by").all()
-        if is_requester(self.request.user):
-            # Requesters (Institutions) only see their own projects.
+        if is_requester(self.request.user) and self.request.method not in SAFE_METHODS:
             qs = qs.filter(created_by=self.request.user)
         elif not is_manager(self.request.user):
-            qs = qs.filter(
-                tasks__assigned_to=self.request.user
-            ).distinct()
+            qs = qs.filter(visible_project_q(self.request.user)).distinct()
         # Optional lifecycle filter: ?lifecycle=new|to_proofread|done.
         lifecycle = self.request.query_params.get("lifecycle")
         if lifecycle in Lifecycle.values:
@@ -89,10 +87,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         """
         # Bypass any ?lifecycle= filter so every bucket is counted.
         qs = Project.objects.select_related("institution", "created_by")
-        if is_requester(request.user):
-            qs = qs.filter(created_by=request.user)
-        elif not is_manager(request.user):
-            qs = qs.filter(tasks__assigned_to=request.user).distinct()
+        if not is_manager(request.user):
+            qs = qs.filter(visible_project_q(request.user)).distinct()
         return Response(project_lifecycle_counts(qs))
 
     @action(detail=True, methods=["get"])
@@ -238,10 +234,12 @@ class DatasetViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Dataset.objects.select_related("project").all()
-        if is_requester(self.request.user):
+        if is_requester(self.request.user) and self.request.method not in SAFE_METHODS:
             qs = qs.filter(project__created_by=self.request.user)
         elif not is_manager(self.request.user):
-            qs = qs.filter(project__tasks__assigned_to=self.request.user).distinct()
+            qs = qs.filter(
+                visible_project_q(self.request.user, prefix="project")
+            ).distinct()
         project_id = self.request.query_params.get("project")
         if project_id:
             qs = qs.filter(project_id=project_id)

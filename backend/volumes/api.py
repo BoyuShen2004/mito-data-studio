@@ -1,12 +1,15 @@
+from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.roles import is_manager, is_requester
+from annotation.services import can_view_volume, ensure_volume_tasks, is_project_member
 from core.permissions import CanRegisterData, CanViewProjectData, IsManager
 from projects.models import Project
 from processing.models import ProcessingJob
@@ -83,26 +86,30 @@ class RegisterDataView(APIView):
             )
 
         try:
-            project, volumes = register_dataset(
-                created_by=request.user,
-                dataset=data["dataset"],
-                volume=data["volume"],
-                image_directory=data.get("image_directory") or "",
-                region_mask_directory=data.get("region_mask_directory") or "",
-                mask_directory=data.get("mask_directory") or "",
-                hpc_directory=data.get("hpc_directory") or "",
-                pairs=data.get("pairs"),
-                files=data.get("files"),
-                # Pass None (not "none") when the client omits it, so a mask
-                # can default to `prediction` instead of being rejected.
-                label_type=data.get("label_type") or None,
-                metadata=data.get("metadata"),
-                project=project,
-                annotation_type=data.get("annotation_type") or None,
-                # Manager-registered data is reviewed on creation; requester data
-                # stays pending until a manager approves it.
-                reviewed=is_manager(request.user),
-            )
+            # Volume rows and their assignable tasks are one commit.  A worker
+            # exit or lost-response reconciliation must never observe the
+            # registration half-complete between these two operations.
+            with transaction.atomic():
+                project, volumes = register_dataset(
+                    created_by=request.user,
+                    dataset=data["dataset"],
+                    volume=data["volume"],
+                    image_directory=data.get("image_directory") or "",
+                    region_mask_directory=data.get("region_mask_directory") or "",
+                    mask_directory=data.get("mask_directory") or "",
+                    hpc_directory=data.get("hpc_directory") or "",
+                    pairs=data.get("pairs"),
+                    files=data.get("files"),
+                    # Pass None (not "none") when the client omits it, so a mask
+                    # can default to `prediction` instead of being rejected.
+                    label_type=data.get("label_type") or None,
+                    metadata=data.get("metadata"),
+                    project=project,
+                    annotation_type=data.get("annotation_type") or None,
+                    # Manager data is reviewed immediately; requester data waits.
+                    reviewed=is_manager(request.user),
+                )
+                task_result = ensure_volume_tasks(project)
         except DataRegistrationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -110,6 +117,8 @@ class RegisterDataView(APIView):
             {
                 "project": ProjectSerializer(project).data,
                 "volumes": VolumeSerializer(volumes, many=True).data,
+                "created_tasks": task_result["created"],
+                "skipped_volumes": task_result["skipped"],
             },
             status=status.HTTP_201_CREATED,
         )
@@ -128,16 +137,14 @@ class ProjectVolumesView(generics.ListCreateAPIView):
 
     def get_project(self) -> Project:
         project = get_object_or_404(Project, pk=self.kwargs["project_id"])
-        if (
-            is_requester(self.request.user)
-            and project.created_by_id != self.request.user.id
-        ):
-            raise PermissionDenied("You do not have access to this project.")
-        if (
-            not is_manager(self.request.user)
-            and not is_requester(self.request.user)
-            and not project.tasks.filter(assigned_to=self.request.user).exists()
-        ):
+        if self.request.method in SAFE_METHODS:
+            allowed = is_project_member(self.request.user, project)
+        else:
+            allowed = (
+                is_manager(self.request.user)
+                or project.created_by_id == self.request.user.id
+            )
+        if not allowed:
             raise PermissionDenied("You do not have access to this project.")
         return project
 
@@ -201,16 +208,14 @@ class VolumeDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_object(self) -> Volume:
         volume = super().get_object()
-        if (
-            is_requester(self.request.user)
-            and volume.project.created_by_id != self.request.user.id
-        ):
-            raise PermissionDenied("You do not have access to this volume.")
-        if (
-            not is_manager(self.request.user)
-            and not is_requester(self.request.user)
-            and not volume.tasks.filter(assigned_to=self.request.user).exists()
-        ):
+        if self.request.method in SAFE_METHODS:
+            allowed = can_view_volume(self.request.user, volume)
+        else:
+            allowed = (
+                is_manager(self.request.user)
+                or volume.project.created_by_id == self.request.user.id
+            )
+        if not allowed:
             raise PermissionDenied("You do not have access to this volume.")
         return volume
 

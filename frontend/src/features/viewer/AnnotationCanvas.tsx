@@ -1649,8 +1649,10 @@ export default function AnnotationCanvas({
   //   * `sliceRunsCacheRef` — server label RLE per slice. Small (a few KB), so
   //     more entries fit; dropped whenever anything writes labels, since a
   //     stale one would show pre-edit labels.
-  //   * `sliceImgInflightRef` — de-dupes a foreground load and a prefetch
-  //     racing for the same slice into one request.
+  //   * the in-flight maps — de-dupe a foreground load and a prefetch racing
+  //     for the same slice into one request. Labels need this just as much as
+  //     images: their server-side RLE encoding is CPU work, and duplicate
+  //     reads used to occupy both production worker threads while scrubbing.
   //
   // Every key is `axis:index`, never the index alone: with the Axial/Coronal/
   // Sagittal selector, "slice 5" names three different planes, and an
@@ -1663,6 +1665,7 @@ export default function AnnotationCanvas({
   const labelReadRevisionRef = useRef(new RevisionedFetch());
   const workingLabelRevisionRef = useRef("");
   const sliceImgInflightRef = useRef<Map<string, Promise<string>>>(new Map());
+  const sliceRunsInflightRef = useRef<Map<string, Promise<LabelIdsResponse>>>(new Map());
   const imageRecoveryInFlightRef = useRef(false);
   const blackCanvasChecksRef = useRef(0);
   const sliceKey = useCallback((a: Axis, index: number) => `${a}:${index}`, []);
@@ -1670,6 +1673,7 @@ export default function AnnotationCanvas({
   /** One controller for every prefetch this canvas ever fires — aborted only
    * on unmount (see the prefetch effect for why not per navigation). */
   const prefetchAbortRef = useRef<AbortController>(new AbortController());
+  const prefetchGenerationRef = useRef(0);
   const scrubDirectionRef = useRef<1 | -1>(1);
   const previousScrubIndexRef = useRef(index);
 
@@ -2027,18 +2031,23 @@ export default function AnnotationCanvas({
       const cache = sliceRunsCacheRef.current;
       const hit = cache.get(key);
       if (hit !== undefined) return hit;
-      const resp = await labelReadRevisionRef.current.loadLatest(() =>
+      const inflight = sliceRunsInflightRef.current.get(key);
+      if (inflight) return inflight;
+      const request = labelReadRevisionRef.current.loadLatest(() =>
         api.getLabelIds(taskId, a, z, signal),
-      );
-      // A plane from the same axis remains pixel-valid after another plane is
-      // saved, but its revision is volume-wide and is stale after that write.
-      // Cache only the plane so a later cache hit cannot roll the current Save
-      // token backwards and manufacture a same-tab LabelWriteConflict.
-      cache.set(key, labelIdsForCache(resp));
-      while (cache.size > SLICE_RUNS_CACHE_MAX) {
-        cache.delete(cache.keys().next().value as string);
-      }
-      return resp;
+      ).then((resp) => {
+        // A plane from the same axis remains pixel-valid after another plane is
+        // saved, but its revision is volume-wide and is stale after that write.
+        // Cache only the plane so a later cache hit cannot roll the current Save
+        // token backwards and manufacture a same-tab LabelWriteConflict.
+        cache.set(key, labelIdsForCache(resp));
+        while (cache.size > SLICE_RUNS_CACHE_MAX) {
+          cache.delete(cache.keys().next().value as string);
+        }
+        return resp;
+      }).finally(() => sliceRunsInflightRef.current.delete(key));
+      sliceRunsInflightRef.current.set(key, request);
+      return request;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [taskId, sliceKey],
@@ -2247,28 +2256,46 @@ export default function AnnotationCanvas({
   useEffect(() => {
     prefetchAbortRef.current.abort();
     prefetchAbortRef.current = new AbortController();
+    prefetchGenerationRef.current += 1;
   }, [axis]);
 
   useEffect(() => {
     if (!meta.data || !firstImageReady) return;
     const signal = prefetchAbortRef.current.signal;
+    const generation = ++prefetchGenerationRef.current;
     const timer = setTimeout(() => {
-      const direction = scrubDirectionRef.current;
-      const candidates = [1, 2, 3, 4, 5].map((distance) => index + direction * distance);
-      candidates.push(index - direction);
-      for (const z of candidates) {
-        if (z < 0 || z >= axisLen) continue;
-        void sliceImageUrl(z, signal).catch(() => {});
-        void labelRunsFor(z, signal).catch(() => {});
-        // The ROI is prefetched alongside the image only while it streams:
-        // over the fallback path this would be three extra full-plane PNGs per
-        // navigation, which is the cost the chunk transport exists to avoid.
-        if (regionRendererRef.current && !regionFallbackRef.current) {
-          void sliceRegionUrl(z, signal).catch(() => {});
+      void (async () => {
+        const direction = scrubDirectionRef.current;
+        const candidates = [1, 2, 3, 4, 5].map((distance) => index + direction * distance);
+        candidates.push(index - direction);
+        for (const z of candidates) {
+          if (signal.aborted || generation !== prefetchGenerationRef.current) return;
+          if (z < 0 || z >= axisLen) continue;
+          // One neighbouring plane at a time. The old fire-all-at-once loop
+          // emitted up to 12 requests (18 with a streaming ROI) after every
+          // layer change, filling the browser connection pool and the two
+          // production worker threads ahead of the user's foreground read.
+          // Image and label still travel together for this one plane, and a
+          // foreground navigation de-dupes onto these same promises.
+          const reads: Promise<unknown>[] = [
+            sliceImageUrl(z, signal),
+            labelRunsFor(z, signal),
+          ];
+          // The ROI is prefetched alongside the image only while it streams:
+          // over the fallback path this would be extra full-plane PNGs.
+          if (regionRendererRef.current && !regionFallbackRef.current) {
+            reads.push(sliceRegionUrl(z, signal));
+          }
+          await Promise.all(reads.map((read) => read.catch(() => undefined)));
         }
-      }
+      })();
     }, 200);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (generation === prefetchGenerationRef.current) {
+        prefetchGenerationRef.current += 1;
+      }
+    };
   }, [index, axis, axisLen, meta.data, firstImageReady, sliceImageUrl, labelRunsFor, sliceRegionUrl]);
 
   // Warm the EfficientSAM embedding (encoder-only, see

@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import override_settings
@@ -13,7 +14,8 @@ from accounts.teams import grant_project_team
 from annotation.models import AnnotationTask, AssignmentWithdrawal
 from annotation.services import create_whole_volume_task
 from core.choices import UserRole
-from projects.models import Project
+from projects.models import Dataset, Project
+from volumes.models import Volume
 
 _TMP_ROOT = tempfile.mkdtemp(prefix="mito_api_test_")
 
@@ -67,6 +69,21 @@ class DataRegistrationFlowTests(APITestCase):
         TeamMembership.objects.create(team=team, user=self.annotator)
         grant_project_team(project, team)
         return team
+
+    def test_hpc_scan_reports_unreadable_directory_as_400(self):
+        self._auth(token=self.req_token)
+        with patch(
+            "volumes.services.Path.exists",
+            side_effect=PermissionError(13, "Permission denied"),
+        ):
+            response = self.client.post(
+                reverse("api-hpc-scan"),
+                {"image_directory": "/restricted/volumes"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Cannot access directory", response.data["detail"])
+        self.assertIn("Permission denied", response.data["detail"])
 
     def test_registers_three_layers_and_region_stream_is_immutable(self):
         import hashlib
@@ -138,6 +155,52 @@ class DataRegistrationFlowTests(APITestCase):
         self.assertEqual(overlay["Content-Type"], "image/png")
         after = hashlib.sha256(open(region_path, "rb").read()).hexdigest()
         self.assertEqual(after, before)
+
+        # The requester can inspect the tasks created by registration, but
+        # read access must never turn into annotator write access.
+        tasks = self.client.get(
+            reverse("api-project-tasks", args=[response.data["project"]["id"]])
+        )
+        self.assertEqual(tasks.status_code, 200, tasks.data)
+        self.assertEqual(len(tasks.data), 1)
+        detail = self.client.get(reverse("api-task-detail", args=[tasks.data[0]["id"]]))
+        self.assertEqual(detail.status_code, 200, detail.data)
+        denied = self.client.patch(
+            reverse("api-task-detail", args=[tasks.data[0]["id"]]),
+            {"status": "in_progress"},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 403, denied.data)
+
+    def test_registration_rolls_back_if_task_creation_fails(self):
+        import numpy as np
+        import tifffile
+
+        images = os.path.join(self.data_dir, "atomic", "images")
+        os.makedirs(images, exist_ok=True)
+        tifffile.imwrite(
+            os.path.join(images, "atomic_0000.tif"),
+            np.zeros((2, 6, 7), dtype=np.uint8),
+        )
+        self._auth(token=self.req_token)
+        project_id = self._new_project("Atomic registration")
+
+        with patch(
+            "volumes.api.ensure_volume_tasks", side_effect=RuntimeError("injected")
+        ), self.assertRaises(RuntimeError):
+            self.client.post(
+                reverse("api-register-data"),
+                {
+                    "project": project_id,
+                    "dataset": "Atomic",
+                    "volume": "v",
+                    "image_directory": images,
+                },
+                format="json",
+            )
+
+        self.assertFalse(Dataset.objects.filter(project_id=project_id).exists())
+        self.assertFalse(Volume.objects.filter(project_id=project_id).exists())
 
     def test_requester_registers_data_and_sees_own_project(self):
         self._auth(token=self.req_token)
@@ -355,6 +418,9 @@ class DataRegistrationFlowTests(APITestCase):
         self.assertEqual(reg.status_code, 201, reg.data)
         self.assertEqual(reg.data["project"]["id"], project_id)
         self.assertFalse(reg.data["project"]["manager_reviewed"])
+        self.assertEqual(reg.data["created_tasks"], 2)
+        self.assertEqual(reg.data["skipped_volumes"], 0)
+        self.assertEqual(AnnotationTask.objects.filter(project_id=project_id).count(), 2)
 
         # Auto-assign is blocked until the manager reviews.
         self._auth(user=self.manager)
@@ -372,13 +438,15 @@ class DataRegistrationFlowTests(APITestCase):
         self.assertTrue(rev.data["manager_reviewed"])
         self._working_team(Project.objects.get(pk=project_id))
 
-        # Now auto-assign creates one task per volume and assigns them.
+        # Tasks already exist from registration; approval opens the assignment
+        # gate and auto-assign uses those same rows rather than duplicating them.
         res = self.client.post(
             reverse("api-assign-tasks", args=[project_id]), {}, format="json"
         )
         self.assertEqual(res.status_code, 200, res.data)
-        self.assertEqual(res.data["created_tasks"], 2)
+        self.assertEqual(res.data["created_tasks"], 0)
         self.assertEqual(res.data["assigned"], 2)
+        self.assertEqual(AnnotationTask.objects.filter(project_id=project_id).count(), 2)
 
     def test_register_data_rejects_unsupported_file(self):
         self._auth(token=self.req_token)

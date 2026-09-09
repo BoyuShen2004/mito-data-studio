@@ -131,25 +131,12 @@ def _may_read(user, volume) -> bool:
     if getattr(user, "is_superuser", False):
         return True
 
-    from annotation.services import can_view_task
-    from annotation.models import AnnotationTask
+    from annotation.services import can_view_volume
     from accounts.roles import is_manager
 
     if is_manager(user):
         return True
-    project = volume.project
-    if project is None:
-        return False
-    if getattr(project, "created_by_id", None) == user.pk:
-        return True
-    # Anyone with a task on this volume can already see its pixels through the
-    # editor, so denying the chunk path would be inconsistent rather than safe.
-    return AnnotationTask.objects.filter(
-        volume=volume, assigned_to=user
-    ).exists() or any(
-        can_view_task(user, task)
-        for task in AnnotationTask.objects.filter(volume=volume)[:1]
-    )
+    return can_view_volume(user, volume)
 
 
 def _may_issue_token(user, volume) -> bool:
@@ -268,8 +255,16 @@ def capabilities_for_volume(*, volume, layer: str = "image") -> dict:
 
     from volumes.pyramid import store
 
-    group = store.open_pyramid(volume, layer=layer)
-    described = core.describe_capabilities(group)
+    try:
+        # Use the path recorded when the derivative was promoted. Re-deriving
+        # from mutable project/dataset/volume names can point somewhere else.
+        group = _group_factory(volume, layer)()
+        described = core.describe_capabilities(group)
+    except store.PyramidStoreError as exc:
+        METRICS.rejected("invalid_pyramid")
+        raise NotFound(
+            "This volume's pyramid cannot be opened.", reason="invalid_pyramid"
+        ) from exc
     described["volume_id"] = volume.pk
     described["layer"] = layer
     # What else this volume offers, so a client mounts the ROI without probing
@@ -299,6 +294,15 @@ def _serve(
     except core.ChunkError as exc:
         METRICS.rejected(exc.reason)
         raise ChunkServiceError(str(exc), reason=exc.reason, status=exc.status) from exc
+    except Exception as exc:
+        from volumes.pyramid.store import PyramidStoreError
+
+        if not isinstance(exc, PyramidStoreError):
+            raise
+        METRICS.rejected("invalid_pyramid")
+        raise NotFound(
+            "This volume's pyramid cannot be opened.", reason="invalid_pyramid"
+        ) from exc
 
     # A revalidation served nothing, so folding its 0 bytes into the fetch
     # histogram would quietly deflate the throughput numbers this endpoint is

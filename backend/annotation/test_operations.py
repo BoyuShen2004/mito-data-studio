@@ -496,6 +496,7 @@ class WorkSessionTests(OpsFixtureMixin, TestCase):
         s = start_session(task=self.task, actor=self.annotator)
         self.assertTrue(s.is_open)
         self.assertEqual(s.active_seconds, 0)
+        self.assertGreaterEqual(s.last_heartbeat_at, s.started_at)
 
     def test_heartbeat_credits_time(self):
         s = start_session(task=self.task, actor=self.annotator)

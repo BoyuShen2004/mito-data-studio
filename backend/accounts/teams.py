@@ -124,6 +124,25 @@ def _sync_working_project_access(team, user, *, actor=None) -> None:
     )
 
 
+def _sync_project_team_access(project, team, *, actor=None) -> None:
+    """Mirror every current team member into one project's browse roster."""
+    from core.choices import MembershipSource
+    from projects.models import ProjectMembership
+
+    ProjectMembership.objects.bulk_create(
+        [
+            ProjectMembership(
+                project=project,
+                user_id=user_id,
+                added_by=actor,
+                source=MembershipSource.TEAM,
+            )
+            for user_id in team.memberships.values_list("user_id", flat=True)
+        ],
+        ignore_conflicts=True,
+    )
+
+
 @transaction.atomic
 def ensure_project_assignee_eligible(project, user, *, actor=None):
     """One roster write used by Project Access and assignment-team UI.
@@ -268,21 +287,7 @@ def set_project_working_team(project, team, *, actor=None) -> dict:
     project.working_team = team
     project.save(update_fields=["working_team"])
     if team is not None:
-        from core.choices import MembershipSource
-        from projects.models import ProjectMembership
-
-        ProjectMembership.objects.bulk_create(
-            [
-                ProjectMembership(
-                    project=project,
-                    user_id=user_id,
-                    added_by=actor,
-                    source=MembershipSource.TEAM,
-                )
-                for user_id in team.memberships.values_list("user_id", flat=True)
-            ],
-            ignore_conflicts=True,
-        )
+        _sync_project_team_access(project, team, actor=actor)
     record_audit(
         actor,
         AuditVerb.PROJECT_TEAM_GRANTED,
@@ -350,6 +355,10 @@ def grant_project_team(project, team, *, actor=None) -> None:
     if project.working_team_id is None:
         project.working_team = team
         project.save(update_fields=["working_team"])
+    # Replaying a grant is also the supported reconciliation path. This covers
+    # teams whose members predate the first working-team assignment.
+    if teams_enabled() and project.working_team_id == team.id:
+        _sync_project_team_access(project, team, actor=actor)
 
 
 @transaction.atomic

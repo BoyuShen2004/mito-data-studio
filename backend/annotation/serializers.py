@@ -109,13 +109,19 @@ class AnnotationTaskSerializer(serializers.ModelSerializer):
         """
         from . import timing
 
-        holder = self.parent if self.parent is not None else self
+        holder = self.parent
+        # Only a ListSerializer whose children are tasks owns a batch. When
+        # this serializer is nested as ``submission.task_detail``, its parent
+        # instance is an AnnotationSubmission; passing that to task_time_map
+        # used to raise TypeError and silently degrade the timing field.
+        if not isinstance(holder, serializers.ListSerializer):
+            return {}
         cached = getattr(holder, "_annotation_time_cache", None)
         if cached is not None:
             return cached
         instances = getattr(holder, "instance", None)
-        if instances is None or isinstance(instances, AnnotationTask):
-            instances = [instances] if instances is not None else []
+        if instances is None:
+            instances = []
         built = timing.safely(timing.task_time_map, instances) or {}
         holder._annotation_time_cache = built
         return built

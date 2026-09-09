@@ -93,6 +93,10 @@ export interface RegisterDataInput {
 export interface RegisterDataResult {
   project: Project;
   volumes: Volume[];
+  /** Whole-volume tasks made immediately available to the assignment plan. */
+  created_tasks: number;
+  /** Volumes whose source header is not readable enough to determine bounds. */
+  skipped_volumes: number;
 }
 
 export const registerData = (data: RegisterDataInput) =>

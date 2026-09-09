@@ -12,6 +12,7 @@ from __future__ import annotations
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import tifffile
@@ -21,7 +22,7 @@ from django.urls import reverse
 
 from accounts.models import UserProfile
 from core.choices import UserRole
-from projects.models import Dataset, Project
+from projects.models import Dataset, Project, ProjectMembership
 from volumes.chunks import core as chunk_core
 from volumes.chunks import service, tokens
 from volumes.chunks.metrics import METRICS
@@ -246,6 +247,28 @@ class Capabilities(ChunkTestCase):
         self.assertNotIn(str(self.image), blob)
         self.assertEqual(caps["build_identity"], self.volume.pyramid_metadata["built_at"])
 
+    def test_capabilities_use_the_promoted_path_after_a_volume_rename(self):
+        self.build()
+        recorded = self.volume.pyramid_metadata["path"]
+        self.volume.name = "renamed-after-build"
+        self.volume.save(update_fields=["name"])
+        with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON):
+            caps = service.capabilities(volume_id=self.volume.pk, user=self.owner)
+        self.assertTrue(caps["mags"])
+        self.volume.refresh_from_db()
+        self.assertEqual(self.volume.pyramid_metadata["path"], recorded)
+
+    def test_invalid_pyramid_is_a_typed_404_not_a_server_error(self):
+        self.build()
+        with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON), patch(
+            "volumes.pyramid.store.open_pyramid_at",
+            side_effect=store.PyramidStoreError("corrupt metadata"),
+        ):
+            with self.assertRaises(service.NotFound) as ctx:
+                service.capabilities(volume_id=self.volume.pk, user=self.owner)
+        self.assertEqual(ctx.exception.status, 404)
+        self.assertEqual(ctx.exception.reason, "invalid_pyramid")
+
 
 class Permissions(ChunkTestCase):
     def test_unauthenticated_endpoint_is_rejected(self):
@@ -270,6 +293,20 @@ class Permissions(ChunkTestCase):
         with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON):
             served = service.read_chunk(
                 volume_id=self.volume.pk, mag="1", cz=0, cy=0, cx=0, user=self.manager
+            )
+        self.assertGreater(served.result.nbytes, 0)
+
+    def test_explicit_project_member_may_read_without_an_assigned_task(self):
+        ProjectMembership.objects.create(project=self.project, user=self.stranger)
+        self.build()
+        with override_settings(MITO_DATA_ROOT=self.root.resolve(), **ON):
+            served = service.read_chunk(
+                volume_id=self.volume.pk,
+                mag="1",
+                cz=0,
+                cy=0,
+                cx=0,
+                user=self.stranger,
             )
         self.assertGreater(served.result.nbytes, 0)
 

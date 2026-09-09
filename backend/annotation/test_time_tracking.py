@@ -22,7 +22,13 @@ from rest_framework.test import APIClient
 
 from accounts.models import AnnotatorProfile, UserProfile
 from annotation import timing
-from annotation.models import AnnotationTask, WorkInterval, WorkSession
+from annotation.models import (
+    AnnotationSubmission,
+    AnnotationTask,
+    WorkInterval,
+    WorkSession,
+)
+from annotation.serializers import AnnotationSubmissionSerializer
 from annotation.services import assign_task_to_annotator
 from core.choices import TaskStatus, TimeTracking, UserRole
 from projects.models import Dataset, Project
@@ -852,6 +858,27 @@ class ResilienceTests(TimingFixture, TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["annotation_time"]["display"], "—")
+
+    def test_nested_submission_task_uses_single_task_timing_without_warning(self):
+        submission = AnnotationSubmission.objects.create(
+            task=self.task, annotator=self.annotator
+        )
+        with mock.patch(
+            "annotation.timing.task_time_map", wraps=timing.task_time_map
+        ) as batch:
+            data = AnnotationSubmissionSerializer(submission).data
+
+        batch.assert_not_called()
+        self.assertEqual(data["task_detail"]["annotation_time"]["display"], "0m")
+
+    def test_new_timing_session_and_interval_do_not_predate_the_session(self):
+        session = timing.start_timing(
+            task=self.task, actor=self.annotator, client_token="ordered-clock"
+        )
+        interval = session.intervals.get()
+
+        self.assertGreaterEqual(session.last_heartbeat_at, session.started_at)
+        self.assertGreaterEqual(interval.started_at, session.started_at)
 
     def test_submit_still_runs_when_closing_the_interval_explodes(self):
         """The Submit path calls timing through ``safely``, so it cannot inherit

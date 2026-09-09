@@ -47,10 +47,19 @@ class LadderTests(SimpleTestCase):
         # three double together from here.
         self.assertEqual(factors[3], (2, 8, 8))
 
-    def test_array_name_is_the_xy_factor(self):
+    def test_array_name_is_the_numeric_resolution_factor(self):
         """Doc 20 asks for mags 1,2,4,8 — anisotropy lives in the attributes."""
         levels = build_ladder((256, 1024, 1024), (40.0, 8.0, 8.0))
         self.assertEqual([lv.name for lv in levels[:4]], ["1", "2", "4", "8"])
+
+    def test_array_names_stay_unique_when_x_is_the_coarse_axis(self):
+        """A valid NIfTI may hold x while z/y downsample; keys cannot repeat."""
+        levels = build_ladder((256, 256, 64), (8.0, 8.0, 30.0))
+        self.assertEqual(
+            [lv.factors for lv in levels],
+            [(1, 1, 1), (2, 2, 1), (4, 4, 1), (8, 8, 2)],
+        )
+        self.assertEqual([lv.name for lv in levels], ["1", "2", "4", "8"])
 
     def test_missing_voxel_size_is_treated_as_isotropic(self):
         for voxel in (None, (0.0, 0.0, 0.0), (1.0, 0.0, 1.0)):

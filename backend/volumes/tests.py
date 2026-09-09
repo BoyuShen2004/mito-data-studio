@@ -1,5 +1,6 @@
 import os
 import tempfile
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
@@ -18,6 +19,7 @@ from volumes.services import (
     pair_by_case,
     register_dataset,
     register_volume,
+    resolve_hpc_directory,
     scan_data_sources,
     scan_hpc_directory,
     update_volume_metadata,
@@ -394,6 +396,18 @@ class RegisterDatasetTests(TestCase):
     def test_missing_directory_rejected(self):
         with self.assertRaises(DataRegistrationError):
             scan_hpc_directory("does/not/exist")
+
+    def test_permission_error_while_checking_directory_is_a_registration_error(self):
+        """An unreadable parent is a useful 400, never an uncaught API 500."""
+        with patch(
+            "volumes.services.Path.exists",
+            side_effect=PermissionError(13, "Permission denied"),
+        ):
+            with self.assertRaisesRegex(
+                DataRegistrationError,
+                r"Cannot access directory: /restricted/volumes .*Permission denied",
+            ):
+                resolve_hpc_directory("/restricted/volumes")
 
 
 class DetectPairsTests(TestCase):

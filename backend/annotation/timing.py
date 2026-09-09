@@ -272,11 +272,14 @@ def start_timing(*, task: AnnotationTask, actor, client_token: str = "") -> Work
         # so a refresh neither loses the seconds before it nor invents any.
         return _advance(existing, now=now)
 
-    session = WorkSession.objects.create(
-        task=task, actor=actor, last_heartbeat_at=now, client_token=token
-    )
+    session = WorkSession.objects.create(task=task, actor=actor, client_token=token)
+    # ``started_at`` is assigned by the model during INSERT, a few milliseconds
+    # after ``now`` above. Anchor the first heartbeat and interval to that
+    # durable timestamp so a new session can never begin before itself.
+    session.last_heartbeat_at = session.started_at
+    session.save(update_fields=["last_heartbeat_at", "updated_at"])
     session.task = task  # avoid a refetch in _new_interval
-    _new_interval(session, at=now)
+    _new_interval(session, at=session.started_at)
     return session
 
 

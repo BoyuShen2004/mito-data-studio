@@ -82,8 +82,10 @@ def start_session(*, task: AnnotationTask, actor) -> WorkSession:
     only place it can be handled correctly.
     """
     _require_enabled()
-    now = timezone.now()
-    return WorkSession.objects.create(task=task, actor=actor, last_heartbeat_at=now)
+    session = WorkSession.objects.create(task=task, actor=actor)
+    session.last_heartbeat_at = session.started_at
+    session.save(update_fields=["last_heartbeat_at"])
+    return session
 
 
 def credited_seconds(previous, now, *, max_interval=None, idle_timeout=None) -> int:

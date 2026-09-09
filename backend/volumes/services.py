@@ -363,12 +363,18 @@ def resolve_hpc_directory(hpc_directory: str) -> Path:
         path = Path(settings.MITO_DATA_ROOT) / raw
     try:
         path = path.resolve()
+        # ``Path.exists`` and ``Path.is_dir`` do not always collapse an OS
+        # error to False. In particular, an unreadable parent raises
+        # PermissionError here; letting it escape turns a user-correctable
+        # source-path problem into an opaque /api/hpc/scan/ 500.
+        if not path.exists():
+            raise DataRegistrationError(f"Directory does not exist: {raw}")
+        if not path.is_dir():
+            raise DataRegistrationError(f"Not a directory: {raw}")
+    except DataRegistrationError:
+        raise
     except OSError as exc:
         raise DataRegistrationError(f"Cannot access directory: {raw} ({exc})") from exc
-    if not path.exists():
-        raise DataRegistrationError(f"Directory does not exist: {raw}")
-    if not path.is_dir():
-        raise DataRegistrationError(f"Not a directory: {raw}")
     if not os.access(path, os.R_OK | os.X_OK):
         raise DataRegistrationError(
             f"Permission denied reading directory: {raw}. "

@@ -12,6 +12,10 @@ const port = Number(process.env.VITE_PORT || "5173");
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Route modules are content-hashed and lazy-loaded. Keep the previous
+    // generation so an already-open tab can still fetch its old chunk after a
+    // deployment; index.html switches new tabs to the new generation.
+    emptyOutDir: false,
     rollupOptions: {
       output: {
         // Without this, `three` lands in whichever shared chunk rollup happens

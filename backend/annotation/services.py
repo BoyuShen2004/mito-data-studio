@@ -321,26 +321,36 @@ def create_whole_volume_task(volume):
     """
     from volumes.services import ensure_volume_shape, infer_task_type
 
-    if volume.tasks.exists():
-        return None
-    # Re-read the header before giving up. A volume registered while its
-    # source was unreadable (a permission grant that came later, a mount that
-    # was not up yet) has no shape recorded and would otherwise stay
-    # unassignable forever, with re-registering as the only recovery.
-    if not ensure_volume_shape(volume):
-        return None
-    return AnnotationTask.objects.create(
-        project=volume.project,
-        volume=volume,
-        z_start=0,
-        z_end=volume.shape_z,
-        y_start=0,
-        y_end=volume.shape_y or 0,
-        x_start=0,
-        x_end=volume.shape_x or 0,
-        task_type=infer_task_type(volume.label_type),
-        deadline=volume.project.deadline,
-    )
+    # Lock the volume, not just the task query. A proxy retry can replay the
+    # same registration while the first response is still being assembled;
+    # without a stable parent-row lock both requests can observe "no tasks"
+    # and create duplicate whole-volume tasks.
+    with transaction.atomic():
+        locked = (
+            type(volume).objects.select_for_update()
+            .select_related("project")
+            .get(pk=volume.pk)
+        )
+        if locked.tasks.exists():
+            return None
+        # Re-read the header before giving up. A volume registered while its
+        # source was unreadable (a permission grant that came later, a mount
+        # that was not up yet) has no shape recorded and would otherwise stay
+        # unassignable forever, with re-registering as the only recovery.
+        if not ensure_volume_shape(locked):
+            return None
+        return AnnotationTask.objects.create(
+            project=locked.project,
+            volume=locked,
+            z_start=0,
+            z_end=locked.shape_z,
+            y_start=0,
+            y_end=locked.shape_y or 0,
+            x_start=0,
+            x_end=locked.shape_x or 0,
+            task_type=infer_task_type(locked.label_type),
+            deadline=locked.project.deadline,
+        )
 
 
 def ensure_volume_tasks(project) -> dict:
@@ -1193,6 +1203,42 @@ def can_edit_task(user, task) -> bool:
     return is_annotator(user) and task.assigned_to_id == uid
 
 
+def visible_project_q(user, *, prefix: str = "") -> Q:
+    """One ORM predicate for every project-scoped read surface.
+
+    The object-level :func:`is_project_member` rule grew explicit memberships
+    and team grants, while several older list/detail endpoints kept filtering
+    only on assigned tasks.  That made the same person able to read project
+    statistics and visualizations but not the project page containing them.
+    Keeping the relation paths here prevents those endpoints drifting again.
+    """
+    from accounts.roles import is_manager
+    from accounts.teams import teams_enabled
+
+    if is_manager(user):
+        return Q()
+    uid = getattr(user, "id", None)
+    if uid is None:
+        return Q(pk__in=[])
+    root = f"{prefix}__" if prefix else ""
+    visible = Q(**{f"{root}created_by_id": uid}) | Q(
+        **{f"{root}tasks__assigned_to_id": uid}
+    )
+    if teams_enabled():
+        visible |= Q(**{f"{root}memberships__user_id": uid})
+        visible |= Q(**{f"{root}teams__memberships__user_id": uid})
+    else:
+        from core.choices import MembershipSource
+
+        visible |= Q(
+            **{
+                f"{root}memberships__user_id": uid,
+                f"{root}memberships__source": MembershipSource.EXPLICIT,
+            }
+        )
+    return visible
+
+
 def is_project_member(user, project) -> bool:
     """Is ``user`` part of ``project``'s working group?
 
@@ -1219,12 +1265,20 @@ def is_project_member(user, project) -> bool:
         return False
     if project.created_by_id == uid:
         return True
-    if project.memberships.filter(user_id=uid).exists():
-        return True
     if project.tasks.filter(assigned_to_id=uid).exists():
         return True
 
     from accounts.teams import has_project_team_access, teams_enabled
+
+    memberships = project.memberships.filter(user_id=uid)
+    if teams_enabled():
+        if memberships.exists():
+            return True
+    else:
+        from core.choices import MembershipSource
+
+        if memberships.filter(source=MembershipSource.EXPLICIT).exists():
+            return True
 
     return teams_enabled() and has_project_team_access(user, project)
 
@@ -4260,7 +4314,10 @@ def reset_working_labels_to_registered(task: AnnotationTask) -> dict:
     from .visualization import slice_io
     from .visualization.slice_io import _open_volume, resolve_path
 
-    volume = task.volume
+    # Do not trust a relation object cached before a metadata edit. Reset is a
+    # destructive operation and must decide its source from the current row.
+    volume = type(task.volume).objects.get(pk=task.volume_id)
+    task.volume = volume
     if not volume.image_location:
         raise ValueError("Volume has no image, so it has no label shape to reset to.")
     shape = tuple(int(v) for v in _open_volume(resolve_path(volume.image_location)).shape)

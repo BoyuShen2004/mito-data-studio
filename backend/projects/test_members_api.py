@@ -3,8 +3,11 @@ from rest_framework.test import APITestCase
 
 from accounts.models import Institution, Team, TeamMembership, UserProfile
 from accounts.teams import add_team_member, is_eligible_project_assignee
+from annotation.models import AnnotationTask
 from core.choices import UserRole
+from projects.models import Dataset
 from projects.services import create_project
+from volumes.models import Volume
 
 
 class ProjectMembersApiTests(APITestCase):
@@ -80,3 +83,39 @@ class ProjectMembersApiTests(APITestCase):
         project.refresh_from_db()
         self.assertIsNotNone(project.working_team_id)
         self.assertTrue(is_eligible_project_assignee(newcomer, project))
+
+    def test_unassigned_working_team_member_can_read_project_data_and_tasks(self):
+        dataset = Dataset.objects.create(project=self.project, name="Visible")
+        volume = Volume.objects.create(
+            project=self.project,
+            dataset=dataset,
+            name="visible-volume",
+            shape_z=2,
+            shape_y=3,
+            shape_x=4,
+        )
+        task = AnnotationTask.objects.create(
+            project=self.project,
+            volume=volume,
+            z_start=0,
+            z_end=2,
+            y_start=0,
+            y_end=3,
+            x_start=0,
+            x_end=4,
+        )
+        self.client.force_authenticate(self.annotator)
+
+        for url in (
+            f"/api/projects/{self.project.id}/",
+            f"/api/projects/{self.project.id}/volumes/",
+            f"/api/projects/{self.project.id}/tasks/",
+            f"/api/tasks/{task.id}/",
+        ):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, (url, response.data))
+
+        denied = self.client.patch(
+            f"/api/tasks/{task.id}/", {"status": "in_progress"}, format="json"
+        )
+        self.assertEqual(denied.status_code, 403, denied.data)

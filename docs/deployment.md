@@ -85,6 +85,12 @@ cd /home/weidf/shenb/mito-data-studio-production-v1.1.5
 npm run build:production --prefix frontend
 ```
 
+The Vite build intentionally preserves prior content-hashed files in
+`frontend/dist/assets`. Lazy routes in already-open browser tabs may request
+the previous generation after a deployment. Do not empty that directory as
+part of promotion; old hashes can be pruned only after their normal browser
+session lifetime has elapsed.
+
 Then reload the web unit and smoke-check it. The dispatcher needs a restart only
 when its Python code or unit definition changed.
 

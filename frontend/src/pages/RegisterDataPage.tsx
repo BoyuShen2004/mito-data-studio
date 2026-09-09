@@ -95,7 +95,13 @@ export default function RegisterDataPage() {
   // shown as a success banner. A project can hold many datasets, so we stay on
   // the page afterwards instead of navigating straight to the project.
   const [lastResult, setLastResult] = useState<
-    { dataset: string; count: number; volumes: Volume[] }[] | null
+    {
+      dataset: string;
+      count: number;
+      volumes: Volume[];
+      createdTasks?: number;
+      skippedVolumes?: number;
+    }[] | null
   >(null);
 
   // Selected rows with editable labels require partial|prediction. Changes to
@@ -351,7 +357,13 @@ export default function RegisterDataPage() {
     }
 
     setBusy(true);
-    const succeeded: { dataset: string; count: number; volumes: Volume[] }[] = [];
+    const succeeded: {
+      dataset: string;
+      count: number;
+      volumes: Volume[];
+      createdTasks?: number;
+      skippedVolumes?: number;
+    }[] = [];
     const failed: { dataset: string; message: string }[] = [];
     const inconclusive: string[] = [];
     const failedEntries = new Set<StagedDataset>();
@@ -373,7 +385,13 @@ export default function RegisterDataPage() {
           pairs: entry.pairs,
         });
         lastProjectId = res.project.id;
-        succeeded.push({ dataset: entry.dataset, count: res.volumes.length, volumes: res.volumes });
+        succeeded.push({
+          dataset: entry.dataset,
+          count: res.volumes.length,
+          volumes: res.volumes,
+          createdTasks: res.created_tasks,
+          skippedVolumes: res.skipped_volumes,
+        });
         if (entry === currentEntry) currentSucceeded = true;
       } catch (err) {
         // An HTTP response proves the server rejected the request. A raw fetch
@@ -495,6 +513,18 @@ export default function RegisterDataPage() {
             project can hold many datasets — queue more directories below, or open
             the project when you are done.
           </p>
+          {lastResult.some((result) => (result.skippedVolumes ?? 0) > 0) ? (
+            <div className="error" role="alert">
+              {lastResult.reduce((sum, result) => sum + (result.skippedVolumes ?? 0), 0)} volume(s)
+              were registered but their source headers could not be read, so tasks could not be
+              created yet. Check the source-file permissions, then open Assign volumes to retry.
+            </div>
+          ) : lastResult.some((result) => result.createdTasks !== undefined) ? (
+            <p className="muted">
+              {lastResult.reduce((sum, result) => sum + (result.createdTasks ?? 0), 0)} task(s)
+              are ready under the project’s Tasks tab.
+            </p>
+          ) : null}
           <DatasetVolumesTable volumes={lastResult.flatMap((result) => result.volumes)} />
         </div>
       )}

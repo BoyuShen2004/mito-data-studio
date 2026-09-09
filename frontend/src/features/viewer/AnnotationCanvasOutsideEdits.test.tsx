@@ -82,7 +82,7 @@ const api = {
     labels: [],
     stats: { total: 0, proposed: 0, edited: 0, verified: 0 },
   })),
-  getLabelIds: vi.fn(async () => ({
+  getLabelIds: vi.fn(async (_taskId: number, _axis: string, _index: number) => ({
     shape: [H, W] as [number, number],
     runs: storedRuns(),
     revision: undefined as string | undefined,
@@ -296,6 +296,49 @@ describe("Region only and edits outside the region", () => {
     // putLabelIds(..., expectedRevision): the cached z=1 pixels are reusable,
     // but their old volume token must not replace the first Save's response.
     expect(harness.putLabelIds.mock.calls[1][7]).toBe("revision-after-first-save");
+  });
+
+  it("joins an in-flight label prefetch instead of issuing a duplicate foreground read", async () => {
+    let releasePrefetch!: (value: {
+      shape: [number, number];
+      runs: [number, number][];
+      revision: string;
+    }) => void;
+    const prefetched = new Promise<{
+      shape: [number, number];
+      runs: [number, number][];
+      revision: string;
+    }>((resolve) => {
+      releasePrefetch = resolve;
+    });
+    api.getLabelIds.mockImplementation(async (_taskId, _axis, index) => {
+      if (index === 1) return prefetched;
+      return {
+        shape: [H, W] as [number, number],
+        runs: storedRuns(),
+        revision: "revision-current",
+      };
+    });
+
+    mount();
+    await screen.findByRole("button", { name: "Fit window" });
+    await waitFor(() =>
+      expect(api.getLabelIds.mock.calls.some((call) => call[2] === 1)).toBe(true),
+    );
+    expect(api.getLabelIds.mock.calls.some((call) => call[2] > 1)).toBe(false);
+
+    fireEvent.click(screen.getByTitle("Next layer"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(api.getLabelIds.mock.calls.filter((call) => call[2] === 1)).toHaveLength(1);
+
+    releasePrefetch({
+      shape: [H, W],
+      runs: storedRuns(),
+      revision: "revision-current",
+    });
+    await waitFor(() => expect(screen.getByTitle(/^z 2\/6$/)).toBeTruthy());
   });
 
   it("reloads and retains only non-overlapping pending edits after a real conflict", async () => {

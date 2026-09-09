@@ -4,7 +4,7 @@ ADR-009 §3 locks this layout, and **Phase 12 may rely on it**:
 
     <MITO_DATA_ROOT>/<project>/<dataset>/pyramids/<image-stem>.zarr/
         zarr.json          group metadata, zarr_format: 3
-        1/ 2/ 4/ 8/ …      one array per mag, named by the xy factor
+        1/ 2/ 4/ 8/ …      one array per mag, named by its largest axis factor
 
 Beside the volume rather than in a global silo, for the same reason
 ``label_paths`` puts masks, metadata and embeddings there: everything belonging
@@ -198,7 +198,12 @@ def open_pyramid_at(rel_path: str, *, mode: str = "r"):
     assert_owned(path, what="pyramid group")
     if not path.exists():
         raise PyramidStoreError("No pyramid at the recorded path.")
-    return zarr.open_group(str(path), mode=mode)
+    try:
+        return zarr.open_group(str(path), mode=mode)
+    except Exception as exc:
+        raise PyramidStoreError(
+            f"Invalid pyramid at recorded path {rel_path}."
+        ) from exc
 
 
 def open_pyramid(volume, *, layer: str = LAYER_IMAGE, mode: str = "r"):
@@ -207,7 +212,12 @@ def open_pyramid(volume, *, layer: str = LAYER_IMAGE, mode: str = "r"):
     location = pyramid_location(volume, layer)
     if not location.path.exists():
         raise PyramidStoreError(f"No pyramid at {location.rel_path}.")
-    return zarr.open_group(str(location.path), mode=mode)
+    try:
+        return zarr.open_group(str(location.path), mode=mode)
+    except Exception as exc:
+        raise PyramidStoreError(
+            f"Invalid pyramid at {location.rel_path}."
+        ) from exc
 
 
 def read_plane(volume, mag: str, index: int, *, layer: str = LAYER_IMAGE) -> np.ndarray:

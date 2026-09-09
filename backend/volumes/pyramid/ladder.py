@@ -45,13 +45,17 @@ class MagLevel:
 
     @property
     def name(self) -> str:
-        """Array name on disk: the **xy** factor as a decimal string.
+        """Array name on disk: the largest axis factor as a decimal string.
 
         ADR-009 §3 — doc 20 asks for "mags 1,2,4,8…", and xy is what a viewer
-        means by resolution. The per-axis factors live in the array attributes,
-        so anisotropy is not lost by naming.
+        normally means by resolution. Real NIfTI data can also be coarser in x
+        than y/z, though; naming solely by x then gives several different
+        levels the same ``"1"`` key and the Zarr build fails on the second one.
+        At least one factor doubles at every level, so the maximum remains the
+        familiar numeric 1/2/4/8 ladder while guaranteeing unique keys for
+        anisotropy along any axis. Exact per-axis factors remain in attributes.
         """
-        return str(self.factors[2])
+        return str(max(self.factors))
 
     @property
     def voxels(self) -> int:

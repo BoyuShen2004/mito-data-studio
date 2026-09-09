@@ -60,6 +60,7 @@ from .services import (
     get_region_label_ids,
     reset_working_labels_to_registered,
     get_visualization_state,
+    is_project_member,
     latest_submission_ids,
     TRACKING_PROMPTS_VERSION,
     list_tracking_prompts,
@@ -110,14 +111,17 @@ TASK_PREFETCH_RELATED = (
 
 
 class ProjectTasksView(generics.ListAPIView):
-    """List every task under a project. Managers only."""
+    """List every task under a project for its read-only participants."""
 
     serializer_class = AnnotationTaskSerializer
-    permission_classes = [IsManager]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        project = get_object_or_404(Project, pk=self.kwargs["project_id"])
+        if not is_project_member(self.request.user, project):
+            raise PermissionDenied("You do not have access to this project.")
         qs = (
-            AnnotationTask.objects.filter(project_id=self.kwargs["project_id"])
+            AnnotationTask.objects.filter(project=project)
             .select_related(*TASK_SELECT_RELATED)
             .prefetch_related(*TASK_PREFETCH_RELATED)
         )
@@ -128,23 +132,31 @@ class ProjectTasksView(generics.ListAPIView):
 
 
 class TaskDetailView(generics.RetrieveUpdateAPIView):
-    """Retrieve or edit a task. Managers can edit; annotators see own tasks."""
+    """Retrieve a visible task; managers or its assignee may update it."""
 
     serializer_class = AnnotationTaskSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = AnnotationTask.objects.select_related(
+        return AnnotationTask.objects.select_related(
             *TASK_SELECT_RELATED
         ).prefetch_related(*TASK_PREFETCH_RELATED)
-        if is_manager(self.request.user):
-            return qs
-        return qs.filter(assigned_to=self.request.user)
+
+    def get_object(self):
+        task = super().get_object()
+        if not can_view_task(self.request.user, task):
+            raise PermissionDenied("You do not have access to this task.")
+        return task
 
     def update(self, request, *args, **kwargs):
         if not is_manager(request.user):
             # Annotators may only move their own task into "in_progress".
             task = self.get_object()
+            if not is_annotator(request.user) or task.assigned_to_id != request.user.id:
+                return Response(
+                    {"detail": "Only the assigned annotator may start this task."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             new_status = request.data.get("status")
             if new_status != TaskStatus.IN_PROGRESS:
                 return Response(

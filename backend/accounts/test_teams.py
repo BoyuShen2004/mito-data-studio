@@ -507,3 +507,13 @@ class WorkingTeamAccessMirrorTests(TestCase):
         # Re-applying the working team must not rewrite existing provenance.
         set_project_working_team(self.project, self.team, actor=self.manager)
         self.assertEqual(self._membership().source, MembershipSource.EXPLICIT)
+
+    def test_first_grant_mirrors_members_who_already_belong_to_the_team(self):
+        other = Project.objects.create(title="First grant", created_by=self.manager)
+        add_team_member(self.team, self.annotator, actor=self.manager)
+
+        grant_project_team(other, self.team, actor=self.manager)
+
+        row = ProjectMembership.objects.get(project=other, user=self.annotator)
+        self.assertEqual(row.source, MembershipSource.TEAM)
+        self.assertEqual(other.working_team_id, self.team.id)
