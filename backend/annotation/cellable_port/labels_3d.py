@@ -1,19 +1,14 @@
 """Whole-volume label summary + 3D surface meshes for the 3D Labels panel.
 
-Not a direct Cellable port (Cellable's desktop app has the whole label
-volume in RAM already, via ``updateUniqueLabelListFromEntireMask`` for the
-label list and ``VTKSurfaceWidget`` for a real marching-cubes iso-surface
-render) — the web app must never load a whole EM label volume per request
+The web app must never load a whole EM label volume per request
 (same reasoning as ``annotation/visualization/slice_io.py``), so everything
 here reads the working label file as a memmap and caches its (potentially
 expensive, O(volume)) results, invalidated by the file's mtime.
 
-**3D rendering choice**: :func:`labels_3d_mesh` now produces the same *kind*
-of geometry Cellable's VTK widget does — a marching-cubes iso-surface per
-label — instead of the block-max-pooled "surface voxels drawn as instanced
+**3D rendering choice**: :func:`labels_3d_mesh` produces a marching-cubes
+iso-surface per label instead of the block-max-pooled "surface voxels drawn as instanced
 cubes" preview this module used to serve (which read as a stack of 2D voxel
-slabs rather than a mitochondrion, see
-``progress/history/03-fix-hard-case-share-view.md`` item B). The volume-scale
+slabs rather than a mitochondrion). The volume-scale
 problem is solved the same way as before — crop to the label's own bounding
 box and pool it down so the meshed grid stays small — but the pooling is now
 a *mean* pool, which turns the binary mask into an occupancy field in [0, 1];

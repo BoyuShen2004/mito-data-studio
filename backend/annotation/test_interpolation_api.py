@@ -1,4 +1,4 @@
-"""API-level tests for WK-style interpolation (ADR-006), the half that
+"""API-level tests for interpolation (ADR-006), the half that
 ``test_interpolation.py`` deliberately does not cover.
 
 ``test_interpolation.py`` proves the *mathematics* (golden fixtures) and the

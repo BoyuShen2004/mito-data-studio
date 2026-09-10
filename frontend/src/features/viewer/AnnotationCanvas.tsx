@@ -141,8 +141,7 @@ import { showError } from "../../errorPopup";
 // `editable` separately answers whether that chrome may mutate labels.
 // Labels / 3D Labels sit on the right in both modes (resize / collapse).
 //
-// Tool set mirrors Cellable's left tool rail (app.py's `mode_actions` /
-// canvas.py's `createMode`), laid out horizontally:
+// Tool set, laid out horizontally:
 //   Select / Brush / Erase / Box Erase / Point Mask / Box Mask / Boundary / Seeds
 // Track propagates the active instance across z via fork-aware SAM2.
 // Point/Box/Boundary are the interactive single-slice tools, on the same SAM2
@@ -161,11 +160,9 @@ import { showError } from "../../errorPopup";
 const LIVE_PREDICT_MIN_INTERVAL_MS = 50;
 
 const LABEL_ALPHA = 150;
-// Proposed-mask look, matching Cellable's AI preview (canvas.py paintEvent):
-// a translucent green fill (their `select_fill_color` at a preview
-// `label_opacity` of ~0.5) so the EM underneath stays readable, plus an opaque
-// white outline (`select_line_color`, shape.py `_mask_outline_path`) so the
-// proposal's extent is still unambiguous. Both are drawn on the
+// Proposed-mask look: a translucent green fill (~0.5 opacity) so the EM
+// underneath stays readable, plus an opaque white outline so the proposal's
+// extent is still unambiguous. Both are drawn on the
 // display-resolution cursor layer (`fillMaskCssSpace`,
 // `strokeMaskContourCssSpace`); painting them into the 256-wide label overlay
 // and letting CSS `pixelated` magnify it is what turned solid SAM 2 masks into
@@ -185,7 +182,7 @@ const MANUAL_PROMPT_TOOLS: readonly TrackingPromptTool[] = ["brush", "erase", "b
 const MIN_ZOOM = 0.5; // 50%
 const MAX_ZOOM = 20; // 2000%
 const clampZoom = (z: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
-/** Wheel zoom step — milder than Cellable's 1.1^(δ/120) so trackpads feel smooth. */
+/** Wheel zoom step — kept mild so trackpads feel smooth. */
 const WHEEL_ZOOM_BASE = 1.045;
 /** +/- button step (~8% per click). */
 const BUTTON_ZOOM_FACTOR = 1.08;
@@ -248,10 +245,9 @@ function uniqueInstances(ids: Int32Array): number[] {
   return Array.from(set).sort((a, b) => a - b);
 }
 
-/** Cellable ports `skimage.measure.find_contours` (shape.py `_mask_outline_path`)
- * for a smooth sub-pixel iso-contour. This instead traces the exact pixel-grid
- * boundary (every edge between a mask=1 cell and a mask=0/out-of-bounds
- * neighbor) — same visual result (a crisp outline hugging the mask), avoids
+/** Traces the exact pixel-grid boundary (every edge between a mask=1 cell and
+ * a mask=0/out-of-bounds neighbor) rather than a sub-pixel iso-contour — a
+ * crisp outline hugging the mask that avoids
  * marching-squares' saddle-point ambiguity, and is O(h*w) like the fill loop
  * it runs alongside. */
 function strokeMaskContour(
@@ -630,7 +626,7 @@ export default function AnnotationCanvas({
   );
   const initialAxis = initialViewLocationRef.current?.axis ?? DEFAULT_VIEW_AXIS;
 
-  // View axis — Cellable Axial / Coronal / Sagittal. Default stays Axial (z).
+  // View axis — Axial / Coronal / Sagittal. Default stays Axial (z).
   const [axis, setAxis] = useState<Axis>(initialAxis);
   const axisRef = useRef(axis);
   axisRef.current = axis;
@@ -659,8 +655,7 @@ export default function AnnotationCanvas({
   activeIdRef.current = activeId;
   const [brightness, setBrightness] = useState(50);
   const [contrast, setContrast] = useState(50);
-  // Global committed-label opacity (0-100, Cellable's `label_opacity_slider`
-  // — default 100 = fully opaque, matching Cellable's own default) — #29
+  // Global committed-label opacity (0-100, default 100 = fully opaque) — #29
   // item U5. Affects committed overlay alpha only; the AI proposal fill
   // stays at its own fixed ~0.5 regardless (#26 look, not user-tunable).
   const [labelOpacity, setLabelOpacity] = useState(100);
@@ -800,18 +795,17 @@ export default function AnnotationCanvas({
   // Point Mask / Box Mask / Boundary — accumulated prompt points + the
   // predicted preview mask, awaiting an explicit Commit (so a bad/slow
   // prediction never silently flattens into the raster before the user
-  // sees it — Cellable's Shape stayed editable/undo-able until then too).
+  // sees it).
   const [hasAiPreview, setHasAiPreview] = useState(false);
   const [aiPointCount, setAiPointCount] = useState(0);
 
   // Seeds (3D watershed) — persists across slice navigation on purpose
-  // (seeds can span several z's before "Run Watershed", like Cellable's
-  // watershed_3d mode).
+  // (seeds can span several z's before "Run Watershed").
   const [wsSeeds, setWsSeeds] = useState<WsSeed[]>([]);
   const [wsTargetLabel, setWsTargetLabel] = useState<number | null>(null);
   const [wsRunning, setWsRunning] = useState(false);
 
-  // Interpolate (WK-style SDF blend, ADR-006) — the two endpoint slices the
+  // Interpolate (signed-distance blend, ADR-006) — the two endpoint slices the
   // active label is already painted on, plus the previewed intermediates. The
   // preview lives in a ref (it is per-slice pixel data the renderer reads, not
   // something React should diff); `interpPreviewCount` is the state mirror the
@@ -1104,8 +1098,8 @@ export default function AnnotationCanvas({
   const hoverPosRef = useRef<[number, number] | null>(null);
   const roiWarmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRoiWarmRef = useRef("");
-  // The Point Mask/Boundary transient cursor tip (#27) — Cellable's `line`
-  // rubber-band tip: null until ≥1 point is committed, then tracks the
+  // The Point Mask/Boundary transient cursor tip (#27) — a rubber-band
+  // tip: null until ≥1 point is committed, then tracks the
   // cursor for visual aiming only. It is deliberately not sent to the model:
   // an unclicked hover coordinate is not a prompt and previously turned one
   // stable positive click into a stream of changing two-positive-point masks.
@@ -1148,13 +1142,12 @@ export default function AnnotationCanvas({
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const prevPaintToolRef = useRef<PaintTool>("select");
   // Guards a rapid click/re-box from letting an older, slower predict
-  // response overwrite a newer one (Cellable: "keep last-good preview
-  // until the newer one arrives") — each predict call captures the
+  // response overwrite a newer one (keep the last good preview until the
+  // newer one arrives) — each predict call captures the
   // post-increment sequence number and checks it's still current before
   // applying its result; a superseded call's abort() also drops the
   // network request itself. `committingAiRef` is a second, narrower guard
-  // against a double Enter/click re-entering `commitAiPreview` mid-flight
-  // (Cellable's `_finaliseInProgress`).
+  // against a double Enter/click re-entering `commitAiPreview` mid-flight.
   const aiSeqRef = useRef(0);
   const aiAbortRef = useRef<AbortController | null>(null);
   const committingAiRef = useRef(false);
@@ -1274,7 +1267,7 @@ export default function AnnotationCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionMembershipWanted, taskId, regionMembershipToken]);
 
-  // Cellable's "Hide Verified" checkbox hides VERIFIED labels from the
+  // "Hide Verified" hides VERIFIED labels from the
   // 2D (and 3D) views, not just the Labels list — needs the whole-volume
   // state summary above, not just what's decoded on this slice.
   const verifiedIds = useMemo(
@@ -2181,8 +2174,7 @@ export default function AnnotationCanvas({
           restoreHistoryForZ(i);
         }
         // AI prompt points/preview are slice-specific (the underlying image
-        // embedding is per-slice) — discard them on navigation, same as
-        // Cellable resets `currentAIPromptPoints` on slice change.
+        // embedding is per-slice) — discard them on navigation.
         aiPointsRef.current = [];
         aiPreviewRef.current = null;
         aiTipRef.current = null;
@@ -2308,8 +2300,7 @@ export default function AnnotationCanvas({
   // tool is active, *or* when switching into one on the current slice —
   // fire-and-forget, same ~100ms coalescing as the slice load above so
   // scrubbing quickly doesn't fire a warm request per intermediate index.
-  // Also opportunistically warms the two neighboring slices (Cellable's
-  // `pre_compute_tiff_sam_feature.py` background-fills nearby slices too) —
+  // Also opportunistically warms the two neighboring slices —
   // best-effort only, failures ignored, aborted the same way on cleanup.
   useEffect(() => {
     const trackAiTool = trackPromptTool === "box" || trackPromptTool === "point";
@@ -3202,10 +3193,8 @@ export default function AnnotationCanvas({
   // box drag) starts a new sequence number and aborts whatever was still
   // in flight, and any response — success, failure, or an aborted-request
   // exception — is only applied if its sequence number is still current.
-  // This is what keeps overlapping predicts from corrupting each other
-  // (Cellable's own predicts are effectively serialized by the Qt event
-  // loop calling `_finaliseImpl`/paintEvent one at a time; a browser has no
-  // such guarantee once two `fetch`es are in flight together).
+  // This is what keeps overlapping predicts from corrupting each other:
+  // a browser does not serialize two `fetch`es in flight together.
 
   // Shared core: predict from an explicit committed point set. Both ordinary
   // clicks and coalesced committed-point dragging share one sequence guard so
@@ -3389,7 +3378,7 @@ export default function AnnotationCanvas({
   );
 
   const commitAiPreview = useCallback(() => {
-    // Re-entrancy guard (Cellable's `_finaliseInProgress`): a double
+    // Re-entrancy guard: a double
     // Enter/click while this is running must not double-apply the same
     // preview or double-fire the commit PUT.
     if (committingAiRef.current) return;
@@ -3462,7 +3451,7 @@ export default function AnnotationCanvas({
     commitAiPreview();
   }, [paintTool, hasAiPreview, commitAiPreview]);
 
-  // Enter/Ctrl-click/double-click finalize: match Cellable exactly — a
+  // Enter/Ctrl-click/double-click finalize: a
   // fresh predict from the committed points, THEN commit that (not an older
   // response) — see #27 item L4. No-ops with no committed points;
   // `commitAiPreview` itself no-ops if the fresh predict came back empty.
@@ -4130,8 +4119,8 @@ export default function AnnotationCanvas({
       if (AI_POINT_TOOLS.includes(paintTool)) {
         if (!e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
           // Clicking on (not near-but-off) an existing committed point
-          // drags it instead of adding a new one — Cellable-level vertex
-          // drag for AI prompts (#29 item U8). Re-predicts live while
+          // drags it instead of adding a new one — vertex drag for AI
+          // prompts (#29 item U8). Re-predicts live while
           // dragging (cheap — coalesced, at most one request in flight) and
           // once more, non-live, on release.
           const dragIdx = nearestCommittedPointIndex(px, py, 10);
@@ -4146,8 +4135,8 @@ export default function AnnotationCanvas({
         // Plain click commits a point where the cursor tip was drawn — the
         // tip itself resets to null; the very next pointermove repopulates
         // it at the (possibly unchanged) cursor position, so the free-
-        // floating marker "continues from the new last point" (Cellable's
-        // `addPoint(line.points[1])`) without drawing a duplicate dot on
+        // floating marker "continues from the new last point" without
+        // drawing a duplicate dot on
         // top of the just-committed one in the meantime.
         aiPointsRef.current = [
           ...aiPointsRef.current,
@@ -4156,8 +4145,8 @@ export default function AnnotationCanvas({
         aiTipRef.current = null;
         setAiPointCount(aiPointsRef.current.length);
         renderOverlay();
-        // Ctrl/Cmd+click = add this point and immediately finalize, same as
-        // Cellable's "Ctrl+LeftClick ends" (#25 item C.3) — `finalizeAiPoints`
+        // Ctrl/Cmd+click = add this point and immediately finalize (#25 item
+        // C.3) — `finalizeAiPoints`
         // itself re-predicts committed-only then commits, so this doesn't
         // double-predict; a plain click instead runs the normal (non-
         // finalizing) committed-only predict for live feedback.
@@ -4310,8 +4299,7 @@ export default function AnnotationCanvas({
 
   // Minimal right-click context menu (#29 item U15) — mode switches always,
   // plus Verify/Solo when right-clicking on an actual label. Deliberately
-  // small (Cellable's own canvas context menu is a handful of items, not a
-  // full command palette).
+  // small: a handful of items, not a full command palette.
   const onContextMenu = useCallback(
     (e: React.MouseEvent) => {
       if ((!editable && !onCommentLabel) || swapped) return;
@@ -4371,8 +4359,8 @@ export default function AnnotationCanvas({
     intensityCtxRef.current = ctx;
   }, []);
 
-  // Status readout under the canvas (#29 item U3, Cellable's status bar
-  // `"Mouse is at: slice=…, x=…, y=…, intensity=…, label=…"`) — a direct DOM
+  // Status readout under the canvas (#29 item U3: slice, x, y, intensity,
+  // label) — a direct DOM
   // write (`statusReadoutRef`), not React state, since pointer moves fire
   // far too often to route through a re-render (same reasoning as the
   // overlay canvas itself). Intensity reads the *undisplayed* slice image
@@ -5800,7 +5788,7 @@ export default function AnnotationCanvas({
       else if (e.key === "m") setPaintTool("box_mask");
       else if (e.key === "o") setPaintTool("boundary");
       else if (e.key === "r") setPaintTool("box_eraser");
-      else if (e.key === "t") setPaintTool("seeds"); // #29 item U7 (Cellable: T = watershed_3d)
+      else if (e.key === "t") setPaintTool("seeds"); // #29 item U7
       else if (e.key === "i" && interpolationEnabled) setPaintTool("interpolate");
       else if (e.key === "l" && floodFillEnabled) setPaintTool("flood_fill");
       else if (e.key === "c") setPaintTool("split_3d");
@@ -5828,7 +5816,7 @@ export default function AnnotationCanvas({
       } else if (e.key === "Enter" && AI_POINT_TOOLS.includes(paintTool)) {
         // Point/Boundary: re-predict from the committed points, then
         // commit that result — never an older in-flight response (#27 item
-        // L4, Cellable's `finalise()` semantics).
+        // L4).
         finalizeAiPoints();
       } else if (e.key === "Enter" && paintTool === "box_mask") {
         if (hasAiPreview) commitAiPreview();

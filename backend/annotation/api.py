@@ -1403,9 +1403,8 @@ class TaskLabelIdsView(APIView):
         })
 
 
-# --- Cellable-ported interactive AI tools (Point/Box/Boundary, Seeds) -------
-# See progress/history/19-cellable-parity-annotator-brief.md and
-# annotation/cellable_port/ for what these port and why.
+# --- Interactive AI tools (Point/Box/Boundary, Seeds) -----------------------
+# Implementations live in annotation/cellable_port/.
 
 class TaskPredictMaskView(APIView):
     """Point Mask / Box Mask / Boundary preview — ``POST
@@ -1454,8 +1453,7 @@ class TaskWarmEmbeddingView(APIView):
     """``POST /api/tasks/<id>/warm-embedding/`` — body ``{"axis", "index"}``.
     Pre-computes the SAM 2 image features for one slice so a subsequent
     Point/Box/Boundary predict on it is decoder-only. Fire-and-forget from
-    the frontend (slice-open / AI-tool entry / neighbor prefetch — see
-    ``progress/history/23-cellable-parity-ort-and-prompt-ux.md``); a missing
+    the frontend (slice-open / AI-tool entry / neighbor prefetch); a missing
     model is reported as ``{"warmed": false}`` with 200, not a 503 — warming
     is an optimization, not something the UI should treat as an error."""
 
@@ -1643,7 +1641,7 @@ class TaskDeleteLabelPlanView(APIView):
 
 
 class TaskInterpolateView(APIView):
-    """WEBKNOSSOS-style interpolation (ADR-006) — ``POST
+    """Interpolation between two painted slices (ADR-006) — ``POST
     /api/tasks/<id>/interpolate/``. Body:
     ``{"axis", "first_index", "last_index", "label", "mode":
     "preview"|"apply", "overwrite_mode"?, "idempotency_key"?}``.
@@ -2057,8 +2055,8 @@ class TaskLabels3DMeshView(APIView):
 
 
 class TaskLabelLifecycleView(APIView):
-    """``POST /api/tasks/<id>/labels/<label_id>/lifecycle/`` — Cellable-parity
-    label lifecycle actions (Filters Options' Verify/Revert/Reject), body
+    """``POST /api/tasks/<id>/labels/<label_id>/lifecycle/`` — label
+    lifecycle actions (Filters Options' Verify/Revert/Reject), body
     ``{"action": "verify"|"unverify"|"revert"|"reject"}``. Editors only —
     these mutate the working copy (revert/reject) or its metadata sidecar
     (all four). Destructive actions (revert/reject) get their confirm()

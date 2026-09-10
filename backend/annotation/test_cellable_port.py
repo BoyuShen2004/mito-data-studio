@@ -1,4 +1,4 @@
-"""Tests for the Cellable-ported interactive AI tools (Point/Box/Boundary
+"""Tests for the interactive AI tools (Point/Box/Boundary
 mask, 3D watershed Seeds) and the Labels-panel/3D-preview summaries.
 
 Follows the same tempdir + ``@override_settings(MITO_DATA_ROOT=...)``
@@ -89,7 +89,7 @@ class WatershedUnitTests(TestCase):
 
 
 class SplitComponentsUnitTests(TestCase):
-    """Pure numpy tests for 3D connected-component split (Cellable split_label)."""
+    """Pure numpy tests for 3D connected-component split."""
 
     def test_splits_two_disconnected_blobs(self):
         mask = np.zeros((8, 10, 10), dtype=np.int32)

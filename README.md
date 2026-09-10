@@ -50,11 +50,10 @@ host conda checkout. Do not run them as if they were the same deployment.
 
 ## Documentation
 
-- [Release and publication documentation portal](documentation/README.md) —
-  product scope, complete workflows, architecture, microscopy data contract,
-  AI models, reference hardware, manuscript Methods, reproducibility, and
-  release readiness
-- [Documentation index](docs/index.md)
+Two places, by what you are doing:
+
+**Using, developing, or running the product — [`docs/`](docs/index.md)**
+
 - [User guide](docs/user-guide.md) — linked, module-by-module instructions for
   requester, manager, annotator, viewing, editing, tracking, review, and sharing
 - [Development](docs/development.md) — host setup, daily run, accounts, tests, and
@@ -66,10 +65,22 @@ host conda checkout. Do not run them as if they were the same deployment.
 - [This-host deployment](docs/deployment.md) — maintainer-specific systemd runbook
 - [Product invariants](docs/product-invariants.md) — behaviors contributors
   must preserve
-- [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md), and
-  [changelog](CHANGELOG.md)
-- [Third-party notices](THIRD_PARTY_NOTICES.md) and
-  [attribution register](docs/attribution.md)
+
+**Architecture, AI models, release readiness, and manuscript material —
+[`documentation/`](documentation/README.md)**
+
+- [Architecture](documentation/technical/ARCHITECTURE.md),
+  [data and storage contract](documentation/technical/DATA_AND_STORAGE.md), and
+  [AI models and algorithms](documentation/technical/AI_AND_ALGORITHMS.md)
+- [Release checklist](documentation/release/RELEASE_CHECKLIST.md) and
+  [validation status](documentation/release/VALIDATION_STATUS.md)
+- [Methods](documentation/paper/METHODS.md),
+  [claims matrix](documentation/paper/CLAIMS_MATRIX.md), and
+  [reproducibility record](documentation/paper/REPRODUCIBILITY.md)
+
+Project files: [contributing](CONTRIBUTING.md), [security policy](SECURITY.md),
+[changelog](CHANGELOG.md), [third-party notices](THIRD_PARTY_NOTICES.md), and
+[attribution register](docs/attribution.md).
 
 ## Roles at a glance
 
@@ -89,6 +100,7 @@ fills the login form but never signs in automatically.
 backend/      Django project and domain apps
 frontend/     React/Vite application and browser tests
 docs/         user, developer, and deployment documentation
+documentation/  architecture, AI, release, and manuscript documentation
 scripts/dev/  local setup and live-reload entry points
 ops/          container, staging, production, and release assets
 vendor/       optional SAM2 assets managed with Git LFS

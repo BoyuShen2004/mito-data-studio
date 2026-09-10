@@ -31,8 +31,8 @@ snapshot must not be used as an idle-baseline measurement.
 The reproducible release environment is defined by `requirements-release.txt`,
 `frontend/package-lock.json`, `environment.yml`, and the Docker build profiles.
 The interactive conda environment on the reference host can differ: at capture
-time it had ONNX Runtime 1.28.0 and did not expose h5py or nibabel, whereas the
-release lock specifies ONNX Runtime GPU 1.26.0, h5py 3.16.0, and nibabel 5.3.2.
+time it did not expose h5py or nibabel, whereas the release lock specifies
+h5py 3.16.0 and nibabel 5.3.2.
 Manuscript experiments must state which environment was actually used.
 
 ## Hardware-adaptive recommendation on this host
@@ -44,7 +44,6 @@ The repository probe detects 24 logical CPUs, approximately 125 GiB RAM, four
 GUNICORN_WORKERS=2
 GUNICORN_THREADS=2
 MITO_SAM2_CUDA_DEVICE=0
-MITO_AI_CUDA_DEVICE=1
 MITO_TRACK_PLAN_MAX_VOXELS=256000000
 MITO_SAM2_XY_PAD=256
 MITO_SAM2_XY_MIN=512
@@ -54,8 +53,7 @@ MITO_DEPS=ai-gpu
 ```
 
 This pins SAM 2 — which serves both Track and the prompted-mask tools — to
-GPU 0. It does not automatically
-use GPUs 2–3 for one Track batch.
+GPU 0. It does not automatically use GPUs 1–3 for one Track batch.
 
 ## Supported deployment shapes
 
@@ -73,7 +71,7 @@ from physical host capacity.
 ## Benchmark reporting minimum
 
 Report CPU model/core allocation, RAM limit, GPU model/count/device assignment,
-GPU memory, driver, CUDA/PyTorch/ONNX Runtime versions, source format, volume
+GPU memory, driver, CUDA/PyTorch versions, source format, volume
 shape/dtype/voxel size, Track class and branch counts, z ranges, xy crop
 settings, slab cap, worker/thread counts, warm/cold model state, and timing-log
 breakdown. Report peak RAM and GPU utilization using a stated sampling method.

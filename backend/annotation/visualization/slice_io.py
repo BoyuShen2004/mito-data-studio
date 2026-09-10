@@ -1,7 +1,7 @@
-"""On-demand slice IO with bounded LRU caches (Cellable memory patterns).
+"""On-demand slice IO with bounded LRU caches.
 
-The web process must never load a whole EM volume into RAM. This module mirrors
-Cellable's ``sliceCache`` / ``MAX_SLICE_PIXMAP_CACHE`` approach on the server:
+The web process must never load a whole EM volume into RAM. This module keeps
+bounded caches on the server:
 
 * volumes are opened as **memory-maps** (``tifffile.memmap`` / ``np.load(mmap)``),
   so only the touched slices are paged in;
@@ -35,7 +35,7 @@ from PIL import Image
 from .hdf5_io import Hdf5Error, is_hdf5_path, open_hdf5_volume
 from .nifti_io import NiftiError, is_nifti_path, open_nifti_volume
 
-# Bounded like Cellable's MAX_SLICE_PIXMAP_CACHE (256) / a few open volumes.
+# Bounded: 256 decoded slices / a few open volumes.
 MAX_SLICE_CACHE = 256
 MAX_OPEN_VOLUMES = 8
 # Encoded-response cache is smaller per entry than the raw-array cache above,

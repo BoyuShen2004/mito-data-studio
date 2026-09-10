@@ -1,4 +1,4 @@
-/** Annotate-only paint modes (Cellable-aligned shortcuts). */
+/** Annotate-only paint modes. */
 export type PaintTool =
   | "select"
   | "brush"

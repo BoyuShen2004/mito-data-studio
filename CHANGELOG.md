@@ -7,6 +7,13 @@ follows semantic versioning for tagged releases.
 
 ### Fixed
 
+- **Legacy NIfTI working labels were read with their axes reversed.** Early
+  NIfTI imports wrote the working label copy in nibabel's X,Y,Z order while the
+  image is served Z,Y,X, so a z plane of labels came back the wrong shape and
+  Point Mask previews were mis-scaled. When the image is NIfTI and the label's
+  shape is exactly the reverse, reads and writes go through a transposed
+  memmap *view*; the file on disk is never rewritten, re-encoded or moved.
+
 - **The manager's home fired 415 database queries to draw 35 rows.**
   `/api/submissions/` embeds each row's whole task, and the task serializer
   walks that task's submissions and every review on them — but the view never
@@ -32,6 +39,25 @@ follows semantic versioning for tagged releases.
   `FEATURE_INSTANCE_ANNOTATION`) referenced no code and are gone.
 
 ### Changed
+
+- **Point Mask, Box Mask and Boundary run on SAM 2; EfficientSAM is removed.**
+  They share Track's loaded SAM 2 weights rather than holding a second copy.
+  There is no fallback model: if SAM 2 cannot load, the tools answer 503 and
+  manual annotation is unaffected. EfficientSAM, its ONNX weights and the
+  onnxruntime dependency are gone.
+
+- **Point Mask is anchored on the click.** SAM 2's candidates are filtered to
+  components containing a positive click and chosen by a size-bounded ladder
+  (`MITO_AI_MASK_MAX_PLANE_FRACTION`, then
+  `MITO_AI_MASK_FALLBACK_MAX_PLANE_FRACTION`, then the smallest candidate under
+  a hard cap). The hover tip is display chrome only and is never sent as a
+  prompt. The proposal is drawn at display resolution — a translucent green
+  fill with a white outline — instead of a plane-sized image stretched with
+  CSS `pixelated`, which produced false scanlines.
+
+- **Errors no longer insert text into the page.** A failed action opens one
+  native popup (a repeat of the message just dismissed is dropped); hints and
+  automatic fallbacks say nothing.
 
 - **First load no longer ships a 3-D engine to people reading lists.** The
   annotation canvas imports `Labels3DPanel`, which imports the whole of

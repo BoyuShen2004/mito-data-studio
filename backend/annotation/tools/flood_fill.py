@@ -1,7 +1,6 @@
 """Flood fill, 2-D and limited 3-D (Phase 9, P1).
 
-Doc 19: *"Flood fill 2D (+ limited 3D) — WK fill tool — Classical, not only
-SAM."* The point of ranking it P1 is that an annotator should not have to invoke
+A classical fill, not only SAM: the point of ranking it P1 is that an annotator should not have to invoke
 a neural network to fill a region whose boundary is already drawn.
 
 Pure numpy. No Django, no database, no filesystem — same discipline as Phase 8's

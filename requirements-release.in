@@ -23,8 +23,6 @@ h5py==3.16.0
 nibabel==5.3.2
 zarr==3.1.6
 Pillow==12.2.0
-# CUDA 12.x build; encompasses the CPU fallback provider too. Install only
-# one ONNX Runtime package in the release environment.
 scikit-image==0.26.0
 scipy==1.17.1
 

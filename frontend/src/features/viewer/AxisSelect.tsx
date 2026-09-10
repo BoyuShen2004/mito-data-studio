@@ -1,7 +1,7 @@
 import type { Axis } from "../../api/viewer";
 import { VIEW_AXIS_OPTIONS } from "./axisView";
 
-/** Shared Axial / Coronal / Sagittal dropdown for View + Annotate (Cellable parity). */
+/** Shared Axial / Coronal / Sagittal dropdown for View + Annotate. */
 export default function AxisSelect({
   value,
   onChange,

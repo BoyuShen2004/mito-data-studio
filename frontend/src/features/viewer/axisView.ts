@@ -1,6 +1,6 @@
 import type { Axis } from "../../api/viewer";
 
-/** Cellable-parity view axes. Default remains Axial (z) — XY plane. */
+/** View axes. Default remains Axial (z) — XY plane. */
 export const VIEW_AXIS_OPTIONS: readonly {
   value: Axis;
   label: string;

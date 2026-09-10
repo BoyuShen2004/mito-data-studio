@@ -7,8 +7,8 @@ interface Props {
   contrast: number;
   onBrightness: (n: number) => void;
   onContrast: (n: number) => void;
-  /** Committed-label overlay opacity, 0–100 (100 = fully opaque, Cellable's
-   * `label_opacity_slider` default) — #29 item U5. Optional so other
+  /** Committed-label overlay opacity, 0–100 (100 = fully opaque, the
+   * default) — #29 item U5. Optional so other
    * DisplayKnobs consumers (if any appear later) aren't forced to wire it. */
   labelOpacity?: number;
   onLabelOpacity?: (n: number) => void;

@@ -4,18 +4,16 @@ Pure functions over numpy arrays. **No Django, no database, no filesystem, no
 network, no global state.** That is what makes the golden tests meaningful: the
 mathematics can be exercised without standing up an application.
 
-The algorithm, from ``07-webknossos-interpolation-analysis.md`` §"Algorithm
-(CODE — verified)":
+The algorithm:
 
 1. binary masks for the active label on the first and last slice;
 2. signed distance transform of each — outside positive, inside negative;
 3. for each intermediate at ``k = offset / depth``:
    ``weighted = first*(1-k) + last*k``; label where ``weighted < 0``.
 
-Independently reimplemented from that written description per master prompt §E8
-("prefer independent reimplementation of SDF method with citation"). No
-WEBKNOSSOS source was consulted, copied, ported or paraphrased; the distance
-transform comes from scipy (BSD-3), which is already a declared dependency.
+Independently implemented from a written description of the signed-distance
+method; no third-party interpolation source was copied, ported or paraphrased.
+The distance transform comes from scipy (BSD-3), a declared dependency.
 """
 
 from __future__ import annotations

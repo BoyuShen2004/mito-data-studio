@@ -51,6 +51,13 @@ an owned, writable, memory-mappable TIFF working copy. HDF5/NIfTI sources seed
 that copy in bounded blocks rather than becoming writable in place. Save is
 revision checked and label-state metadata is stored separately from voxels.
 
+Working copies written by early NIfTI imports are in nibabel's `(x, y, z)`
+order. When the registered image is NIfTI and a working label's shape is exactly
+the reverse of the image's, the label is opened through a transposed memmap
+view for both reads and writes. The file on disk is never rewritten,
+re-encoded, or moved to "fix" its axes; a reversed file opened without that
+allowance fails as before rather than being replaced.
+
 This separation prevents annotation from modifying registered data and gives
 submission/review a stable snapshot boundary.
 

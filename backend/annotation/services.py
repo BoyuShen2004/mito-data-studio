@@ -2831,8 +2831,7 @@ def set_label_slice_ids(
     — a committed Point/Box/Boundary preview) only matters for an id that
     doesn't exist in the store *yet*: a brand-new manual id starts EDITED
     (a human just drew it), a brand-new AI id starts PROPOSED with a
-    single-slice snapshot recorded (so it can be reverted) — matching
-    Cellable's ``get_or_create``/``_registerAutoSegmentationLabels``. An id
+    single-slice snapshot recorded (so it can be reverted). An id
     that already has tracked state is marked EDITED on further changes,
     regardless of ``origin``. VERIFIED is the exception: its geometry is
     locked and this write is rejected until the user explicitly Unverifies.
@@ -2983,7 +2982,7 @@ def get_label_max_id_readonly(volume) -> int:
     return label_max_id(path, _open_volume(path))
 
 
-# --- Cellable-ported interactive AI tools (Point/Box/Boundary mask) --------
+# --- Interactive AI tools (Point/Box/Boundary mask) ------------------------
 #
 # Read-only "preview a candidate mask" operations — unlike tracking/watershed
 # below, these never write to the working label copy themselves. The client
@@ -3010,29 +3009,23 @@ def predict_ai_mask(
 
     ``mode`` is ``"points"`` (Point Mask tool), ``"box"`` (Box Mask tool), or
     ``"boundary"`` (Boundary tool — the same points-mask prediction, then
-    turned into a ring via erode/dilate, ported from Cellable's
-    ``Canvas._finaliseImpl`` ai_boundary branch). Returns a boolean mask as
+    turned into a ring via erode/dilate). Returns a boolean mask as
     ``{"shape": [h, w], "runs": [[0/1, count], ...]}`` — reusing
     :func:`annotation.visualization.slice_io.encode_label_rle` since a
     boolean mask is just a label slice with two possible values.
 
     The image fed to the model is normalized with
-    :func:`cellable_port.ai.normalize.normalize_for_ai` (Cellable's own
-    ``normalizeImg``), **not** ``slice_io.display_range`` — see that
-    module's docstring for why a display-stable, whole-volume stretch and
-    the per-slice non-zero-percentile stretch Cellable actually feeds its
-    model are two different things, and conflating them was a real source
-    of point/box mask divergence from local Cellable
-    (`progress/history/21-cellable-parity-followups.md`). Brightness/
-    contrast are **never** part of this — those are client-side CSS filters
-    on the display image only (`progress/history/23-cellable-parity-ort-
-    and-prompt-ux.md`): baking them into the AI input would make prediction
-    quality depend on wherever the user last left those sliders, which is
-    strictly worse than Cellable's own behavior, not "more faithful" to it.
+    :func:`cellable_port.ai.normalize.normalize_for_ai`, **not**
+    ``slice_io.display_range`` — see that module's docstring for why a
+    display-stable, whole-volume stretch and a per-slice non-zero-percentile
+    stretch are two different things. Brightness/contrast are **never** part
+    of this — those are client-side CSS filters on the display image only:
+    baking them into the AI input would make prediction quality depend on
+    wherever the user last left those sliders.
 
     The embedding this computes is shared with :func:`warm_ai_embedding`
     via the same on-disk cache (``_ai_embedding_cache_path`` /
-    ``cellable_port/ai/embed_cache.py``) — a slice warmed ahead of time (on
+    ``cellable_port/ai/sam2_feature_cache.py``) — a slice warmed ahead of time (on
     slice-open or AI-tool entry) makes this call decoder-only.
     """
     from .cellable_port.ai.application import predict_mask
@@ -3061,10 +3054,8 @@ def warm_ai_embedding(task, axis, index, *, point=None) -> bool:
     """Pre-compute (and cache, in-process + on-disk) the image features
     for one slice, without predicting anything — called when the
     Annotate slice changes or an AI tool is entered, so the *first* actual
-    click only has to run the (fast) decoder. Mirrors the intent of
-    Cellable's background embedding thread (`app.py`'s
-    ``_compute_and_cache_image_embedding``), adapted to a stateless request
-    instead of a long-lived Qt session — see ``Sam2Masks.warm``.
+    click only has to run the (fast) decoder — see
+    ``Sam2Masks.warm``.
 
     Returns ``True`` if it ran, ``False`` if there's simply no image at this
     slice (not an error). Raises :class:`AiUnavailable` the same way
@@ -3076,7 +3067,7 @@ def warm_ai_embedding(task, axis, index, *, point=None) -> bool:
     return warm_embedding(task, axis, index, point=point)
 
 
-# --- Cellable-ported 3D watershed (Seeds tool) ------------------------------
+# --- 3D watershed (Seeds tool) ---------------------------------------------
 
 @_serialized_task_volume_write
 def run_watershed_task(
@@ -3089,8 +3080,7 @@ def run_watershed_task(
     :func:`track_task_fork` above (rare, user-triggered, needs real 3D array
     semantics), and subject to the same staging rule: this never touches
     ``volume.label_path``/``label_file``. See
-    ``cellable_port/watershed.py`` (ported from Cellable's
-    ``apply_3d_watershed``) for the segmentation itself.
+    ``cellable_port/watershed.py`` for the segmentation itself.
 
     **Reads the working copy, not the official label.** Seeds/watershed exists
     to refine an instance the annotator is actively painting, so it must see
@@ -3133,9 +3123,7 @@ def run_watershed_task(
 
     # Lifecycle: the target label's shape just changed (mark EDITED); every
     # newly-split-off id is registered PROPOSED/WATERSHED with **no**
-    # snapshot — matches Cellable's own
-    # ``_registerAutoSegmentationLabels(..., store_snapshots=False)`` call
-    # for watershed output (a multi-region split isn't a single easily
+    # snapshot (a multi-region split isn't a single easily
     # revertible "before" state the way one AI-mask commit is).
     from .cellable_port.label_state import LabelOrigin
 
@@ -3154,7 +3142,7 @@ def run_split_components_task(
     roi_only: bool = False,
 ) -> dict:
     """Split ``target_label`` into 3D connected components on the working
-    label copy — Cellable's ``split_label`` port. Same staging rule as
+    label copy. Same staging rule as
     :func:`run_watershed_task`: reads/writes the working copy only.
     """
     import numpy as np
@@ -3822,7 +3810,7 @@ def plan_task_interpolation(
     overwrite_mode: str | None = None, roi_only: bool = False,
     first_labels=None, last_labels=None,
 ) -> dict:
-    """Preview half of WK-style interpolation (ADR-006 Conflict A).
+    """Preview half of interpolation (ADR-006 Conflict A).
 
     Computes what would be written between two slices the annotator has
     already painted the active label on, and **writes nothing** — the
@@ -4208,7 +4196,7 @@ def get_labels_summary(volume, *, readonly: bool = False) -> dict:
     an externally-produced official label, never explicitly touched by any
     of this app's own AI/watershed/tracking/paint paths) defaults to
     ``state="proposed", origin="unknown"`` — the same safe "needs a human
-    look" default Cellable's own ``LabelMetadata`` falls back to.
+    look" default.
 
     Ensures the working copy exists (seeded from the official label on first
     touch) before scanning — same as :func:`get_label_slice_ids`. Otherwise
@@ -4431,16 +4419,13 @@ def get_region_label_ids(volume, *, readonly: bool = False) -> dict:
 
 @_serialized_volume_write
 def set_label_lifecycle_action(volume, label_id: int, action: str) -> dict:
-    """Apply a Cellable-parity lifecycle action to one label: ``"verify"``,
+    """Apply a lifecycle action to one label: ``"verify"``,
     ``"unverify"`` (VERIFIED -> EDITED), ``"revert"`` (restore the single-
     slice snapshot recorded when an AI-mask-created label was proposed —
     only available when ``can_revert`` was true in :func:`get_labels_summary`),
     or ``"reject"`` (delete every voxel of this label from the working copy
-    and drop its metadata). Ported from Cellable's ``verifyLabel``/
-    ``unverifyLabel``/``revertLabelToProposed``/``rejectLabel``
-    (``app.py``) — the confirm-before-destructive-action UI lives in the
-    frontend (per ``progress/history/04-incident-data-safety.md``'s "no
-    casual one-click destructive action" rule), not here.
+    and drop its metadata). The confirm-before-destructive-action UI lives in
+    the frontend, not here.
     """
     import numpy as np
 

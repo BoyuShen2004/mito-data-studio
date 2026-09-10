@@ -1,28 +1,19 @@
-"""Per-label lifecycle state (Proposed / Edited / Verified), ported from
-``cellable/labelme/label_state.py``.
+"""Per-label lifecycle state (Proposed / Edited / Verified).
 
-Cellable's ``LabelState``/``LabelOrigin`` enums and ``LabelMetadataStore``
-are kept close to the original (same three states, same origin vocabulary,
-same "MANUAL starts EDITED, everything automated starts PROPOSED" rule, same
-JSON-sidecar-next-to-the-mask persistence model — ``get_sidecar_path``).
-Adapted for mito's per-slice-streamed backend (Cellable holds the whole
-volume in RAM, so its snapshot is a full-volume boolean mask; mito's
-snapshot is the single (z, RLE) slice the label existed on the moment it was
-proposed — see :func:`LabelMetadataStore.create_proposed`, and
-:func:`revert` for the corresponding restore):
+Ported from Cellable's ``label_state.py``: three states, an origin vocabulary,
+the "MANUAL starts EDITED, everything automated starts PROPOSED" rule, and a
+JSON sidecar persisted beside the mask. Adapted for a per-slice-streamed
+backend: the snapshot is the single (z, RLE) slice the label existed on when it
+was proposed — see :func:`LabelMetadataStore.create_proposed`, and
+:func:`revert` for the corresponding restore.
 
-- Dropped ``LabelOrigin.INTERPOLATION`` (mito has no interpolation feature)
-  and the merge/split parent/child bookkeeping + undo/redo stack (Cellable's
-  in-memory undo already covers those; mito's per-instance state changes are
-  small, explicit, server-round-trip actions, not part of the paint
-  undo/redo stack).
+- There is no interpolation origin and no merge/split parent/child bookkeeping
+  or undo stack: per-instance state changes are small, explicit,
+  server-round-trip actions, not part of the paint undo/redo stack.
 - ``create_proposed`` optionally takes a single-slice snapshot
-  (``snapshot_z``/``snapshot_shape``/``snapshot_rle``) instead of a
-  full-volume one — for watershed-created labels, Cellable itself passes
-  ``store_snapshots=False`` (see ``app.py``'s
-  ``_registerAutoSegmentationLabels`` call for watershed), so mito doesn't
-  need a 3D snapshot format at all: only AI-mask-created labels ever get a
-  snapshot, and those only ever exist on the one slice they were created on.
+  (``snapshot_z``/``snapshot_shape``/``snapshot_rle``). Watershed-created
+  labels are registered without one, so no 3D snapshot format is needed: only
+  AI-mask-created labels get a snapshot, and those exist on a single slice.
 """
 
 from __future__ import annotations
@@ -141,7 +132,7 @@ class LabelMetadata:
 class LabelMetadataStore:
     """In-memory label-id -> :class:`LabelMetadata` map with JSON-sidecar
     persistence. Keys are string label ids (JSON object keys are always
-    strings; kept as strings internally too, matching Cellable)."""
+    strings; kept as strings internally too)."""
 
     VERSION = 1
 
@@ -166,7 +157,7 @@ class LabelMetadataStore:
         meta = self._labels.get(key)
         if meta is not None:
             return meta
-        # Matches Cellable's get_or_create: MANUAL starts EDITED (a human
+        # MANUAL starts EDITED (a human
         # just drew it — already "reviewed" by construction); anything
         # automated starts PROPOSED (needs a human look before it's trusted).
         state = LabelState.EDITED if origin == LabelOrigin.MANUAL else LabelState.PROPOSED

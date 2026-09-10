@@ -66,7 +66,7 @@ def is_owned(path: Path | str) -> bool:
 
     Accepting the logical form matters operationally. Large microscopy trees are
     routinely placed on a second disk and symlinked into position
-    (``data/webknossos -> /bigdisk/webknossos``). Resolving first would put the
+    (``data/volumes -> /bigdisk/volumes``). Resolving first would put the
     real file outside the root and refuse every save — turning a storage layout
     choice into a total annotation outage.
 

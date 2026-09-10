@@ -105,7 +105,7 @@ therefore sized conservatively.
 
 The release lock currently specifies Django 5.1.15, Django REST Framework
 3.17.1, NumPy 2.4.6, SciPy 1.17.1, scikit-image 0.26.0, PyTorch 2.5.1 with CUDA
-12.4 wheels, ONNX Runtime GPU 1.26.0, Zarr 3.1.6, tifffile 2026.3.3, h5py 3.16.0,
+12.4 wheels, Zarr 3.1.6, tifffile 2026.3.3, h5py 3.16.0,
 nibabel 5.3.2, gunicorn 26.0.0, and PostgreSQL through psycopg 3.3.4. The
 frontend declares React 18.3.1, TypeScript 5.5.4, Vite 6.4.3, Three.js 0.170,
 Vitest 4.1.10, and Playwright 1.62.1. Use lock files—not this prose—as the

@@ -90,8 +90,8 @@ export default function SliceViewer({ volumeId, onViewLocation }: { volumeId: nu
   const [regionUrl, setRegionUrl] = useState<string | null>(null);
   const [regionOpacity, setRegionOpacity] = useState(45);
   const [zoom, setZoom] = useState(1);
-  // "window" = classic fit-to-viewport (Cellable's fitWindow); "width" = fill
-  // the horizontal space and let the viewport scroll vertically (fitWidth).
+  // "window" = classic fit-to-viewport; "width" = fill the horizontal
+  // space and let the viewport scroll vertically.
   const [fitMode, setFitMode] = useState<"window" | "width">("window");
   const [rendererRevision, setRendererRevision] = useState(0);
   const chunkRenderer = useRef<ChunkRenderedImageSource | null>(null);

@@ -32,7 +32,6 @@ is not the model's to make. See `_choose_point_mask`.
 
 from __future__ import annotations
 
-from pathlib import Path
 import threading
 
 import numpy as np
@@ -132,7 +131,7 @@ def _fallback_max_plane_fraction() -> float:
 
 
 class Sam2Masks:
-    """`EfficientSam`-shaped adapter over Track's loaded SAM 2 image model."""
+    """Prompted-mask adapter over Track's loaded SAM 2 image model."""
 
     def __init__(self, wrapper, lock=None):
         self._sam = wrapper
@@ -375,8 +374,8 @@ def _is_plausible(mask: np.ndarray, positives, ceiling: float) -> bool:
 
 
 def _cleanup(mask: np.ndarray) -> np.ndarray:
-    """The ~5% small-object cleanup the interactive tools have always applied
-    (Cellable's own policy), so the model swap did not silently change what
+    """The ~5% small-object cleanup the interactive tools have always applied,
+    kept so the model swap did not silently change what
     counts as speckle — now applied to holes on the same terms.
 
     A pinhole is the same artifact as a fleck, seen from the inside, and it

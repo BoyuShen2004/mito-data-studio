@@ -10,7 +10,7 @@ import { labelColor } from "./labelColor";
 const WORLD_SPAN = 100;
 
 /**
- * Many EM volumes (including our webknossos heart OME-TIFF) ship **no**
+ * Many EM volumes (including our heart OME-TIFF sample) ship **no**
  * PhysicalSizeZ/Y/X. The mesh API then falls back to isotropic (1,1,1)
  * voxel spacing. A mito that is ~30 slices deep and ~800 px wide then
  * collapses to a paper-thin pancake after WORLD_SPAN normalisation
@@ -68,9 +68,7 @@ function effectiveVoxelZ(
   return { vz: vz0, vy, vx, boosted: false };
 }
 
-// Cellable-parity 3D labels view — plays the role `VTKSurfaceWidget` plays
-// locally (Qt + VTK marching-cubes iso-surfaces), reimplemented for the
-// browser: the backend meshes each label with marching cubes
+// 3D labels view: the backend meshes each label with marching cubes
 // (`cellable_port/labels_3d.py`) and this renders the resulting triangle
 // surfaces.
 //

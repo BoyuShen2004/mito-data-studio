@@ -320,9 +320,8 @@ export function encodeRuns(ids: Int32Array | Uint32Array): [number, number][] {
   return runs;
 }
 
-// --- Cellable-ported interactive AI tools (Point/Box/Boundary, Seeds) ------
-// See progress/history/19-cellable-parity-annotator-brief.md +
-// backend/annotation/cellable_port/. Point/Box/Boundary are read-only
+// --- Interactive AI tools (Point/Box/Boundary, Seeds) ---------------------
+// See backend/annotation/cellable_port/. Point/Box/Boundary are read-only
 // "preview a mask" calls (0/1 label-RLE, reusing decodeRuns above) — the
 // caller merges the result into its already-loaded slice and commits
 // through putLabelIds like a brush stroke. Watershed is the one call here
@@ -336,8 +335,7 @@ export interface MaskPrediction {
 
 // `signal` lets the caller drop a superseded predict (rapid clicks / a new
 // box drag before the last one resolved) — see AnnotationCanvas.tsx's
-// sequence-guarded predict handlers (progress/history/23-cellable-parity-
-// ort-and-prompt-ux.md).
+// sequence-guarded predict handlers.
 
 export const predictMaskFromPoints = (
   taskId: number,
@@ -470,7 +468,7 @@ export const resetWorkingLabels = (taskId: number) =>
     confirm: true,
   });
 
-/** Split a label into 3D connected components (Cellable Split Label). */
+/** Split a label into 3D connected components. */
 export const runSplitComponents = (
   taskId: number,
   label: number,
@@ -515,7 +513,7 @@ export const planDeleteLabel = (
   label, axis, pending_slices: pendingSlices,
 });
 
-// --- WEBKNOSSOS-style interpolation (ADR-006) ------------------------------
+// --- Interpolation (ADR-006) ----------------------------------------------
 // Two calls, one endpoint: `preview` plans and returns the intermediate 0/1
 // masks *without writing anything*, `apply` recomputes the same plan server-
 // side and commits it as one undoable operation. That split is what makes
@@ -599,7 +597,6 @@ export interface FloodFillResult {
 }
 
 // --- Labels panel (Filters Options: state/origin/lifecycle) + 3D preview ---
-// Cellable parity — see progress/history/21-cellable-parity-followups.md.
 // LabelState/LabelOrigin mirror backend/annotation/cellable_port/label_state.py.
 
 export type LabelLifecycleState = "proposed" | "edited" | "verified";

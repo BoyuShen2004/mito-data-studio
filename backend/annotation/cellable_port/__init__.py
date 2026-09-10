@@ -1,40 +1,20 @@
-"""Code ported (copy-adapt, not reinvented) from the local Cellable app.
+"""Segmentation and label-state tools behind the Annotate editor.
 
-Cellable lives at ``/projects/weilab/shenb/cellable`` (a sibling PyQt/Labelme
-fork, not part of this repo) — see
-``progress/history/19-cellable-parity-annotator-brief.md`` for why this
-package exists: mito's in-app Annotate editor is meant to have the same
-interactive-AI/segmentation *capabilities* as running Cellable locally, and
-the brief requires porting Cellable's actual algorithms rather than
-re-implementing them from scratch.
+Provenance: several modules were ported from the Cellable desktop annotator;
+each keeps a one-line note naming the function it came from, pending the
+provenance and redistribution audit in
+``documentation/release/RELEASE_CHECKLIST.md``.
 
-Each module below keeps a header comment pointing at the exact Cellable
-source file/function it was ported from, with the Qt/desktop-specific parts
-(background threads, statusbar messages, undo-stack widgets, on-disk
-embedding-directory cache) stripped since this runs inside a stateless
-Django request instead of a single long-lived desktop session:
+- ``ai/`` — prompt handling, image normalisation, and the SAM 2 prompted-mask
+  adapter (``ai/sam2_masks.py``).
+- ``watershed.py`` — 3D marker-based watershed for the Seeds tool.
+- ``split_components.py`` — 3D connected-component split (scipy
+  26-connectivity).
+- ``merge_labels.py`` — merge two labels into the smaller id.
+- ``label_state.py`` — per-label Proposed / Edited / Verified lifecycle.
+- ``labels_3d.py`` — per-label summary and 3D surface meshes for the 3D
+  Labels panel.
 
-- ``ai/`` — ``cellable/labelme/ai/``'s prompt handling and image
-  normalisation. Cellable's own EfficientSAM runtime is *not* ported: the
-  interactive tools run on SAM 2 (``ai/sam2_masks.py``), which measured
-  better on every volume here.
-- ``watershed.py`` — ``cellable/labelme/app.py``'s ``apply_3d_watershed`` /
-  ``_label_bbox_3d`` / ``compute_bbox_3d``
-- ``split_components.py`` — ``cellable/labelme/app.py``'s ``split_label``
-  (3D connected-component split; scipy 26-connectivity instead of cc3d)
-- ``merge_labels.py`` — ``cellable/labelme/app.py``'s ``merge_labels``
-- ``labels_3d.py`` — new glue (not a direct port): per-label bbox/voxel
-  summary and a downsampled 3D preview grid, playing the role Cellable's
-  ``VTKSurfaceWidget`` plays locally, adapted for a browser (three.js
-  instanced voxels instead of a VTK marching-cubes surface — see that
-  module's docstring for why).
-
-Not ported here: ``cellable/labelme/utils/compute_points_from_mask.py``.
-That utility exists in Cellable to re-derive a prompt point for the *next*
-slice during ``predictNextNSlices`` (multi-slice AI-mask propagation). mito
-already has a separate multi-slice propagation path — fork-aware SAM2
-tracking (``annotation/tracking/``) — so the interactive Point/Box/Boundary
-tools ported here are deliberately single-slice only; porting a point-
-re-derivation helper with no call site would be dead code. If per-slice
-AI-mask propagation is wanted later, port it then.
+Point / Box / Boundary are single-slice tools; multi-slice propagation is SAM 2
+Track (``annotation/tracking/``).
 """

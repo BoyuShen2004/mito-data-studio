@@ -12,8 +12,7 @@ class TeamRole(models.TextChoices):
     """A user's standing *within one team* (Phase 1).
 
     Orthogonal to :class:`UserRole`, which is org-wide. A person may be a
-    plain annotator org-wide yet manage one team's queue, which is exactly the
-    distinction WEBKNOSSOS draws between "user" and "team manager".
+    plain annotator org-wide yet manage one team's queue.
     """
 
     MEMBER = "member", "Member"

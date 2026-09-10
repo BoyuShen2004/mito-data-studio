@@ -1,7 +1,7 @@
 """3D marker-based watershed for the Seeds tool.
 
-Ported from ``cellable/labelme/app.py``: ``apply_3d_watershed`` +
-``_label_bbox_3d`` + ``compute_bbox_3d``. This is the pure numpy/scipy/
+Ported from Cellable's ``apply_3d_watershed`` + ``_label_bbox_3d`` +
+``compute_bbox_3d``. This is the pure numpy/scipy/
 skimage segmentation core — bbox-crop around the target label (so a whole
 gigabyte-scale label volume is never processed at once), seed a
 ``skimage.segmentation.watershed`` on the cropped region's distance

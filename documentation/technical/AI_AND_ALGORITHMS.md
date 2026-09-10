@@ -27,8 +27,16 @@ The application:
 
 Encoder features are cached twice: an in-process LRU per worker, and a shared
 float16 on-disk cache so a worker that has not seen a plane loads it instead of
-re-encoding. The model requires CUDA; where it is unavailable the tools report
+re-encoding. The model runs on CUDA when a GPU is available and on the CPU
+(slowly) otherwise; if SAM 2 or its weights cannot load, the tools report
 themselves unavailable rather than substituting a weaker model.
+
+For a point prompt, SAM 2's candidate masks are first restricted to components
+that contain a positive click, then chosen by predicted IoU under a
+plane-fraction limit (`MITO_AI_MASK_MAX_PLANE_FRACTION`), a relaxed limit
+(`MITO_AI_MASK_FALLBACK_MAX_PLANE_FRACTION`), and finally the smallest anchored
+candidate under a hard cap. The browser's hover tip is display chrome and is
+never sent as a prompt.
 
 Until 2026-09-09 these prompts ran on a vendored EfficientSAM-S ONNX model.
 It was replaced because on volumes whose mitochondria are large and mutually

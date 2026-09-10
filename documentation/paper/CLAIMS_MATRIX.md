@@ -11,7 +11,7 @@ and tests; it does not automatically mean scientifically validated.
 | TIFF, HDF5, and NIfTI registration is supported | Registration extensions, format adapters, parity tests; optional packages required | May be described with stated dimensionality/metadata limits |
 | Zarr v3 pyramids are bounded, additive, and checksum validated | Pyramid builder, validation code, tests | May be described as an implementation method |
 | Pyramids are OME-NGFF or compatible with Neuroglancer/Fileglancer | No NGFF multiscales contract or viewer validation | Must not be claimed |
-| EfficientSAM and SAM2 are integrated as human-reviewed assistive tools | Vendored assets, inference adapters, UI/API tests | May be described as implemented integration |
+| SAM 2 is integrated as a human-reviewed assistive tool for prompted masks (Point, Box, Boundary) and axial Track | Vendored checkpoint, inference adapters, UI/API tests | May be described as implemented integration |
 | The models are accurate for mitochondrial EM segmentation | No frozen study dataset/reference-standard analysis in this repository | Requires an accuracy experiment |
 | Track reduces annotation time | Timing instrumentation exists, but no controlled comparative study is archived | Requires a prespecified usability/productivity study |
 | Track batch throughput is improved | Timing logs and a contiguous slab optimization exist | Requires matched before/after benchmarks on frozen data/hardware |

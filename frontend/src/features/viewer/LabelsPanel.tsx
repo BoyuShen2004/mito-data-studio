@@ -4,14 +4,9 @@ import { labelColorCss } from "./labelColor";
 import { displayLayerRange } from "./layerIndex";
 import { useVirtualRows } from "./useVirtualRows";
 
-// Cellable-parity Labels panel — mirrors the "Filters Options" surface in
-// cellable/labelme/app.py (~line 990: listFilterCombo / hideVerifiedCheckbox
-// / solo+show-all buttons / sort buttons / verify+unverify buttons /
-// labelStateStatsLabel), not just a thin id-filter box. Per
-// progress/history/21-cellable-parity-followups.md: this replaced a v1
-// version that only had search+solo+hide+delete — this round adds the
-// state filter, hide-verified, sort, and lifecycle actions Cellable's user
-// actually relies on.
+// Labels panel — the "Filters Options" surface: state filter, hide-verified,
+// solo / show-all, sort, per-state counts, and verify / unverify lifecycle
+// actions, not just a thin id-filter box.
 export type LabelsScope = "slice" | "all";
 type ShowFilter = "all" | "proposed" | "edited" | "verified" | "not_verified";
 type SortMode = "id_asc" | "id_desc" | "size_asc" | "size_desc" | "state";

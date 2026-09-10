@@ -1,6 +1,6 @@
 """Deep links (Phase 9, P1).
 
-Doc 19: *"Deep links (xyz, label, hard-case) — WK sharing + mito HardCase"*.
+Deep links by coordinate, label, and hard case.
 Gap matrix row 28 records mito as having only a "Hard-case token" against a
 target of "Coord+state URLs", verdict **"Generalize"** — which is exactly what
 this adds. The existing hard-case token mechanism is untouched.

@@ -100,7 +100,6 @@ class AnnotatorProfile(models.Model):
 # --- Teams and access audit -------------------------------------------------
 # Additive by design (expand-contract): nothing above is modified or dropped,
 # and every read path stays behind `settings.FEATURE_TEAMS` until backfilled.
-# See docs/webknossos-transformation/16-target-domain-model.md.
 
 
 class Team(models.Model):
@@ -118,7 +117,7 @@ class Team(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     # Every organisation gets one default team so a user always has somewhere
-    # to belong; mirrors WEBKNOSSOS's per-organisation default team.
+    # to belong.
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

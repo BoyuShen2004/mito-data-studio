@@ -1,14 +1,13 @@
 """3D connected-component split for the Split 3D tool.
 
-Ported from ``cellable/labelme/app.py:split_label``: crop to the target
+Ported from Cellable's ``split_label``: crop to the target
 label's bbox, run 26-connected component labeling on the binary ROI, drop
 components smaller than ``SIZE_THRESHOLD`` voxels (those voxels are cleared),
 keep the largest remaining component as the original id, and assign new ids
 to every other kept component.
 
-Uses ``scipy.ndimage.label`` with a full 3x3x3 structuring element (same
-26-connectivity as Cellable's ``cc3d.connected_components(..., connectivity=26)``)
-so we stay on the same scipy stack already required by the Seeds watershed
+Uses ``scipy.ndimage.label`` with a full 3x3x3 structuring element
+(26-connectivity) so we stay on the same scipy stack already required by the Seeds watershed
 path — no extra ``cc3d`` dependency.
 """
 
@@ -52,7 +51,7 @@ def run_split_components_3d(
     if target_voxel_count == 0:
         raise SplitComponentsError(f"Label {target_label} not found in the volume.")
 
-    # 26-connectivity — matches Cellable's cc3d connectivity=26.
+    # 26-connectivity.
     structure = np.ones((3, 3, 3), dtype=np.int8)
     cc_map, num_components = ndi.label(target_roi, structure=structure)
 
@@ -66,7 +65,7 @@ def run_split_components_3d(
 
     num_kept = int(keep_components.size)
     if num_kept == 0:
-        # Cellable clears the whole target when nothing survives the size filter.
+        # Nothing survives the size filter: clear the whole target.
         mask_roi[target_roi] = 0
         return {
             "target_label": int(target_label),

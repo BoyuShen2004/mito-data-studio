@@ -1,4 +1,4 @@
-"""Read-only preflight for the integrated WEBKNOSSOS upgrade profile."""
+"""Read-only preflight for ``MITO_UPGRADE_PROFILE=webknossos``."""
 
 from __future__ import annotations
 

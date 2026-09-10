@@ -42,10 +42,6 @@ if [ "$gpu_count" -ge 1 ]; then
     rec_workers=2
   fi
   rec_sam2_device=0
-  rec_ai_device=0
-  if [ "$gpu_count" -ge 2 ]; then
-    rec_ai_device=1
-  fi
   rec_deps="ai-gpu"
 else
   rec_workers=$(( cores * 2 + 1 ))
@@ -53,7 +49,6 @@ else
     rec_workers=8
   fi
   rec_sam2_device=0
-  rec_ai_device=""
   if [ "$mem_gb" -ge 16 ]; then
     rec_deps="ai-cpu"
   else
@@ -101,9 +96,6 @@ declare -A REC=(
   [OMP_NUM_THREADS]="$rec_omp"
   [MITO_DEPS]="$rec_deps"
 )
-if [ -n "$rec_ai_device" ]; then
-  REC[MITO_AI_CUDA_DEVICE]="$rec_ai_device"
-fi
 
 case "$mode" in
   --export)
@@ -123,7 +115,7 @@ case "$mode" in
       exit 1
     fi
     touch "$target_file"
-    for key in GUNICORN_WORKERS GUNICORN_THREADS MITO_SAM2_CUDA_DEVICE MITO_AI_CUDA_DEVICE \
+    for key in GUNICORN_WORKERS GUNICORN_THREADS MITO_SAM2_CUDA_DEVICE \
       MITO_TRACK_PLAN_MAX_VOXELS MITO_SAM2_XY_PAD MITO_SAM2_XY_MIN \
       MITO_SAM2_XY_MAX OMP_NUM_THREADS MITO_DEPS MITO_HARDWARE_AUTO_TUNE; do
       value="${REC[$key]:-}"
@@ -148,7 +140,6 @@ Recommended settings (only applied when MITO_HARDWARE_AUTO_TUNE=1 and unset)
   GUNICORN_WORKERS=${rec_workers}
   GUNICORN_THREADS=${rec_threads}
   MITO_SAM2_CUDA_DEVICE=${rec_sam2_device}
-$([ -n "$rec_ai_device" ] && echo "  MITO_AI_CUDA_DEVICE=${rec_ai_device}")
   MITO_TRACK_PLAN_MAX_VOXELS=${rec_track_voxels}
   MITO_SAM2_XY_PAD=${rec_xy_pad}
   MITO_SAM2_XY_MIN=${rec_xy_min}

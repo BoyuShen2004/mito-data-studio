@@ -4,7 +4,7 @@ Everything that *changes* an access decision is gated on
 ``settings.FEATURE_TEAMS``. With the flag off these predicates still work and
 are still tested, but the callers in ``annotation.services`` fall through to
 the legacy rules — so the schema can land and be backfilled well before any
-behaviour moves. See ``docs/webknossos-transformation/16-target-domain-model.md``.
+behaviour moves.
 
 Role vocabulary, deliberately kept distinct:
 

@@ -76,11 +76,18 @@ such as progress and elapsed time are likewise recomputed rather than cached.
 
 ## Interactive segmentation
 
-Point-, box-, and boundary-prompted masks were generated with the EfficientSAM-S
-ONNX encoder/decoder. Inference used a prompt-centered ROI and cached image
-embeddings. CUDA execution was requested when configured, with an observable
-CPU fallback. Predictions were returned as pending run-length encoded masks for
-human inspection and explicit saving.
+Point-, box-, and boundary-prompted masks were generated with the SAM 2.1 Hiera
+Large image predictor, built on the same loaded weights used for axial
+propagation. Inference used a prompt-centered ROI; planes with sides between
+128 and 1024 px were upscaled to 1024 px before encoding and the mask scaled
+back. Encoder features were cached in memory per worker and in a shared float16
+on-disk cache. For point prompts, candidate masks were restricted to components
+containing a positive click and selected by predicted IoU under a plane-fraction
+limit, with a relaxed limit and then the smallest anchored candidate under a
+hard cap as fallbacks. Execution used CUDA when available and the CPU otherwise;
+when the model could not be loaded, the tools reported themselves unavailable
+rather than substituting another model. Predictions were returned as pending
+run-length encoded masks for human inspection and explicit saving.
 
 ## Axial propagation
 

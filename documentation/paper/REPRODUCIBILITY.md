@@ -72,8 +72,6 @@ time from warm inference.
 
 ## Model references
 
-- EfficientSAM: Xiong et al., arXiv:2312.00863,
-  <https://arxiv.org/abs/2312.00863>.
 - SAM 2: Ravi et al., arXiv:2408.00714,
   <https://arxiv.org/abs/2408.00714>.
 

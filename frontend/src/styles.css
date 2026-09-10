@@ -2259,7 +2259,7 @@ button.dev-reset-btn:hover:not(:disabled) {
   font-size: 0.7rem;
   pointer-events: none;
 }
-/* Cellable's two side docks (3D labels view + Labels list) — previously a
+/* The two side docks (3D labels view + Labels list) — previously a
    nested `.right-column` flex column; now two independent grid areas
    ("dock" and "labels") of `.canvas-main-row` directly (#31), since the 3D
    panel needs to be able to become the *large center* area when swapped —
@@ -2440,11 +2440,10 @@ button.dev-reset-btn:hover:not(:disabled) {
   padding: 0.18rem 0.42rem;
   font-size: 0.69rem;
 }
-/* Cellable's horizontal tool strip: mode-select row + a second, thinner
+/* Horizontal tool strip: mode-select row + a second, thinner
    row of controls contextual to whichever tool is active (brush size, AI
    commit/clear, watershed target label, ...). Both fixed-height,
-   single-line (nowrap + horizontal scroll instead of wrap) — per
-   progress/history/21-cellable-parity-followups.md, letting these rows
+   single-line (nowrap + horizontal scroll instead of wrap) — letting these rows
    wrap to a second line when a tool's contextual controls run long was
    exactly what made the canvas viewport change size when switching tools;
    nowrap+scroll keeps the row height constant no matter which tool (or how
@@ -2488,7 +2487,7 @@ button.dev-reset-btn:hover:not(:disabled) {
 .tool-strip .spacer {
   flex: 1;
 }
-/* Cellable-parity Axial / Coronal / Sagittal — View + Annotate. */
+/* Axial / Coronal / Sagittal — View + Annotate. */
 .axis-select {
   display: inline-flex;
   align-items: center;
@@ -2748,10 +2747,9 @@ button.dev-reset-btn:hover:not(:disabled) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.15rem;
 }
-/* Labels panel "Filters Options" — Cellable's filters_popup_widget
-   (Show/Hide Verified/Solo/Show All/Sort/Verify/Unverify), collapsed
-   behind a toggle button instead of Cellable's QMenu popup so it never
-   overlaps the canvas. */
+/* Labels panel "Filters Options" (Show/Hide Verified/Solo/Show All/Sort/
+   Verify/Unverify), collapsed behind a toggle button rather than a popup so
+   it never overlaps the canvas. */
 .labels-filters-header {
   margin-top: 0.35rem;
   align-items: center;

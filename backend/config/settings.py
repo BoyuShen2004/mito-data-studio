@@ -204,8 +204,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 #
 # PostgreSQL is the primary development and concurrency-testing database:
 # SQLite has no row-level locking (`select_for_update()` is a documented no-op
-# there), which makes the assignment-concurrency tests meaningless. See
-# docs/webknossos-transformation/benchmarks/BASELINE.md §5.
+# there), which makes the assignment-concurrency tests meaningless.
 #
 # Credentials come from the environment only — never hard-coded, never defaulted
 # to a production value.

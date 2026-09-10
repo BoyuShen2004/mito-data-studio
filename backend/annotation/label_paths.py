@@ -252,8 +252,7 @@ def approved_label_rel_path(volume, submission) -> str:
 def working_label_metadata_rel_path(volume) -> str:
     """Path (relative to ``MITO_DATA_ROOT``) of the JSON sidecar holding
     per-label lifecycle state (Proposed/Edited/Verified) for this volume's
-    working label copy — mirrors Cellable's ``LabelMetadataStore.
-    sidecar_path`` (``<mask>_metadata.json``) but kept in a ``metadata/``
+    working label copy (``<mask>_metadata.json``), kept in a ``metadata/``
     subfolder *beside* the mask, so the dataset folder isn't cluttered with
     a sidecar next to every mask. See
     ``annotation/cellable_port/label_state.py``."""
@@ -270,7 +269,7 @@ def volume_embeddings_dir_rel_path(volume) -> str:
     """Path (relative to ``MITO_DATA_ROOT``) of the ``embeddings/`` folder
     for this volume's dataset — the SAM embedding cache lives under a
     ``<variant>/`` subfolder here, beside the volume's mask, not in a global
-    ``data/embeddings/`` silo. See ``annotation/cellable_port/ai/embed_cache.py``.
+    ``data/embeddings/`` silo. See ``annotation/cellable_port/ai/sam2_feature_cache.py``.
     """
     dataset_dir = dataset_folder_rel_path(volume.project, volume.dataset)
     return f"{dataset_dir}/embeddings"
