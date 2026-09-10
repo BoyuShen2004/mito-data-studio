@@ -191,6 +191,30 @@ registered sources as a deployment step.
   authorization and an agreed test task; routine deployment smoke checks here
   are read-only.
 
+## Orphaned generated files
+
+Deleting a project, dataset, or volume removes the files the app generated for
+it once the delete commits (`backend/projects/services.py`,
+`_plan_file_cleanup`). Deletes made while an older release was running left
+those files behind. To clear them once, as the service user:
+
+1. **List candidates, read-only.** A candidate is a project or dataset folder
+   under `MITO_DATA_ROOT` whose row no longer exists, or a
+   `submissions/task_<pk>/` directory whose task no longer exists. Derive the
+   live folder names from the rows with `annotation.label_paths`
+   (`project_folder_rel_path`, `dataset_folder_rel_path`); never guess them
+   from titles.
+2. **Rule out references.** A candidate is removable only if it is a real
+   directory (not a symlink) inside the data root, and no surviving volume's
+   `image_path`, `label_path`, `region_mask_path`, or uploaded file resolves
+   inside it.
+3. **Leave files under live rows alone.** A stale file inside a dataset or
+   volume that still exists is not an orphan of a deleted row — for example a
+   `<stem>_mask.tif` draft beside a volume now named `<stem>_v<id>_mask.tif`.
+   It is removed when that volume is deleted through the app.
+4. **Remove only the reviewed paths**, by exact path, and record each path and
+   its size. Never remove registered sources or anything outside the data root.
+
 ## Backup and rollback
 
 Back up both the PostgreSQL database and the production data root before a

@@ -11,7 +11,9 @@ follows semantic versioning for tagged releases.
   The rows went, but the working mask, lifecycle sidecar, pyramids, SAM feature
   caches, Track preview snapshot, approved labels and submission uploads stayed
   — on production, 1 GiB under a project whose datasets were all gone. They are
-  now removed once the delete commits, along with folders left empty. Never
+  now removed once the delete commits, along with folders left empty. A
+  volume renamed to `<stem>_v<id>_mask.tif` also takes its earlier un-suffixed
+  draft, unless a surviving volume in that folder still uses the name. Never
   removed: a registered image, label or region mask (even one stored inside the
   data root), anything a surviving volume still references, anything outside
   the data root, and symlinks. A failure to remove a file is logged; the delete

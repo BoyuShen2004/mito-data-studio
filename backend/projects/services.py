@@ -358,8 +358,31 @@ def _registered_paths(volume, *, uploads: bool) -> list[str]:
     return [value for value in values if value]
 
 
-def _generated_paths(volume) -> tuple[list[str], list[str]]:
-    """Root-relative ``(files, directories)`` the app generated for ``volume``."""
+def _restem(rel: str, current: str, target: str) -> str:
+    """``rel`` with its file name's leading ``current`` stem swapped for ``target``."""
+    head, _, name = rel.rpartition("/")
+    if current == target or not name.startswith(current):
+        return rel
+    return f"{head}/{target}{name[len(current):]}"
+
+
+def _legacy_stem(volume) -> str | None:
+    """The un-suffixed stem a ``_v<id>`` volume's files may still carry.
+
+    A volume renamed to ``<stem>_v<id>_mask.tif`` (see
+    ``label_paths.working_mask_basename``) can leave its earlier draft behind
+    as ``<stem>_mask.tif`` — production holds a 2 GiB one for a live volume.
+    """
+    from annotation.label_paths import working_mask_stem
+
+    stem = working_mask_stem(volume)
+    suffix = f"_v{volume.pk}_mask"
+    return stem[: -len(suffix)] + "_mask" if stem.endswith(suffix) else None
+
+
+def _generated_paths(volume, stems) -> tuple[list[str], list[str]]:
+    """Root-relative ``(files, directories)`` the app generated for ``volume``
+    under each of ``stems`` (its current stem, plus any legacy one)."""
     from annotation.label_paths import (
         dataset_folder_rel_path,
         volume_embeddings_dir_rel_path,
@@ -372,40 +395,45 @@ def _generated_paths(volume) -> tuple[list[str], list[str]]:
     from volumes.pyramid.store import LAYER_IMAGE, LAYER_REGION, pyramid_rel_path
 
     dataset_dir = dataset_folder_rel_path(volume.project, volume.dataset)
-    stem = working_mask_stem(volume)
+    current = working_mask_stem(volume)
     working = working_label_rel_path(volume)
     snapshot = _tracking_preview_snapshot_rel(volume)
     metadata = working_label_metadata_rel_path(volume)
-    files = [
+    named_files = [
         working, f"{working}.write.lock",
         snapshot, f"{snapshot}.write.lock",
         metadata, f"{metadata}.bak",
     ]
+    named_dirs = []
+    for layer in (LAYER_IMAGE, LAYER_REGION):
+        rel = pyramid_rel_path(volume, layer)
+        named_dirs += [rel, f"{rel}.building", f"{rel}.previous"]
+
+    files: list[str] = []
     dirs = [
         f"submissions/task_{pk}"
         for pk in AnnotationTask.objects.filter(volume=volume).values_list("pk", flat=True)
     ]
-    for layer in (LAYER_IMAGE, LAYER_REGION):
-        rel = pyramid_rel_path(volume, layer)
-        dirs += [rel, f"{rel}.building", f"{rel}.previous"]
-
     approved = _absolute(f"{dataset_dir}/approved")
-    if approved.is_dir():
-        files += [
-            f"{dataset_dir}/approved/{path.name}"
-            for path in approved.glob(f"{glob.escape(stem)}_approved_s*")
-        ]
     embeddings_dir = volume_embeddings_dir_rel_path(volume)
     embeddings = _absolute(embeddings_dir)
-    cache_name = re.compile(_FEATURE_CACHE_NAME.format(stem=re.escape(stem)))
-    if embeddings.is_dir():
-        for variant in embeddings.iterdir():
-            if variant.is_dir() and not variant.is_symlink():
-                files += [
-                    f"{embeddings_dir}/{variant.name}/{path.name}"
-                    for path in variant.iterdir()
-                    if cache_name.match(path.name)
-                ]
+    for stem in stems:
+        files += [_restem(path, current, stem) for path in named_files]
+        dirs += [_restem(path, current, stem) for path in named_dirs]
+        if approved.is_dir():
+            files += [
+                f"{dataset_dir}/approved/{path.name}"
+                for path in approved.glob(f"{glob.escape(stem)}_approved_s*")
+            ]
+        cache_name = re.compile(_FEATURE_CACHE_NAME.format(stem=re.escape(stem)))
+        if embeddings.is_dir():
+            for variant in embeddings.iterdir():
+                if variant.is_dir() and not variant.is_symlink():
+                    files += [
+                        f"{embeddings_dir}/{variant.name}/{path.name}"
+                        for path in variant.iterdir()
+                        if cache_name.match(path.name)
+                    ]
     return files, dirs
 
 
@@ -419,7 +447,7 @@ def _plan_file_cleanup(volumes, *, datasets=(), project=None) -> dict | None:
     from annotation.label_paths import (
         dataset_folder_rel_path,
         project_folder_rel_path,
-        working_label_rel_path,
+        working_mask_stem,
     )
     from volumes.models import Volume
 
@@ -437,23 +465,29 @@ def _plan_file_cleanup(volumes, *, datasets=(), project=None) -> dict | None:
         }
         touched_dirs = {dataset_folder_rel_path(v.project, v.dataset) for v in doomed}
         touched_dirs.update(dataset_dirs)
-        # Identically named projects/datasets share a folder: never remove a
-        # mask a surviving volume resolves to.
+        # Identically named projects/datasets share a folder, and a ``_v<id>``
+        # volume's legacy stem can be a sibling's current one: never remove
+        # files under a stem a surviving volume still uses in that folder.
         shared = {
-            working_label_rel_path(volume)
+            (dataset_folder_rel_path(volume.project, volume.dataset), working_mask_stem(volume))
             for volume in surviving
             if dataset_folder_rel_path(volume.project, volume.dataset) in touched_dirs
         }
         files: list[str] = []
         dirs: list[str] = []
         for volume in doomed:
-            if working_label_rel_path(volume) in shared:
+            dataset_dir = dataset_folder_rel_path(volume.project, volume.dataset)
+            stems = [working_mask_stem(volume)]
+            if (dataset_dir, stems[0]) in shared:
                 logger.warning(
                     "Keeping generated files of volume %s: a surviving volume "
                     "resolves to the same working mask.", volume.pk,
                 )
                 continue
-            own_files, own_dirs = _generated_paths(volume)
+            legacy = _legacy_stem(volume)
+            if legacy and (dataset_dir, legacy) not in shared:
+                stems.append(legacy)
+            own_files, own_dirs = _generated_paths(volume, stems)
             approved = {_absolute(path) for path in own_files if "/approved/" in path}
             # A deleted volume's registered sources stay; only its own approved
             # label — generated by this app — may go with it.
