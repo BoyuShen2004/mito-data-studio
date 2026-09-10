@@ -213,6 +213,21 @@ describe("Region only and edits outside the region", () => {
     });
     harness.confirm.mockReset().mockReturnValue(true);
     harness.overlayPixels = null;
+    // Display-resolution blits skip canvases with no layout. Give jsdom the
+    // same plane-sized box these wiring tests used implicitly before blitting.
+    vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue(
+      {
+        left: 0,
+        top: 0,
+        width: W,
+        height: H,
+        right: W,
+        bottom: H,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect,
+    );
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (
       this: HTMLCanvasElement,
       ...args: Parameters<HTMLCanvasElement["getContext"]>

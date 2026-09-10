@@ -446,6 +446,21 @@ MITO_AI_ROI_POINT_PAD = int(os.getenv("MITO_AI_ROI_POINT_PAD", "256"))
 MITO_AI_ROI_BOX_PAD = int(os.getenv("MITO_AI_ROI_BOX_PAD", "64"))
 MITO_AI_ROI_SNAP = int(os.getenv("MITO_AI_ROI_SNAP", "64"))
 
+# Point Mask / Boundary first prefer organelle-shaped candidates below the
+# strict fraction. If all three SAM 2 candidates fail that gate, a second rung
+# accepts a click-anchored, thick-enough candidate below the relaxed fraction;
+# 0.25 recovers sampled podo boundary misses while rejecting its full-plane
+# shreds. The relaxed rung is capped at a hard 0.50 in sam2_masks.py even if
+# its setting is higher. Both defaults apply across volumes; these are
+# deployment tuning knobs, not per-volume hacks. Box Mask uses SAM 2's box
+# answer directly and is unchanged.
+MITO_AI_MASK_MAX_PLANE_FRACTION = float(
+    os.getenv("MITO_AI_MASK_MAX_PLANE_FRACTION", "0.15")
+)
+MITO_AI_MASK_FALLBACK_MAX_PLANE_FRACTION = float(
+    os.getenv("MITO_AI_MASK_FALLBACK_MAX_PLANE_FRACTION", "0.25")
+)
+
 MITO_SAM2_XY_PAD = int(os.getenv("MITO_SAM2_XY_PAD", "256"))
 MITO_SAM2_XY_MAX = int(os.getenv("MITO_SAM2_XY_MAX", "2048"))
 MITO_SAM2_XY_MIN = int(os.getenv("MITO_SAM2_XY_MIN", "512"))

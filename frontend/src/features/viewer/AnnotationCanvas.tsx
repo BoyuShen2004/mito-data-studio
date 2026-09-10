@@ -99,9 +99,10 @@ import {
 import {
   POINT_RETICLE_ARM_SCREEN_PX,
   POINT_RETICLE_RADIUS_SCREEN_PX,
+  blitPlaneImageData,
   cursorLayerBackingSize,
+  fillMaskCssSpace,
   imageToCssScale,
-  screenPxToImagePx,
 } from "./cursorChrome";
 import {
   applyMergeCanvasClick,
@@ -159,13 +160,12 @@ import {
 const LIVE_PREDICT_MIN_INTERVAL_MS = 50;
 
 const LABEL_ALPHA = 150;
-// Proposed-mask look, matching Cellable's AI preview (canvas.py paintEvent):
-// green translucent fill (their `select_fill_color` + a temporary
-// `label_opacity=0.5`) plus an opaque white contour (`select_line_color`,
-// traced by `strokeMaskContour` above) — not the flat amber blob this used
-// to be (progress/history/25-cellable-proposed-mask-fluency.md item A).
-const AI_PREVIEW_FILL_ALPHA = 130; // ~0.5 of 255, same intent as Cellable's label_opacity
-const AI_PREVIEW_CONTOUR_COLOR = "#ffffff";
+// Proposed-mask look: opaque green fill, drawn on the *display-resolution*
+// cursor layer (see `fillMaskCssSpace`). Painting it into the 256-wide label
+// overlay and letting CSS `pixelated` magnify it is what turned solid SAM2
+ // masks into horizontal hatching on small fitted planes.
+const AI_PREVIEW_FILL_RGB = [0, 255, 0] as const;
+const AI_PREVIEW_FILL_ALPHA = 255;
 /** Tool -> menu label, so `CONTEXT_MENU_LAYOUT` can stay a pure ordering. */
 const CONTEXT_MENU_LABELS: Record<PaintTool, string> = Object.fromEntries(
   CONTEXT_MENU_TOOLS,
@@ -514,18 +514,21 @@ interface InterpPreview {
  * Guards on axis, buffer size and index so a preview planned along one axis —
  * or against a differently-shaped plane — can never be painted onto an
  * unrelated slice while the user scrolls or switches axes. Returns the same
- * `{mask}` shape `AiPreview` has, so the two proposal sources are
- * interchangeable at the render sites. */
+ * `{mask, shape}` pair `AiPreview` has, so the two proposal sources are
+ * interchangeable at the render sites — and so the renderer scales each one
+ * by the mask's own height and width rather than by whatever plane shape the
+ * canvas currently believes in. */
 function interpPreviewMaskFor(
   preview: InterpPreview | null,
   axis: Axis,
   index: number | null,
   size: number,
-): { mask: Uint8Array } | null {
+): { mask: Uint8Array; shape: [number, number] } | null {
   if (!preview || index == null || preview.axis !== axis) return null;
+  const [h, w] = preview.shape;
   const mask = preview.slices.get(index);
-  if (!mask || mask.length !== size) return null;
-  return { mask };
+  if (!mask || mask.length !== size || mask.length !== h * w) return null;
+  return { mask, shape: preview.shape };
 }
 
 interface BoxDrag {
@@ -971,6 +974,8 @@ export default function AnnotationCanvas({
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
+  /** Native-resolution scratch canvas for committed labels. */
+  const labelPlaneCanvasRef = useRef<HTMLCanvasElement | null>(null);
   /** Hover cursors only — never CSS-masked, so Flood fill / brush rings stay
    * visible over the full image even when Region-only masks the label overlay. */
   const cursorLayerRef = useRef<HTMLCanvasElement | null>(null);
@@ -1282,12 +1287,7 @@ export default function AnnotationCanvas({
   const verifiedIdsRef = useRef<ReadonlySet<number>>(verifiedIds);
   verifiedIdsRef.current = verifiedIds;
 
-  // Heavy pass: recompute the per-pixel label/preview fill (labels + the
-  // green AI-preview fill) and blit it. Only needed when that fill actually
-  // changed (ids, preview mask, visibility, active id, ...) — reuses the
-  // same ImageData/backing buffer across calls (cuts GC churn to zero for
-  // the common case of painting on a slice whose dimensions haven't
-  // changed since the last frame).
+  // Heavy pass: recompute committed labels; preview/chrome are separate.
   const computeBaseImage = useCallback(() => {
     const canvas = overlayRef.current;
     const painted = idsRef.current;
@@ -1307,13 +1307,17 @@ export default function AnnotationCanvas({
         regionOnly: roiOnly,
         overwriteMode: regionOverwriteMode,
       }) ?? painted;
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
+    if (!labelPlaneCanvasRef.current) {
+      labelPlaneCanvasRef.current = document.createElement("canvas");
+    }
+    const plane = labelPlaneCanvasRef.current;
+    if (plane.width !== w) plane.width = w;
+    if (plane.height !== h) plane.height = h;
+    const planeCtx = plane.getContext("2d");
+    if (!planeCtx) return null;
     let image = imageDataRef.current;
     if (!image || image.width !== w || image.height !== h) {
-      image = ctx.createImageData(w, h);
+      image = planeCtx.createImageData(w, h);
       imageDataRef.current = image;
     }
     // Region only, display side: an instance that overlaps the ROI *anywhere in
@@ -1355,33 +1359,9 @@ export default function AnnotationCanvas({
       }
     }
     const regionIds = roiOnly ? regionTouchingIdsRef.current : null;
-    const showAiPreview = AI_PREVIEW_TOOLS.includes(paintTool);
-    const preview =
-      (showAiPreview ? aiPreviewRef.current : null) ??
-      // An interpolation preview is proposed-but-unwritten geometry exactly
-      // like an AI proposal, so it gets the same green fill + white contour
-      // rather than a second visual language for the same idea.
-      (paintTool === "interpolate"
-        ? interpPreviewMaskFor(
-            interpPreviewRef.current,
-            axisRef.current,
-            idsIndexRef.current,
-            ids.length,
-          )
-        : null);
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       const o = i * 4;
-      if (preview && preview.mask[i]) {
-        // Proposed mask = green translucent fill (Cellable's
-        // select_fill_color + preview label_opacity≈0.5); the opaque white
-        // contour is a vector overlay drawn on top, see drawVectorOverlay.
-        image.data[o] = 0;
-        image.data[o + 1] = 255;
-        image.data[o + 2] = 0;
-        image.data[o + 3] = AI_PREVIEW_FILL_ALPHA;
-        continue;
-      }
       const suppressed =
         id <= 0 ||
         (soloId != null ? id !== soloId : hiddenIds.has(id)) ||
@@ -1395,13 +1375,13 @@ export default function AnnotationCanvas({
       image.data[o] = r;
       image.data[o + 1] = g;
       image.data[o + 2] = b;
-      // Global committed-label opacity (#29 item U5, Cellable's
-      // `label_opacity_slider`) — scales the committed alpha only; the AI
-      // proposal fill above is intentionally untouched by it.
+      // Global committed-label opacity (#29 item U5).
       image.data[o + 3] = Math.round((id === activeId ? 220 : LABEL_ALPHA) * (labelOpacity / 100));
     }
-    ctx.putImageData(image, 0, 0);
-    return { ctx, canvas, w, h };
+    const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+    const blit = blitPlaneImageData(canvas, plane, image, dpr);
+    if (!blit) return null;
+    return { w, h, ...blit };
     // `interpPreviewCount` is not read here — it is the state mirror of
     // `interpPreviewRef`, listed so planning/cancelling a preview repaints.
     // `regionMaskBitsUrl` is the state mirror of `regionMaskBitsRef`, listed
@@ -1412,7 +1392,6 @@ export default function AnnotationCanvas({
     soloId,
     hideVerified,
     verifiedIds,
-    paintTool,
     labelOpacity,
     interpPreviewCount,
     roiOnly,
@@ -1423,126 +1402,7 @@ export default function AnnotationCanvas({
     outsideEditRevision,
   ]);
 
-  // Vector overlays on top of whatever fill is already blitted — proper
-  // alpha compositing (unlike a second putImageData, which would replace
-  // rather than blend). Sized in **screen space**, not image space —
-  // Cellable's `shape.py` draws vertices/pen strokes at a constant
-  // on-screen size regardless of zoom (`point_size≈8`, `PEN_WIDTH≈2`); a
-  // fixed image-space radius would shrink to sub-pixel on a large EM slice
-  // at fit-window. `scale` here is the *actual* rendered-CSS-pixels-per-
-  // image-pixel ratio (folds in both the explicit zoom control *and* the
-  // fit-window/fit-width auto-scaling, which `zoom` alone doesn't capture),
-  // measured fresh every repaint via the canvas's real layout box.
-  //
-  // Deliberately callable on its own (see `renderCursorOverlay` below) so
-  // high-frequency pointer moves (box crosshair, brush/erase size cursor)
-  // never have to pay for `computeBaseImage`'s O(h*w) label recompute —
-  // they just re-blit the cached ImageData and redraw these vectors.
-  const drawVectorOverlay = useCallback(
-    (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, w: number, h: number) => {
-      const screenRect = canvas.getBoundingClientRect();
-      const scale = screenRect.width > 0 ? screenRect.width / w : 1;
-      const toImagePx = (screenPx: number) => screenPxToImagePx(screenPx, scale);
-      const pointRadius = toImagePx(6); // ~12px on-screen diameter — denser on EM
-      const penWidth = Math.max(toImagePx(2), 0.5);
-
-      // Proposed-mask contour: opaque white outline of the AI preview,
-      // Cellable's `select_line_color` (shape.py `_mask_outline_path`).
-      const preview =
-        (AI_PREVIEW_TOOLS.includes(paintTool) ? aiPreviewRef.current : null) ??
-        (paintTool === "interpolate"
-          ? interpPreviewMaskFor(
-              interpPreviewRef.current,
-              axisRef.current,
-              idsIndexRef.current,
-              h * w,
-            )
-          : null);
-      if (preview) {
-        strokeMaskContour(ctx, preview.mask, h, w, Math.max(toImagePx(2.5), 0.5), AI_PREVIEW_CONTOUR_COLOR);
-      }
-
-      if (AI_POINT_TOOLS.includes(paintTool)) {
-        const lastCommitted = aiPointsRef.current[aiPointsRef.current.length - 1];
-        const tip = aiTipRef.current;
-        if (lastCommitted && tip) {
-          strokeHiVis(ctx, toImagePx(2.5), tip.label === 1 ? "#22c55e" : "#ef4444", () => {
-            ctx.beginPath();
-            ctx.moveTo(lastCommitted.x, lastCommitted.y);
-            ctx.lineTo(tip.x, tip.y);
-          });
-        }
-        const pts = tip ? [...aiPointsRef.current, tip] : aiPointsRef.current;
-        for (const p of pts) {
-          const color = p.label === 1 ? "#22c55e" : "#ef4444";
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, pointRadius * 1.35, 0, Math.PI * 2);
-          ctx.fillStyle = color;
-          ctx.fill();
-          strokeHiVis(ctx, toImagePx(2), "#ffffff", () => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, pointRadius * 1.35, 0, Math.PI * 2);
-          });
-        }
-      }
-      if (paintTool === "box_mask" || paintTool === "box_eraser") {
-        // Rubber-band rectangle only — the hover crosshair is painted on the
-        // unmasked cursor layer so Region-only masking cannot hide it.
-        const box = boxDragRef.current;
-        if (box) {
-          const bx = Math.min(box.x0, box.x1);
-          const by = Math.min(box.y0, box.y1);
-          const bw = Math.abs(box.x1 - box.x0);
-          const bh = Math.abs(box.y1 - box.y0);
-          const color = paintTool === "box_mask" ? "#f59e0b" : "#38bdf8";
-          strokeHiVis(ctx, Math.max(penWidth * 1.4, toImagePx(2.5)), color, () => {
-            ctx.beginPath();
-            ctx.rect(bx, by, bw, bh);
-          });
-          const hs = toImagePx(5);
-          ctx.fillStyle = color;
-          for (const [cx, cy] of [
-            [bx, by],
-            [bx + bw, by],
-            [bx, by + bh],
-            [bx + bw, by + bh],
-          ] as const) {
-            ctx.fillRect(cx - hs, cy - hs, hs * 2, hs * 2);
-          }
-        }
-      }
-      if (paintTool === "seeds") {
-        const arm = toImagePx(10);
-        const seedR = toImagePx(5);
-        for (const s of wsSeeds) {
-          const sc = sliceCoordsFromVoxel(axis, index, s);
-          if (!sc) continue;
-          ctx.beginPath();
-          ctx.arc(sc.px, sc.py, seedR, 0, Math.PI * 2);
-          ctx.fillStyle = "#facc15";
-          ctx.fill();
-          strokeHiVis(ctx, toImagePx(2.5), "#facc15", () => {
-            ctx.beginPath();
-            ctx.moveTo(sc.px - arm, sc.py);
-            ctx.lineTo(sc.px + arm, sc.py);
-            ctx.moveTo(sc.px, sc.py - arm);
-            ctx.lineTo(sc.px, sc.py + arm);
-          });
-        }
-      }
-    },
-    [paintTool, wsSeeds, index],
-  );
-
-  /** Custom overlay cursors — brush/erase rings, box crosshairs, point reticle.
-   *
-   * Drawn in **CSS pixels on a display-resolution buffer**, not in image
-   * coordinates like every other layer. See `cursorLayerBackingSize` for why:
-   * screen-constant chrome rendered into the plane's own 256-wide buffer and
-   * magnified by `image-rendering: pixelated` is what made the cursor look
-   * clean on large volumes and like blocky noise on small ones. Here one unit
-   * is one CSS pixel on every volume, so the constants below are literally
-   * the on-screen size. */
+  // Display-space AI preview and tool chrome.
   const paintToolCursor = useCallback(() => {
     const canvas = cursorLayerRef.current;
     const [h, w] = shapeRef.current;
@@ -1550,9 +1410,6 @@ export default function AnnotationCanvas({
     const rect = canvas.getBoundingClientRect();
     const cssW = rect.width;
     const cssH = rect.height;
-    // A stage that has not been laid out yet has no size to draw against;
-    // drawing anyway would fall back to a 1:1 scale and flash a reticle
-    // sized in voxels for one frame.
     if (cssW <= 0 || cssH <= 0) return;
     const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
     const [backingW, backingH] = cursorLayerBackingSize(cssW, cssH, dpr);
@@ -1560,17 +1417,127 @@ export default function AnnotationCanvas({
     if (canvas.height !== backingH) canvas.height = backingH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    // One canvas unit = one CSS pixel, at the device's real resolution.
     ctx.setTransform(backingW / cssW, 0, 0, backingH / cssH, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
+    const [sx, sy] = imageToCssScale(cssW, cssH, w, h);
+
+    const showAiPreview = AI_PREVIEW_TOOLS.includes(paintTool);
+    const preview =
+      (showAiPreview ? aiPreviewRef.current : null) ??
+      (paintTool === "interpolate"
+        ? interpPreviewMaskFor(
+            interpPreviewRef.current,
+            axisRef.current,
+            idsIndexRef.current,
+            h * w,
+          )
+        : null);
+    // Scale the proposal by the mask's *own* height and width. The plane shape
+    // the canvas is holding comes from label-ids metadata; when those two
+    // disagree (a legacy NIfTI whose working label is stored X,Y,Z) scaling by
+    // the plane would paint the mask at the wrong size instead of where the
+    // user clicked. A mask that does not match its own shape is dropped — but
+    // only the fill is dropped, never the prompt points and tip below, so a
+    // bad proposal cannot take the cursor chrome down with it.
+    if (preview && preview.mask.length === preview.shape[0] * preview.shape[1]) {
+      const [previewH, previewW] = preview.shape;
+      const [previewSx, previewSy] = imageToCssScale(
+        cssW,
+        cssH,
+        previewW,
+        previewH,
+      );
+      fillMaskCssSpace(
+        ctx,
+        preview.mask,
+        previewH,
+        previewW,
+        previewSx,
+        previewSy,
+        AI_PREVIEW_FILL_RGB,
+        AI_PREVIEW_FILL_ALPHA,
+      );
+    }
+
+    // Prompt points + tip line (screen-constant stroke weight).
+    if (AI_POINT_TOOLS.includes(paintTool)) {
+      const lastCommitted = aiPointsRef.current[aiPointsRef.current.length - 1];
+      const tip = aiTipRef.current;
+      if (lastCommitted && tip) {
+        strokeHiVis(ctx, 2.5, tip.label === 1 ? "#22c55e" : "#ef4444", () => {
+          ctx.beginPath();
+          ctx.moveTo(lastCommitted.x * sx, lastCommitted.y * sy);
+          ctx.lineTo(tip.x * sx, tip.y * sy);
+        });
+      }
+      const pts = tip ? [...aiPointsRef.current, tip] : aiPointsRef.current;
+      const pointRadius = 8;
+      for (const p of pts) {
+        const color = p.label === 1 ? "#22c55e" : "#ef4444";
+        const px = p.x * sx;
+        const py = p.y * sy;
+        ctx.beginPath();
+        ctx.arc(px, py, pointRadius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        strokeHiVis(ctx, 2, "#ffffff", () => {
+          ctx.beginPath();
+          ctx.arc(px, py, pointRadius, 0, Math.PI * 2);
+        });
+      }
+    }
+
+    if (paintTool === "box_mask" || paintTool === "box_eraser") {
+      const box = boxDragRef.current;
+      if (box) {
+        const bx = Math.min(box.x0, box.x1) * sx;
+        const by = Math.min(box.y0, box.y1) * sy;
+        const bw = Math.abs(box.x1 - box.x0) * sx;
+        const bh = Math.abs(box.y1 - box.y0) * sy;
+        const color = paintTool === "box_mask" ? "#f59e0b" : "#38bdf8";
+        strokeHiVis(ctx, 2.5, color, () => {
+          ctx.beginPath();
+          ctx.rect(bx, by, bw, bh);
+        });
+        const hs = 5;
+        ctx.fillStyle = color;
+        for (const [cx, cy] of [
+          [bx, by],
+          [bx + bw, by],
+          [bx, by + bh],
+          [bx + bw, by + bh],
+        ] as const) {
+          ctx.fillRect(cx - hs, cy - hs, hs * 2, hs * 2);
+        }
+      }
+    }
+
+    if (paintTool === "seeds") {
+      const arm = 10;
+      const seedR = 5;
+      for (const s of wsSeeds) {
+        const sc = sliceCoordsFromVoxel(axis, index, s);
+        if (!sc) continue;
+        const px = sc.px * sx;
+        const py = sc.py * sy;
+        ctx.beginPath();
+        ctx.arc(px, py, seedR, 0, Math.PI * 2);
+        ctx.fillStyle = "#facc15";
+        ctx.fill();
+        strokeHiVis(ctx, 2.5, "#facc15", () => {
+          ctx.beginPath();
+          ctx.moveTo(px - arm, py);
+          ctx.lineTo(px + arm, py);
+          ctx.moveTo(px, py - arm);
+          ctx.lineTo(px, py + arm);
+        });
+      }
+    }
+
     if (!usesCustomOverlayCursor(paintTool)) return;
     const hover = hoverPosRef.current;
     if (!hover || !editable || swapped) return;
-    const [sx, sy] = imageToCssScale(cssW, cssH, w, h);
     const [hy, hx] = hover;
-    // Image pixel -> CSS pixel. The prompt-point dots on the label overlay
-    // anchor to the pixel's top-left corner, so the reticle does too; the
-    // brush ring keeps its half-pixel offset onto the pixel's centre.
     const cx = hx * sx;
     const cy = hy * sy;
     if (paintTool === "point_mask" || paintTool === "boundary") {
@@ -1594,11 +1561,6 @@ export default function AnnotationCanvas({
     if (paintTool === "brush" || paintTool === "eraser") {
       const color = paintTool === "brush" ? "#22c55e" : "#38bdf8";
       const size = paintTool === "brush" ? brushSize : eraserSize;
-      // The ring is the *footprint*, not chrome: `brushRadius` is the exact
-      // disc `paintAt` will change, scaled into CSS pixels. It therefore
-      // grows with zoom and with a small plane's fit — because that is how
-      // much tissue the stroke really covers. Only the line weight and the
-      // centre pip below stay screen-constant.
       drawBrushCursor(
         ctx,
         (hx + 0.5) * sx,
@@ -1610,38 +1572,44 @@ export default function AnnotationCanvas({
         cursorStyle,
       );
     }
-  }, [paintTool, brushSize, eraserSize, editable, swapped, cursorStyle]);
+  }, [
+    paintTool,
+    brushSize,
+    eraserSize,
+    editable,
+    swapped,
+    cursorStyle,
+    interpPreviewCount,
+    wsSeeds,
+    axis,
+    index,
+  ]);
 
-  const renderOverlay = useCallback(() => {
-    const base = computeBaseImage();
-    if (!base) return;
-    drawVectorOverlay(base.ctx, base.canvas, base.w, base.h);
-    paintToolCursor();
-    // zoom/fitMode aren't read directly in this body, but a zoom/fit change
-    // alters the canvas's on-screen size, which changes `scale` inside
-    // drawVectorOverlay's toImagePx — including them here forces this
-    // callback to change identity so the `useEffect(renderOverlay)` below
-    // re-fires and point/contour/crosshair sizing stays screen-constant
-    // instead of stale from before the resize.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computeBaseImage, drawVectorOverlay, paintToolCursor, zoom, fitMode]);
-
-  // Cheap pass for high-frequency pointer moves: re-blit the cached fill
-  // (no O(h*w) label recompute) and redraw only the vectors. Used for box
-  // rubber-band dragging and hover-only cursor feedback (crosshair, brush
-  // size circle) so scrubbing the mouse around never re-touches the label
-  // loop unless the underlying ids/preview actually changed.
-  const renderCursorOverlay = useCallback(() => {
+  const blitCachedLabels = useCallback(() => {
     const canvas = overlayRef.current;
     const image = imageDataRef.current;
     const [h, w] = shapeRef.current;
-    if (!canvas || !image || h === 0 || w === 0) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.putImageData(image, 0, 0);
-    drawVectorOverlay(ctx, canvas, w, h);
+    if (!canvas || !image || h === 0 || w === 0) return false;
+    if (!labelPlaneCanvasRef.current) {
+      labelPlaneCanvasRef.current = document.createElement("canvas");
+    }
+    const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+    return blitPlaneImageData(canvas, labelPlaneCanvasRef.current, image, dpr) != null;
+  }, []);
+
+  const renderOverlay = useCallback(() => {
+    if (!computeBaseImage()) return;
     paintToolCursor();
-  }, [drawVectorOverlay, paintToolCursor]);
+    // zoom/fitMode change the stage's CSS size → re-blit + redraw chrome.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computeBaseImage, paintToolCursor, zoom, fitMode]);
+
+  // Cheap pass for high-frequency pointer moves: re-blit the cached label
+  // ImageData (no O(h*w) recompute) and redraw display chrome only.
+  const renderCursorOverlay = useCallback(() => {
+    if (!blitCachedLabels()) return;
+    paintToolCursor();
+  }, [blitCachedLabels, paintToolCursor]);
 
   const refreshInstances = useCallback(() => {
     const ids = idsRef.current;
@@ -3299,7 +3267,9 @@ export default function AnnotationCanvas({
           if (!live) {
             aiPreviewRef.current = null;
             setHasAiPreview(false);
-            setAiError("No mask found for these points — try adding another point.");
+            setAiError(
+              "No usable mask yet — add a point on the same object, or try Box Mask.",
+            );
           }
           return;
         }
@@ -3323,9 +3293,9 @@ export default function AnnotationCanvas({
             st.dirty = false;
             const committed = aiPointsRef.current;
             if (committed.length > 0) {
-              const tip = aiTipRef.current;
+              // Tip is chrome-only — never feed hover into the model.
               st.inFlight = true;
-              void runPredictPointsWithRef.current(tip ? [...committed, tip] : committed, {
+              void runPredictPointsWithRef.current(committed, {
                 silent: true,
                 live: true,
               });
@@ -3367,8 +3337,11 @@ export default function AnnotationCanvas({
     st.inFlight = true;
     st.dirty = false;
     st.lastAt = now;
-    const tip = aiTipRef.current;
-    void runPredictPointsWith(tip ? [...pts, tip] : pts, { silent: true, live: true });
+    // Live predict is for dragging *committed* points only. The floating tip
+    // is chrome — sending it as a second positive made SAM bridge click→hover
+    // into a large left-side blob while the cursor sat elsewhere (the
+    // "mask on the left, crosshair on the right" screenshot).
+    void runPredictPointsWith(pts, { silent: true, live: true });
   }, [runPredictPointsWith]);
 
   const runPredictBox = useCallback(
@@ -4494,18 +4467,13 @@ export default function AnnotationCanvas({
         return;
       }
       if (AI_POINT_TOOLS.includes(paintTool)) {
-        // Cursor-follow proposal: no tip (and no preview) until at least one
-        // point is committed, then the hovered position rides along as a
-        // provisional extra prompt so the mask previews what clicking here
-        // would give. `renderCursorOverlay` moves the marker every frame;
-        // the green fill only updates when a (throttled, coalesced) response
-        // lands. The tip is never committed — a click, Enter or Ctrl-click
-        // always re-predicts from the committed points alone.
+        // Floating tip is chrome only (line + dot). It must not be sent as a
+        // prompt — that was the hover-pollution / drifted-mask bug. Preview
+        // updates only on click, Alt-click, or dragging a committed point.
         aiTipRef.current = pt && aiPointsRef.current.length > 0
           ? { x: pt[1], y: pt[0], label: e.altKey || e.shiftKey ? 0 : 1 }
           : null;
         renderCursorOverlay();
-        scheduleLivePredict();
         return;
       }
       if (paintTool === "seeds" || paintTool === "flood_fill") {
@@ -5384,6 +5352,8 @@ export default function AnnotationCanvas({
   }, []);
 
   const renderTrackingPromptOverlay = useCallback(() => {
+    // TODO: Track still uses a plane-resolution overlay with CSS scaling;
+    // migrate it separately after the Annotate release is stable.
     const canvas = trackPromptCanvasRef.current;
     const [h, w] = shapeRef.current;
     if (!canvas || h === 0 || w === 0) return;
@@ -5415,8 +5385,7 @@ export default function AnnotationCanvas({
           overlay.emphasis === 2 ? 185 : 65,
         );
       }
-      // AI Box/Point prediction is a green proposal layer. It is deliberately
-      // separate from the magenta durable seed until Enter/double-click.
+      // Keep the green proposal separate from the durable tracking seed.
       if (proposal) compositeMaskColor(image, proposal, [34, 197, 94], 185);
       ctx.putImageData(image, 0, 0);
       const scale = canvas.getBoundingClientRect().width / Math.max(w, 1);

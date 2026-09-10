@@ -185,7 +185,7 @@ describe("Annotate Point Mask prompts", () => {
     track.predictMaskFromPoints.mockResolvedValue({ shape: [4, 4], runs: topLeftPair });
   });
 
-  it("previews the hovered position as a provisional extra prompt", async () => {
+  it("keeps the hover tip as chrome only (does not re-predict on move)", async () => {
     mount();
     await screen.findByRole("button", { name: "Fit window" });
     await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
@@ -202,15 +202,14 @@ describe("Annotate Point Mask prompts", () => {
     expect(track.predictMaskFromPoints.mock.calls[0][3]).toEqual([[1, 1]]);
     expect(track.predictMaskFromPoints.mock.calls[0][4]).toEqual([1]);
 
-    // Now a move previews what clicking there would give: the committed point
-    // plus the hovered one, which is never committed by the move itself.
+    // Hover tip must not become a second positive prompt — that drifted the
+    // mask away from the click on dense EM (podo).
     pointer(overlay, "pointermove", { clientX: 390, clientY: 390 });
-    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(2));
-    expect(track.predictMaskFromPoints.mock.calls[1][3]).toEqual([[1, 1], [3, 3]]);
-    expect(track.predictMaskFromPoints.mock.calls[1][4]).toEqual([1, 1]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1);
   });
 
-  it("holds Alt while hovering to preview a negative prompt", async () => {
+  it("does not predict a negative hover tip on Alt+move", async () => {
     mount();
     await screen.findByRole("button", { name: "Fit window" });
     await waitFor(() => expect(api.getLabelIds).toHaveBeenCalled());
@@ -221,8 +220,8 @@ describe("Annotate Point Mask prompts", () => {
     await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1));
 
     pointer(overlay, "pointermove", { clientX: 390, clientY: 390, altKey: true });
-    await waitFor(() => expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(2));
-    expect(track.predictMaskFromPoints.mock.calls[1][4]).toEqual([1, 0]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(track.predictMaskFromPoints).toHaveBeenCalledTimes(1);
   });
 
   it("commits Alt-click as a negative point, not as the hovered preview", async () => {

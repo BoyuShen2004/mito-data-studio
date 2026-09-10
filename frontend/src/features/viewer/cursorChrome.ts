@@ -16,22 +16,7 @@ export const POINT_RETICLE_ARM_SCREEN_PX = 11;
 // one — the ring must not be the one thing on screen that lies about what a
 // click will change.
 
-/**
- * The cursor layer renders at *display* resolution, not image resolution.
- *
- * It used to share the label overlay's backing store — `canvas.width = w`,
- * the plane's own pixel width — and was then stretched to the stage with
- * `image-rendering: pixelated`. That is survivable while the chrome is
- * measured in voxels, but screen-constant chrome cannot survive it: a 7 CSS-px
- * reticle on a 256px plane fitted to ~1000px is 1.8 *image* pixels, drawn with
- * a 0.5px stroke into a 256-wide buffer and then magnified 4x by
- * nearest-neighbour. The same reticle on a 1024px plane is ~7 image pixels and
- * comes out clean — which is exactly why the cursor looked fine on some
- * volumes and like blocky noise on others.
- *
- * Sizing the buffer to the stage instead makes one CSS pixel one canvas unit,
- * so chrome is drawn at the resolution it is displayed at on every volume.
- */
+/** Size chrome to the display so small fitted planes retain CSS-pixel detail. */
 export function cursorLayerBackingSize(
   cssWidth: number,
   cssHeight: number,
@@ -59,4 +44,71 @@ export function imageToCssScale(
     imageWidth > 0 ? cssWidth / imageWidth : 1,
     imageHeight > 0 ? cssHeight / imageHeight : 1,
   ];
+}
+
+/** Keep label pixels native, then nearest-neighbour blit into display space. */
+export function blitPlaneImageData(
+  overlay: HTMLCanvasElement,
+  plane: HTMLCanvasElement,
+  image: ImageData,
+  devicePixelRatio: number,
+): { cssW: number; cssH: number; sx: number; sy: number } | null {
+  const rect = overlay.getBoundingClientRect();
+  const cssW = rect.width;
+  const cssH = rect.height;
+  if (cssW <= 0 || cssH <= 0) return null;
+  const w = image.width;
+  const h = image.height;
+  if (w <= 0 || h <= 0) return null;
+
+  if (plane.width !== w) plane.width = w;
+  if (plane.height !== h) plane.height = h;
+  const planeCtx = plane.getContext("2d");
+  if (!planeCtx) return null;
+  planeCtx.putImageData(image, 0, 0);
+
+  const [backingW, backingH] = cursorLayerBackingSize(cssW, cssH, devicePixelRatio);
+  if (overlay.width !== backingW) overlay.width = backingW;
+  if (overlay.height !== backingH) overlay.height = backingH;
+  const ctx = overlay.getContext("2d");
+  if (!ctx) return null;
+  ctx.setTransform(backingW / cssW, 0, 0, backingH / cssH, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, cssW, cssH);
+  ctx.drawImage(plane, 0, 0, cssW, cssH);
+  const [sx, sy] = imageToCssScale(cssW, cssH, w, h);
+  return { cssW, cssH, sx, sy };
+}
+
+/** Fill runs with shared rounded edges so adjacent display rows have no gaps. */
+export function fillMaskCssSpace(
+  ctx: CanvasRenderingContext2D,
+  mask: Uint8Array,
+  h: number,
+  w: number,
+  sx: number,
+  sy: number,
+  rgb: readonly [number, number, number],
+  alpha = 255,
+): void {
+  if (h <= 0 || w <= 0 || mask.length < h * w) return;
+  ctx.save();
+  ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha / 255})`;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    const top = Math.round(y * sy);
+    const bottom = Math.round((y + 1) * sy);
+    const height = Math.max(1, bottom - top);
+    let x = 0;
+    while (x < w) {
+      while (x < w && !mask[row + x]) x += 1;
+      if (x >= w) break;
+      const x0 = x;
+      while (x < w && mask[row + x]) x += 1;
+      const left = Math.round(x0 * sx);
+      const right = Math.round(x * sx);
+      ctx.fillRect(left, top, Math.max(1, right - left), height);
+    }
+  }
+  ctx.restore();
 }

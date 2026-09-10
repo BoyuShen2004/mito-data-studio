@@ -319,6 +319,7 @@ class SAM2Wrapper:
         point_labels: list[int] | None = None,
         box: tuple[int, int, int, int] | None = None,
         cache_key: str | None = None,
+        candidates: bool = False,
     ) -> np.ndarray:
         """Fast single-slice SAM 2 (image model only — no full-stack JPEG export).
 
@@ -330,6 +331,15 @@ class SAM2Wrapper:
         from the LRU in `_ensure_image_features` instead of recomputing it,
         which is what makes scrubbing back to a recent slice free rather than
         a fresh quarter-second encode.
+
+        ``candidates=True`` returns ``(masks, ious)`` — every mask SAM 2
+        produced with the model's own predicted IoU for each — instead of
+        collapsing to the highest-scoring one here. A single point asks for
+        `multimask_output`, and on dense tissue the three answers are not
+        interchangeable: one of them is routinely a near-full-frame blanket
+        over the whole field. Picking between them needs to know where the
+        click was, which this layer does not, so Annotate does it in
+        ``cellable_port/ai/sam2_masks``. Tracking keeps the default.
         """
         if box is None and not points:
             raise ValueError("predict_single_frame requires box and/or points")
@@ -361,10 +371,15 @@ class SAM2Wrapper:
         with self._image_lock:
             self._ensure_image_features(predictor, slice_2d, cache_key)
             masks, ious, _ = predictor.predict(normalize_coords=True, **kwargs)
-        if masks.ndim == 3 and masks.shape[0] > 1:
-            best = int(np.argmax(ious))
-            return masks[best].astype(bool)
-        return np.squeeze(masks).astype(bool)
+        masks = np.asarray(masks, dtype=bool)
+        if masks.ndim == 2:
+            masks = masks[None]
+        ious = np.atleast_1d(np.asarray(ious, dtype=float))
+        if candidates:
+            return list(masks), ious
+        if len(masks) > 1:
+            return masks[int(np.argmax(ious))]
+        return masks[0]
 
     def set_feature_store(self, store) -> None:
         """Attach an L2 for encoder features (``load``/``save``/``compute_lock``)."""

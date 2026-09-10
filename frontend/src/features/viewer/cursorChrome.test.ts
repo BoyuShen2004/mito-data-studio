@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { brushRadius } from "./brushCursor";
 import {
   POINT_RETICLE_RADIUS_SCREEN_PX,
+  blitPlaneImageData,
   cursorLayerBackingSize,
+  fillMaskCssSpace,
   imageToCssScale,
   screenPxToImagePx,
 } from "./cursorChrome";
@@ -83,5 +85,64 @@ describe("cursor layer renders at display resolution", () => {
 
   it("falls back to 1:1 rather than dividing by a zero-sized plane", () => {
     expect(imageToCssScale(800, 800, 0, 0)).toEqual([1, 1]);
+  });
+});
+
+describe("blitPlaneImageData", () => {
+  it("sizes the overlay to the stage and draws nearest into CSS space", () => {
+    const overlay = document.createElement("canvas");
+    const plane = document.createElement("canvas");
+    // jsdom getBoundingClientRect is 0×0 — stub a fitted 256² stage.
+    vi.spyOn(overlay, "getBoundingClientRect").mockReturnValue({
+      width: 800,
+      height: 800,
+      top: 0,
+      left: 0,
+      bottom: 800,
+      right: 800,
+      x: 0,
+      y: 0,
+      toJSON() {
+        return {};
+      },
+    });
+    const image = plane.getContext("2d")!.createImageData(256, 256);
+    const result = blitPlaneImageData(overlay, plane, image, 1);
+    expect(result).toEqual({ cssW: 800, cssH: 800, sx: 800 / 256, sy: 800 / 256 });
+    expect(overlay.width).toBe(800);
+    expect(overlay.height).toBe(800);
+    expect(plane.width).toBe(256);
+    expect(plane.height).toBe(256);
+  });
+});
+
+describe("fillMaskCssSpace", () => {
+  it("abuts neighbouring image pixels so fractional scales leave no row gaps", () => {
+    // A solid 3×3 block on a 8×8 plane, drawn at the non-integer scale that
+    // used to turn ImageData+pixelated upscale into horizontal hatching.
+    const h = 8;
+    const w = 8;
+    const mask = new Uint8Array(h * w);
+    for (let y = 2; y < 5; y++) for (let x = 2; x < 5; x++) mask[y * w + x] = 1;
+    const sx = 800 / 256; // 3.125
+    const sy = sx;
+    const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      fillRect: (x: number, y: number, rw: number, rh: number) => {
+        rects.push({ x, y, w: rw, h: rh });
+      },
+      set fillStyle(_v: string) {},
+    } as unknown as CanvasRenderingContext2D;
+    fillMaskCssSpace(ctx, mask, h, w, sx, sy, [0, 255, 0], 255);
+    expect(rects.length).toBe(3); // one run per occupied row
+    // Shared edge between row y and y+1: bottom(y) === top(y+1).
+    for (let i = 0; i < rects.length - 1; i++) {
+      expect(rects[i].y + rects[i].h).toBe(rects[i + 1].y);
+    }
+    // Horizontal run covers [round(2*sx), round(5*sx)).
+    expect(rects[0].x).toBe(Math.round(2 * sx));
+    expect(rects[0].x + rects[0].w).toBe(Math.round(5 * sx));
   });
 });
