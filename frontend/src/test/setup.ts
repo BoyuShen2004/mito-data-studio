@@ -85,6 +85,7 @@ const stubContext = () =>
     clearRect: () => {},
     fillRect: () => {},
     strokeRect: () => {},
+    rect: () => {},
     beginPath: () => {},
     closePath: () => {},
     moveTo: () => {},
@@ -114,6 +115,8 @@ const stubContext = () =>
     set fillStyle(_v: unknown) {},
     set strokeStyle(_v: unknown) {},
     set lineWidth(_v: unknown) {},
+    set lineCap(_v: unknown) {},
+    set lineJoin(_v: unknown) {},
     set globalAlpha(_v: unknown) {},
     set imageSmoothingEnabled(_v: unknown) {},
   }) as unknown as CanvasRenderingContext2D;

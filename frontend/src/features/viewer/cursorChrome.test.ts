@@ -7,6 +7,7 @@ import {
   fillMaskCssSpace,
   imageToCssScale,
   screenPxToImagePx,
+  strokeMaskContourCssSpace,
 } from "./cursorChrome";
 
 describe("screen-space cursor chrome", () => {
@@ -116,26 +117,35 @@ describe("blitPlaneImageData", () => {
   });
 });
 
+/** A solid 3×3 block at (2..4, 2..4) on an 8×8 plane. */
+function blockMask(): { mask: Uint8Array; h: number; w: number } {
+  const h = 8;
+  const w = 8;
+  const mask = new Uint8Array(h * w);
+  for (let y = 2; y < 5; y++) for (let x = 2; x < 5; x++) mask[y * w + x] = 1;
+  return { mask, h, w };
+}
+
 describe("fillMaskCssSpace", () => {
   it("abuts neighbouring image pixels so fractional scales leave no row gaps", () => {
-    // A solid 3×3 block on a 8×8 plane, drawn at the non-integer scale that
-    // used to turn ImageData+pixelated upscale into horizontal hatching.
-    const h = 8;
-    const w = 8;
-    const mask = new Uint8Array(h * w);
-    for (let y = 2; y < 5; y++) for (let x = 2; x < 5; x++) mask[y * w + x] = 1;
+    // Drawn at the non-integer scale that used to turn ImageData+pixelated
+    // upscale into horizontal hatching.
+    const { mask, h, w } = blockMask();
     const sx = 800 / 256; // 3.125
     const sy = sx;
     const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
     const ctx = {
       save: vi.fn(),
       restore: vi.fn(),
-      fillRect: (x: number, y: number, rw: number, rh: number) => {
+      beginPath: vi.fn(),
+      fill: vi.fn(),
+      fillRect: vi.fn(),
+      rect: (x: number, y: number, rw: number, rh: number) => {
         rects.push({ x, y, w: rw, h: rh });
       },
       set fillStyle(_v: string) {},
     } as unknown as CanvasRenderingContext2D;
-    fillMaskCssSpace(ctx, mask, h, w, sx, sy, [0, 255, 0], 255);
+    fillMaskCssSpace(ctx, mask, h, w, sx, sy, [0, 255, 0], 130);
     expect(rects.length).toBe(3); // one run per occupied row
     // Shared edge between row y and y+1: bottom(y) === top(y+1).
     for (let i = 0; i < rects.length - 1; i++) {
@@ -144,5 +154,101 @@ describe("fillMaskCssSpace", () => {
     // Horizontal run covers [round(2*sx), round(5*sx)).
     expect(rects[0].x).toBe(Math.round(2 * sx));
     expect(rects[0].x + rects[0].w).toBe(Math.round(5 * sx));
+  });
+
+  it("fills every run as one path so a translucent fill has no seams", () => {
+    // Separate fills antialias each shared edge twice; at alpha < 1 and a
+    // fractional devicePixelRatio that reads as dark lines between rows.
+    const { mask, h, w } = blockMask();
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      fill: vi.fn(),
+      fillRect: vi.fn(),
+      rect: vi.fn(),
+      set fillStyle(_v: string) {},
+    } as unknown as CanvasRenderingContext2D;
+    fillMaskCssSpace(ctx, mask, h, w, 3.125, 3.125, [0, 255, 0], 130);
+    expect(ctx.fill).toHaveBeenCalledTimes(1);
+    expect(ctx.fillRect).not.toHaveBeenCalled();
+  });
+});
+
+describe("strokeMaskContourCssSpace", () => {
+  type Segment = [number, number, number, number];
+
+  function recordContour(mask: Uint8Array, h: number, w: number, sx: number, sy: number) {
+    const segments: Segment[] = [];
+    let pen: [number, number] = [0, 0];
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      stroke: vi.fn(),
+      moveTo: (x: number, y: number) => {
+        pen = [x, y];
+      },
+      lineTo: (x: number, y: number) => {
+        segments.push([pen[0], pen[1], x, y]);
+      },
+      set strokeStyle(_v: string) {},
+      set lineWidth(_v: number) {},
+      set lineCap(_v: string) {},
+    } as unknown as CanvasRenderingContext2D;
+    strokeMaskContourCssSpace(ctx, mask, h, w, sx, sy, 2, "#ffffff");
+    return { segments, ctx };
+  }
+
+  it("traces a block as four merged sides sitting exactly on the fill's edges", () => {
+    const { mask, h, w } = blockMask();
+    const s = 800 / 256;
+    const { segments, ctx } = recordContour(mask, h, w, s, s);
+    const lo = Math.round(2 * s);
+    const hi = Math.round(5 * s);
+    expect(segments).toHaveLength(4);
+    expect(segments).toEqual(
+      expect.arrayContaining([
+        [lo, lo, hi, lo], // top
+        [lo, hi, hi, hi], // bottom
+        [lo, lo, lo, hi], // left
+        [hi, lo, hi, hi], // right
+      ]),
+    );
+    expect(ctx.stroke).toHaveBeenCalledTimes(1);
+  });
+
+  it("outlines holes as well as the outside", () => {
+    const h = 7;
+    const w = 7;
+    const mask = new Uint8Array(h * w);
+    for (let y = 1; y < 6; y++) for (let x = 1; x < 6; x++) mask[y * w + x] = 1;
+    mask[3 * w + 3] = 0;
+    const { segments } = recordContour(mask, h, w, 1, 1);
+    // Four outer sides of length 5 plus the hole's four unit sides. Measured by
+    // length, since how edges merge into segments depends on the layout.
+    const perimeter = segments.reduce(
+      (sum, [x0, y0, x1, y1]) => sum + Math.abs(x1 - x0) + Math.abs(y1 - y0),
+      0,
+    );
+    expect(perimeter).toBe(5 * 4 + 1 * 4);
+    expect(segments).toEqual(expect.arrayContaining([[3, 3, 4, 3], [3, 4, 4, 4]]));
+  });
+
+  it("rescales a cached outline when the same mask is drawn at another zoom", () => {
+    const { mask, h, w } = blockMask();
+    recordContour(mask, h, w, 1, 1); // traces and caches in grid units
+    const { segments } = recordContour(mask, h, w, 4, 2);
+    expect(segments).toEqual(
+      expect.arrayContaining([
+        [8, 4, 20, 4], // top: x 2..5 at 4x, y 2 at 2x
+        [8, 4, 8, 10], // left: y 2..5 at 2x
+      ]),
+    );
+  });
+
+  it("draws nothing for an empty mask", () => {
+    const { segments } = recordContour(new Uint8Array(16), 4, 4, 2, 2);
+    expect(segments).toHaveLength(0);
   });
 });

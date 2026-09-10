@@ -103,6 +103,7 @@ import {
   cursorLayerBackingSize,
   fillMaskCssSpace,
   imageToCssScale,
+  strokeMaskContourCssSpace,
 } from "./cursorChrome";
 import {
   applyMergeCanvasClick,
@@ -159,12 +160,19 @@ import {
 const LIVE_PREDICT_MIN_INTERVAL_MS = 50;
 
 const LABEL_ALPHA = 150;
-// Proposed-mask look: opaque green fill, drawn on the *display-resolution*
-// cursor layer (see `fillMaskCssSpace`). Painting it into the 256-wide label
-// overlay and letting CSS `pixelated` magnify it is what turned solid SAM2
- // masks into horizontal hatching on small fitted planes.
+// Proposed-mask look, matching Cellable's AI preview (canvas.py paintEvent):
+// a translucent green fill (their `select_fill_color` at a preview
+// `label_opacity` of ~0.5) so the EM underneath stays readable, plus an opaque
+// white outline (`select_line_color`, shape.py `_mask_outline_path`) so the
+// proposal's extent is still unambiguous. Both are drawn on the
+// display-resolution cursor layer (`fillMaskCssSpace`,
+// `strokeMaskContourCssSpace`); painting them into the 256-wide label overlay
+// and letting CSS `pixelated` magnify it is what turned solid SAM 2 masks into
+// horizontal hatching on small fitted planes.
 const AI_PREVIEW_FILL_RGB = [0, 255, 0] as const;
-const AI_PREVIEW_FILL_ALPHA = 255;
+const AI_PREVIEW_FILL_ALPHA = 130; // ~0.5 of 255
+const AI_PREVIEW_CONTOUR_COLOR = "#ffffff";
+const AI_PREVIEW_CONTOUR_WIDTH_CSS_PX = 2;
 /** Tool -> menu label, so `CONTEXT_MENU_LAYOUT` can stay a pure ordering. */
 const CONTEXT_MENU_LABELS: Record<PaintTool, string> = Object.fromEntries(
   CONTEXT_MENU_TOOLS,
@@ -1444,6 +1452,16 @@ export default function AnnotationCanvas({
         previewSy,
         AI_PREVIEW_FILL_RGB,
         AI_PREVIEW_FILL_ALPHA,
+      );
+      strokeMaskContourCssSpace(
+        ctx,
+        preview.mask,
+        previewH,
+        previewW,
+        previewSx,
+        previewSy,
+        AI_PREVIEW_CONTOUR_WIDTH_CSS_PX,
+        AI_PREVIEW_CONTOUR_COLOR,
       );
     }
 
