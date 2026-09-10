@@ -131,7 +131,7 @@ class FormatParityTestCase(TestCase):
 
     @staticmethod
     def _write_nifti(path: Path, array: np.ndarray) -> Path:
-        image = nib.Nifti1Image(array.transpose(2, 1, 0), np.eye(4))
+        image = nib.Nifti1Image(array, np.eye(4))
         image.header.set_xyzt_units("micron")
         nib.save(image, str(path))
         return path

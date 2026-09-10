@@ -32,8 +32,9 @@ class NiftiRegistrationTests(TestCase):
 
     @staticmethod
     def _write(path, zyx):
-        image = nib.Nifti1Image(zyx.transpose(2, 1, 0), np.eye(4))
-        image.header.set_zooms((0.008, 0.009, 0.04))
+        # On-disk NIfTI arrays use the same (Z,Y,X) order as HDF5/TIFF.
+        image = nib.Nifti1Image(zyx, np.eye(4))
+        image.header.set_zooms((0.04, 0.009, 0.008))
         image.header.set_xyzt_units("mm")
         nib.save(image, str(path))
 

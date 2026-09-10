@@ -358,7 +358,7 @@ class SourceFormatParity(PyramidTestCase):
             handle.create_dataset("main", data=self.source, chunks=(1, 64, 64))
         nii_path = self.external / "cortex.nii.gz"
         nib.save(
-            nib.Nifti1Image(self.source.transpose(2, 1, 0), np.eye(4)),
+            nib.Nifti1Image(self.source, np.eye(4)),
             str(nii_path),
         )
         h5_volume = Volume.objects.create(

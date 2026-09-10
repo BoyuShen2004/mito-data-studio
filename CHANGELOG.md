@@ -5,7 +5,17 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+### Changed
+
+- **NIfTI uses the same `(Z,Y,X)` on-disk axis order as HDF5 and TIFF.** The
+  reader no longer treats nibabel arrays as medical `(X,Y,Z)` and transposes
+  them. Pixdim is read as `(Z,Y,X)` to match HDF5 `element_size_um`. Legacy
+  NIfTI-only working-label reverse-axis workarounds are removed so every format
+  follows one contract. Re-register (or re-detect shape on) existing NIfTI
+  volumes that were ingested under the old transpose.
+
 ### Fixed
+
 
 - **Deleting a project, dataset or volume left its generated files on disk.**
   The rows went, but the working mask, lifecycle sidecar, pyramids, SAM feature
@@ -18,13 +28,6 @@ follows semantic versioning for tagged releases.
   data root), anything a surviving volume still references, anything outside
   the data root, and symlinks. A failure to remove a file is logged; the delete
   itself still succeeds.
-
-- **Legacy NIfTI working labels were read with their axes reversed.** Early
-  NIfTI imports wrote the working label copy in nibabel's X,Y,Z order while the
-  image is served Z,Y,X, so a z plane of labels came back the wrong shape and
-  Point Mask previews were mis-scaled. When the image is NIfTI and the label's
-  shape is exactly the reverse, reads and writes go through a transposed
-  memmap *view*; the file on disk is never rewritten, re-encoded or moved.
 
 - **The manager's home fired 415 database queries to draw 35 rows.**
   `/api/submissions/` embeds each row's whole task, and the task serializer

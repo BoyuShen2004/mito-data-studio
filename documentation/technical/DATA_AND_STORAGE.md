@@ -24,8 +24,10 @@ The application-wide array convention is `(z, y, x)`.
 - Coronal slices index y and have plane shape `(z, x)`.
 - Sagittal slices index x and have plane shape `(z, y)`.
 - Track propagation is axial only.
-- NIfTI sources are stored by nibabel as `(x, y, z)` and explicitly transposed
-  by the adapter; non-singleton channel/time dimensions are rejected.
+- TIFF, HDF5, and NIfTI sources all use on-disk `(z, y, x)` in this
+  application — NIfTI is **not** remapped from medical `(x, y, z)`. Pixdim /
+  voxel spacing follows the same axis order. Non-singleton channel/time
+  dimensions are rejected.
 - HDF5 datasets may have leading singleton dimensions, which are pinned to
   zero; ambiguous multi-volume files are rejected rather than guessed.
 
@@ -50,13 +52,6 @@ Official labels can originate in TIFF, HDF5, or NIfTI. Editing is performed in
 an owned, writable, memory-mappable TIFF working copy. HDF5/NIfTI sources seed
 that copy in bounded blocks rather than becoming writable in place. Save is
 revision checked and label-state metadata is stored separately from voxels.
-
-Working copies written by early NIfTI imports are in nibabel's `(x, y, z)`
-order. When the registered image is NIfTI and a working label's shape is exactly
-the reverse of the image's, the label is opened through a transposed memmap
-view for both reads and writes. The file on disk is never rewritten,
-re-encoded, or moved to "fix" its axes; a reversed file opened without that
-allowance fails as before rather than being replaced.
 
 This separation prevents annotation from modifying registered data and gives
 submission/review a stable snapshot boundary.

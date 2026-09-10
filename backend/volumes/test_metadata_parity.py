@@ -30,8 +30,8 @@ class VolumeHeaderMetadataParityTests(SimpleTestCase):
             paths["tiff"], self.array, imagej=True, resolution=(125, 125),
             metadata={"axes": "ZYX", "spacing": .04, "unit": "um"},
         )
-        nii = nib.Nifti1Image(self.array.transpose(2, 1, 0), np.eye(4))
-        nii.header.set_zooms((.000008, .000008, .00004))
+        nii = nib.Nifti1Image(self.array, np.eye(4))
+        nii.header.set_zooms((.00004, .000008, .000008))
         nii.header.set_xyzt_units("mm")
         nib.save(nii, paths["nifti"])
         with h5py.File(paths["hdf5"], "w") as handle:

@@ -223,7 +223,7 @@ class RegionSourceFormatParity(RegionPyramidTestCase):
         with h5py.File(h5_path, "w") as handle:
             handle.create_dataset("main", data=self.mask, chunks=(1, 64, 64))
         nii_path = self.external / "roi.nii.gz"
-        nib.save(nib.Nifti1Image(self.mask.transpose(2, 1, 0), np.eye(4)), str(nii_path))
+        nib.save(nib.Nifti1Image(self.mask, np.eye(4)), str(nii_path))
         before = {h5_path: h5_path.read_bytes(), nii_path: nii_path.read_bytes()}
 
         others = [

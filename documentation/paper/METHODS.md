@@ -20,7 +20,7 @@ mutable working label copies and immutable submission snapshots.
 Volumes were represented internally in `(z, y, x)` order. Intensity images,
 optional nonzero ROI masks, and integer instance-label arrays were required to
 share spatial shape. TIFF, HDF5, and NIfTI inputs were read through format-aware
-lazy adapters. NIfTI `(x, y, z)` arrays were explicitly transposed. Physical
+lazy adapters under a single `(z, y, x)` on-disk axis contract. Physical
 voxel sizes were retained when valid source metadata were available and were
 otherwise treated as unknown for scientific reporting.
 

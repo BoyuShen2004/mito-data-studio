@@ -58,7 +58,7 @@ class RegionMaskCoverageTests(TestCase):
         with h5py.File(self.root / "mask.h5", "w") as handle:
             handle.create_dataset("main", data=mask)
         nib.save(
-            nib.Nifti1Image(mask.transpose(2, 1, 0), np.eye(4)),
+            nib.Nifti1Image(mask, np.eye(4)),
             self.root / "mask.nii.gz",
         )
         with override_settings(MITO_DATA_ROOT=self.root):

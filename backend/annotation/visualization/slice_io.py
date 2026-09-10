@@ -1,7 +1,7 @@
-"""On-demand slice IO with bounded LRU caches.
+"""On-demand slice IO with bounded LRU caches (Cellable memory patterns).
 
-The web process must never load a whole EM volume into RAM. This module keeps
-bounded caches on the server:
+The web process must never load a whole EM volume into RAM. This module mirrors
+Cellable's ``sliceCache`` / ``MAX_SLICE_PIXMAP_CACHE`` approach on the server:
 
 * volumes are opened as **memory-maps** (``tifffile.memmap`` / ``np.load(mmap)``),
   so only the touched slices are paged in;
@@ -35,7 +35,7 @@ from PIL import Image
 from .hdf5_io import Hdf5Error, is_hdf5_path, open_hdf5_volume
 from .nifti_io import NiftiError, is_nifti_path, open_nifti_volume
 
-# Bounded: 256 decoded slices / a few open volumes.
+# Bounded like Cellable's MAX_SLICE_PIXMAP_CACHE (256) / a few open volumes.
 MAX_SLICE_CACHE = 256
 MAX_OPEN_VOLUMES = 8
 # Encoded-response cache is smaller per entry than the raw-array cache above,
@@ -480,8 +480,6 @@ def read_label_array(path: Path) -> np.ndarray:
 def open_label_volume_writable(
     path: Path,
     shape: tuple[int, int, int],
-    *,
-    allow_reversed_axes: bool = False,
 ) -> np.memmap:
     """Open (or create) a label volume as a **writable** memmap, LRU-cached.
 
@@ -521,16 +519,7 @@ def open_label_volume_writable(
     if path.exists():
         try:
             mm = tifffile.memmap(str(path), mode="r+")
-            if (
-                allow_reversed_axes
-                and tuple(mm.shape) == tuple(reversed(shape))
-                and mm.size > 0
-            ):
-                # Early NIfTI working copies were accidentally created in
-                # nibabel's (X,Y,Z) order. Keep their bytes/layout intact and
-                # expose a writable canonical (Z,Y,X) view.
-                mm = mm.transpose(2, 1, 0)
-            elif tuple(mm.shape) != tuple(shape) or mm.size == 0:
+            if tuple(mm.shape) != tuple(shape) or mm.size == 0:
                 raise ValueError(
                     f"label file shape {getattr(mm, 'shape', None)} incompatible "
                     f"with expected {tuple(shape)}"
