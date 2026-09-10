@@ -526,6 +526,41 @@ def _plan_file_cleanup(volumes, *, datasets=(), project=None) -> dict | None:
         return None
 
 
+def _purge_tree(top: Path, protected: set[Path]) -> int:
+    """Remove everything under ``top`` except protected files, symlinks (kept,
+    never followed) and the folders still holding either. Returns the count."""
+    from annotation.visualization.slice_io import drop_file
+    from core.data_root import is_owned
+
+    if top.is_symlink() or not top.is_dir() or not is_owned(top):
+        return 0
+    removed = 0
+    for dirpath, dirnames, filenames in os.walk(top, topdown=False, followlinks=False):
+        current = Path(dirpath)
+        for name in filenames:
+            path = current / name
+            if path.is_symlink() or path in protected:
+                continue
+            drop_file(path)
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.warning("Could not remove %s: %s", path, exc)
+        for name in dirnames:
+            path = current / name
+            if not path.is_symlink():
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
+    try:
+        top.rmdir()
+    except OSError:
+        pass
+    return removed
+
+
 def _remove_generated_files(plan: dict) -> None:
     from annotation.cellable_port.labels_3d import forget_summary
     from annotation.visualization.slice_io import drop_file
@@ -558,8 +593,17 @@ def _remove_generated_files(plan: dict) -> None:
         except OSError as exc:
             logger.warning("Could not remove %s: %s", path, exc)
 
-    # Folders that only held generated files, deepest first; rmdir refuses
-    # anything that still has content.
+    # A deleted dataset's or project's folder goes entirely — everything under
+    # it except protected files and symlinks.
+    purge = list(plan["removable_dirs"])
+    if plan["project_dir"]:
+        purge.append(plan["project_dir"])
+    for rel in purge:
+        removed += _purge_tree(_absolute(rel), protected)
+
+    # Then no empty folder is left, deepest first: artifact subfolders, dataset
+    # folders, project folders — even when their rows survive, since every
+    # writer recreates its parent directory. rmdir refuses anything with content.
     empty_candidates: list[str] = []
     for dataset_dir in plan["touched_dirs"]:
         embeddings = _absolute(f"{dataset_dir}/embeddings")
@@ -573,7 +617,8 @@ def _remove_generated_files(plan: dict) -> None:
             f"{dataset_dir}/{name}"
             for name in ("embeddings", "pyramids", "metadata", "approved")
         ]
-    empty_candidates += plan["removable_dirs"]
+    empty_candidates += plan["touched_dirs"]
+    empty_candidates += sorted({rel.split("/", 1)[0] for rel in plan["touched_dirs"]})
     if plan["project_dir"]:
         empty_candidates.append(plan["project_dir"])
     for rel in empty_candidates:

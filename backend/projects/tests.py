@@ -214,24 +214,42 @@ class DeleteRemovesGeneratedFilesTests(TestCase):
 
         self.assertTrue(source.exists())
 
-    def test_deleting_a_dataset_removes_its_folder(self):
+    def test_deleting_a_dataset_leaves_no_folder_behind(self):
         self._generate(self._volume("case_00"))
+        self._touch("Study/CellMap/notes.txt")
+        self._touch("Study/CellMap/embeddings/sam2-hiera-l/retired_z_0_1.npz")
 
         with self.captureOnCommitCallbacks(execute=True):
             delete_dataset(self.dataset)
 
-        self.assertFalse((self.root / "Study" / "CellMap").exists())
-        self.assertTrue((self.root / "Study").is_dir())
+        # The project row survives; its folder, now empty, does not.
+        self.assertFalse((self.root / "Study").exists())
 
-    def test_a_dataset_folder_holding_other_files_is_kept(self):
-        self._generate(self._volume("case_00"))
-        stray = self._touch("Study/CellMap/notes.txt")
+    def test_a_deleted_dataset_keeps_only_its_registered_sources(self):
+        registered = "Study/CellMap/labels/case_00_label.tif"
+        self._generate(self._volume("case_00", label_path=registered, label_type="partial"))
+        source = self._touch(registered)
+        self._touch("Study/CellMap/notes.txt")
 
         with self.captureOnCommitCallbacks(execute=True):
             delete_dataset(self.dataset)
 
-        self.assertTrue(stray.exists())
-        self.assertFalse((self.root / "Study" / "CellMap" / "pyramids").exists())
+        self.assertTrue(source.exists())
+        left = sorted(
+            path.relative_to(self.root).as_posix()
+            for path in self.root.rglob("*") if path.is_file()
+        )
+        self.assertEqual(left, [registered])
+
+    def test_deleting_the_last_volume_leaves_no_empty_folders(self):
+        volume = self._volume("case_00")
+        self._generate(volume)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            delete_volume(volume)
+
+        # Dataset and project rows survive; their emptied folders do not.
+        self.assertFalse((self.root / "Study").exists())
 
     def test_deleting_a_project_removes_its_folder(self):
         self._generate(self._volume("case_00"))
@@ -318,6 +336,11 @@ class DeleteThroughTheApiTests(TransactionTestCase):
             y_start=0, y_end=8, x_start=0, x_end=8, task_type="manual_annotation",
         )
 
+    def _delete(self, url):
+        """Over HTTPS, as the browser reaches production behind its proxy —
+        with ``SECURE_SSL_REDIRECT`` on, a plain-HTTP request only gets a 301."""
+        return self.api.delete(url, secure=True)
+
     def _pin(self, volume, basename):
         volume.metadata = {**(volume.metadata or {}), "working_mask_basename": basename}
         volume.save(update_fields=["metadata"])
@@ -342,31 +365,34 @@ class DeleteThroughTheApiTests(TransactionTestCase):
         Volume.objects.filter(pk=doomed.pk).update(label_path=approved_rel)
         upload = self._touch(f"submissions/task_{self._task(doomed).pk}/label.tif")
 
-        self.assertEqual(self.api.delete(f"/api/volumes/{doomed.pk}/").status_code, 409)
-        response = self.api.delete(f"/api/volumes/{doomed.pk}/?force=true")
+        self.assertEqual(self._delete(f"/api/volumes/{doomed.pk}/").status_code, 409)
+        response = self._delete(f"/api/volumes/{doomed.pk}/?force=true")
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertGone([*doomed_files, approved, upload])
         self.assertKept([*neighbour_files, self.external / "a" / "me2-podo_train01_0000.nii.gz"])
 
-    def test_dataset_delete_removes_the_dataset_folder(self):
+    def test_dataset_delete_leaves_nothing_behind(self):
         self._volume("me2-podo_train01_0000")
         self._volume("me2-beta_train01_0000")
         self._artifacts("me2-podo_train01_0000_mask")
         self._artifacts("me2-beta_train01_0000_mask")
+        # Leftovers no current naming rule claims still go with the dataset.
+        self._touch(f"{self.dataset_dir}/me2-retired_train01_0000_mask.tif.write.lock")
+        self._touch(f"{self.dataset_dir}/embeddings/vits/me2-retired_train01_0000_mask_z_2_1.npy")
 
-        response = self.api.delete(f"/api/datasets/{self.dataset.pk}/?force=true")
+        response = self._delete(f"/api/datasets/{self.dataset.pk}/?force=true")
 
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertFalse((self.root / self.dataset_dir).exists())
-        self.assertTrue((self.root / "mds validation").is_dir())
+        # The project row survives; its emptied folder does not.
+        self.assertFalse((self.root / "mds validation").exists())
         self.assertKept([self.external / "a" / "me2-podo_train01_0000.nii.gz"])
 
     def test_project_delete_removes_the_project_folder(self):
         self._volume("me2-podo_train01_0000")
         self._artifacts("me2-podo_train01_0000_mask")
 
-        response = self.api.delete(f"/api/projects/{self.project.pk}/?force=true")
+        response = self._delete(f"/api/projects/{self.project.pk}/?force=true")
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse((self.root / "mds validation").exists())
@@ -377,7 +403,7 @@ class DeleteThroughTheApiTests(TransactionTestCase):
         current = self._artifacts(f"608-864_8192-10240_5120-7168_im_v{volume.pk}_mask")
         draft = self._artifacts("608-864_8192-10240_5120-7168_im_mask")
 
-        response = self.api.delete(f"/api/volumes/{volume.pk}/")
+        response = self._delete(f"/api/volumes/{volume.pk}/")
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertGone([*current, *draft])
@@ -392,7 +418,7 @@ class DeleteThroughTheApiTests(TransactionTestCase):
         owned = self._artifacts("case_mask")
         mine = self._artifacts(f"case_v{suffixed.pk}_mask")
 
-        response = self.api.delete(f"/api/volumes/{suffixed.pk}/")
+        response = self._delete(f"/api/volumes/{suffixed.pk}/")
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertGone(mine)
@@ -410,7 +436,7 @@ class DeleteThroughTheApiTests(TransactionTestCase):
         link.parent.mkdir(parents=True, exist_ok=True)
         os.symlink(outside, link)
 
-        response = self.api.delete(f"/api/volumes/{volume.pk}/")
+        response = self._delete(f"/api/volumes/{volume.pk}/")
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertKept([registered, outside, link])
