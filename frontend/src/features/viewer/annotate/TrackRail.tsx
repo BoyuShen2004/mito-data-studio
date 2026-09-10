@@ -39,7 +39,7 @@ export default function TrackRail({
   hidden, disabled, activeId, queueClassId, activeColorCss,
   tracking, trackingParentIds, promptEditing, promptTool, promptBrushSize, promptEraserSize,
   savingProgress, progressSaved,
-  trackError, axisIsZ, prompts, selectedParentId,
+  axisIsZ, prompts, selectedParentId,
   pendingReview, reviewAction, promptUndoCount, promptRedoCount,
   overwriteMode, layerCount, historyBusy = false,
   onSelectPrompt, onQueueActive, onRange,
@@ -54,7 +54,7 @@ export default function TrackRail({
   tracking: boolean; trackingParentIds: number[];
   promptEditing: boolean; promptTool: TrackingPromptTool | null;
   savingProgress: boolean; progressSaved: boolean;
-  promptBrushSize: number; promptEraserSize: number; trackError: string | null;
+  promptBrushSize: number; promptEraserSize: number;
   axisIsZ: boolean; prompts: TrackingPrompt[]; selectedParentId: number | null;
   pendingReview: { parent_ids: number[]; status: "pending_review" } | null;
   reviewAction: "confirm" | "reject" | null;
@@ -231,9 +231,6 @@ export default function TrackRail({
             </span>
             <span className="muted track-range-hint">inclusive</span>
           </div>
-          {selected && rangeIssue && (
-            <p className="muted track-range-issue" role="status">{rangeIssue}</p>
-          )}
           {tracking && (
             <div className="track-propagation-status" role="status">
               <span>
@@ -282,7 +279,6 @@ export default function TrackRail({
             <button type="button" className="secondary track-review-reject" title={reviewing ? `Reject pending Track preview for classes ${pendingParentIds.join(", ")}` : "No pending Track preview to reject"} disabled={tracking || reviewAction != null || !reviewing} onClick={() => onReview("reject")}>{reviewAction === "reject" ? "Rejecting…" : "Reject"}</button>
           </div>
         </section>
-        {trackError && <span className="error track-rail-error">{trackError}</span>}
       </div>
     </div>
   );

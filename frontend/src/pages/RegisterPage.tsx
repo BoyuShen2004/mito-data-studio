@@ -14,7 +14,6 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [institution, setInstitution] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (user) {
@@ -24,7 +23,6 @@ export default function RegisterPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    setError(null);
     try {
       const u = await register({
         username,
@@ -35,7 +33,7 @@ export default function RegisterPage() {
       });
       navigate(homePathForRole(u.role), { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      window.alert(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setBusy(false);
     }
@@ -82,8 +80,6 @@ export default function RegisterPage() {
               Register as Annotator
             </button>
           </div>
-
-          {error && <div className="error">{error}</div>}
 
           <form onSubmit={onSubmit}>
             <label className="field">

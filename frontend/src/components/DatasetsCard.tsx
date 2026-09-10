@@ -129,11 +129,9 @@ function DatasetEditForm({
   const [maskDir, setMaskDir] = useState(dataset.mask_directory);
   const [meta, setMeta] = useState<DatasetMetadata>(dataset.metadata ?? {});
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
     setBusy(true);
-    setError(null);
     try {
       // Send blanks as null so clearing a field removes it server-side
       // rather than merging an empty string back in.
@@ -153,7 +151,7 @@ function DatasetEditForm({
       });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      window.alert(err instanceof Error ? err.message : "Save failed");
     } finally {
       setBusy(false);
     }
@@ -161,7 +159,6 @@ function DatasetEditForm({
 
   return (
     <div className="edit-form">
-      {error && <div className="error">{error}</div>}
       <div className="row fields">
         <label className="field" style={{ flex: 1 }}>
           <span>Dataset name</span>

@@ -49,7 +49,6 @@ function renderChrome(
     activeId: 3,
     onActiveId: vi.fn(),
     onNewInstance: vi.fn(),
-    aiError: null,
     aiPointCount: 0,
     hasAiPreview: false,
     onFinalizeAiPoints: vi.fn(),

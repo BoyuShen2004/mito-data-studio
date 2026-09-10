@@ -81,12 +81,14 @@ describe("ShareControl", () => {
   it("does not claim Copied when the clipboard write fails", async () => {
     api.getEntityShare.mockResolvedValue({scope: "volume", active: true, aggregate_state: "shared", shares: [{id: 9, scope: "volume", url: "/share/public/old", created_by: 4}]});
     vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error("clipboard denied"));
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
     render(<ShareControl scope="volume" projectId={1} volumeId={3}/>);
 
     fireEvent.click(await screen.findByRole("button", {name: "Copy link"}));
-    expect(await screen.findByText("Could not copy link. Try again.")).toBeTruthy();
+    await waitFor(() => expect(alert).toHaveBeenCalledWith("Could not copy link. Try again."));
     expect(screen.queryByRole("button", {name: "Copied"})).toBeNull();
     expect(screen.getByRole("button", {name: "Copy link"})).toBeTruthy();
+    alert.mockRestore();
   });
 
   it("lets only a manager stop without reloading its containing page", async () => {

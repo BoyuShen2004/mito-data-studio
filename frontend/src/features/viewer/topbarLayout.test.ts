@@ -65,10 +65,6 @@ describe("editor topbar slots", () => {
     // spilling buttons across the centre one.
     expect(share).toMatch(/min-width:\s*14rem/);
     expect(share).toMatch(/flex:\s*0 0 auto/);
-    // An error message inside it must not be able to widen it either.
-    expect(rule(".editor-share-slot .share-control .error")).toMatch(
-      /text-overflow:\s*ellipsis/,
-    );
   });
 
   it("reserves one width for every Submit label", () => {

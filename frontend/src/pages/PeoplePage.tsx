@@ -138,11 +138,9 @@ function ProfileCard({ me, onSaved }: { me: Person; onSaved: () => void }) {
   const [institution, setInstitution] = useState(me.institution_name);
   const [note, setNote] = useState(me.contact_note);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
     setBusy(true);
-    setError(null);
     try {
       await updateMyProfile({
         display_name: displayName,
@@ -152,7 +150,7 @@ function ProfileCard({ me, onSaved }: { me: Person; onSaved: () => void }) {
       setEditing(false);
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save your profile.");
+      window.alert(e instanceof Error ? e.message : "Could not save your profile.");
     } finally {
       setBusy(false);
     }
@@ -170,7 +168,6 @@ function ProfileCard({ me, onSaved }: { me: Person; onSaved: () => void }) {
           {editing ? "Cancel" : "Edit"}
         </button>
       </div>
-      {error && <div className="error">{error}</div>}
       {editing ? (
         <div className="edit-form" style={{ margin: 0 }}>
           <div className="row fields">

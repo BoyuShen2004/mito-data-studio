@@ -32,7 +32,15 @@ export default function DeleteButton({
   className?: string;
 }) {
   const [busy, setBusy] = useState(false);
-  const [blocked, setBlocked] = useState<string | null>(null);
+
+  /** The server's refusal reason and the override share one native dialog. */
+  const force = async (reason: string) => {
+    if (!window.confirm(`${reason}\n\nPermanently delete ${label} AND its annotation work?\n\nThis cannot be undone.`)) {
+      return;
+    }
+    await onDelete(true);
+    onDone();
+  };
 
   const run = async () => {
     setBusy(true);
@@ -41,28 +49,14 @@ export default function DeleteButton({
       if (!window.confirm(`Delete ${label}?\n\nThis also removes ${describe(counts)}.`)) {
         return;
       }
-      await onDelete(false);
-      onDone();
-    } catch (err) {
-      // 409 means the server is protecting existing work; offer the override.
-      if (err instanceof ApiError && err.status === 409) {
-        setBlocked(err.message);
-      } else {
-        window.alert(err instanceof Error ? err.message : "Delete failed");
+      try {
+        await onDelete(false);
+      } catch (err) {
+        // 409 means the server is protecting existing work; offer the override.
+        if (!(err instanceof ApiError && err.status === 409)) throw err;
+        await force(err.message);
+        return;
       }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const force = async () => {
-    if (!window.confirm(`Permanently delete ${label} AND its annotation work?\n\nThis cannot be undone.`)) {
-      return;
-    }
-    setBusy(true);
-    try {
-      await onDelete(true);
-      setBlocked(null);
       onDone();
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Delete failed");
@@ -70,22 +64,6 @@ export default function DeleteButton({
       setBusy(false);
     }
   };
-
-  if (blocked) {
-    return (
-      <div className="delete-blocked">
-        <div className="error">{blocked}</div>
-        <div className="row">
-          <button type="button" className="danger" onClick={force} disabled={busy}>
-            Delete anyway (destroys work)
-          </button>
-          <button type="button" className="secondary" onClick={() => setBlocked(null)}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <button type="button" className={className} onClick={run} disabled={busy}>

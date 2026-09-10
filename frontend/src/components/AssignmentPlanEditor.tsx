@@ -163,7 +163,6 @@ export default function AssignmentPlanEditor({
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(workingTeamId);
   const [collaborationState, setCollaborationState] = useState<CollaborationState | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (collaboration.data) setCollaborationState(collaboration.data);
@@ -227,7 +226,6 @@ export default function AssignmentPlanEditor({
   // for tasks the manager hasn't already given someone.
   const autoFill = async () => {
     setBusy(true);
-    setError(null);
     try {
       const plan = await previewAssignPlan(projectId);
       const nextDraft: Record<number, DraftRow> = {};
@@ -252,7 +250,7 @@ export default function AssignmentPlanEditor({
       setMeta(metaMap);
       setOrder(ids);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not build a plan.");
+      window.alert(e instanceof Error ? e.message : "Could not build a plan.");
     } finally {
       setBusy(false);
     }
@@ -261,7 +259,6 @@ export default function AssignmentPlanEditor({
   const save = async () => {
     if (dirtyIds.length === 0) return;
     setBusy(true);
-    setError(null);
     try {
       const entries = dirtyIds.map((id) => toInput(meta[id], draft[id]));
       await applyAssignPlan(projectId, entries);
@@ -279,7 +276,7 @@ export default function AssignmentPlanEditor({
       setOrder(fresh.map((t) => t.id));
       onSaved?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Saving the plan failed.");
+      window.alert(e instanceof Error ? e.message : "Saving the plan failed.");
     } finally {
       setBusy(false);
     }
@@ -287,7 +284,6 @@ export default function AssignmentPlanEditor({
 
   const discard = () => {
     setDraft(original);
-    setError(null);
   };
 
   if (rows.loading && !rowsLoaded) return <p className="muted">Loading tasks…</p>;
@@ -309,7 +305,6 @@ export default function AssignmentPlanEditor({
       "Change this project's working team? Assignments are kept for shared members; other assignments are withdrawn as cancelled.",
     )) return;
     setBusy(true);
-    setError(null);
     try {
       const state = await mutateCollaboration({
         action: "set_project_working_team",
@@ -338,7 +333,7 @@ export default function AssignmentPlanEditor({
       ));
       onSaved?.();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not update the working team.");
+      window.alert(reason instanceof Error ? reason.message : "Could not update the working team.");
     } finally {
       setBusy(false);
     }
@@ -347,8 +342,7 @@ export default function AssignmentPlanEditor({
   return (
     <>
       {/* Toolbar is right-aligned alone so button label changes (Save plan /
-          Save plan (N), Working…) never shove neighbors. Status text sits in a
-          reserved-height slot so autofill/save notices never move the table. */}
+          Save plan (N), Working…) never shove neighbors. */}
       <div className="plan-toolbar">
         <button
           className="secondary plan-btn-autofill"
@@ -375,10 +369,6 @@ export default function AssignmentPlanEditor({
               ? `Save plan (${dirtyIds.length})`
               : "Save plan"}
         </button>
-      </div>
-
-      <div className="plan-status" aria-live="polite">
-        {error ? <div className="error">{error}</div> : null}
       </div>
 
       <div className="working-team-panel">
@@ -633,7 +623,6 @@ function AnnotationLockButton({
   onChanged: (locked: boolean) => void;
 }) {
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const nextLocked = !task.annotation_locked;
   return <span className="plan-lock-annotation">
     <button
@@ -642,12 +631,11 @@ function AnnotationLockButton({
       disabled={disabled || running}
       onClick={async () => {
         setRunning(true);
-        setError(null);
         try {
           await setTaskAnnotationLock(task.id, nextLocked);
           onChanged(nextLocked);
         } catch (reason) {
-          setError(reason instanceof Error ? reason.message : "Could not change annotation access.");
+          window.alert(reason instanceof Error ? reason.message : "Could not change annotation access.");
         } finally {
           setRunning(false);
         }
@@ -655,7 +643,6 @@ function AnnotationLockButton({
     >
       {running ? "Updating…" : task.annotation_locked ? "Reopen annotation" : "Close annotation"}
     </button>
-    {error && <span className="error">{error}</span>}
   </span>;
 }
 
@@ -679,7 +666,6 @@ function ResetLabelsButton({
   onReset: () => void;
 }) {
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   return (
     <span className="plan-reset-labels">
       <button
@@ -698,12 +684,11 @@ function ResetLabelsButton({
             return;
           }
           setRunning(true);
-          setError(null);
           try {
             await resetWorkingLabels(taskId);
             onReset();
           } catch (e) {
-            setError(e instanceof Error ? e.message : "Reset failed");
+            window.alert(e instanceof Error ? e.message : "Reset failed");
           } finally {
             setRunning(false);
           }
@@ -711,7 +696,6 @@ function ResetLabelsButton({
       >
         {running ? "Resetting…" : "Reset annotations"}
       </button>
-      {error && <span className="error">{error}</span>}
     </span>
   );
 }

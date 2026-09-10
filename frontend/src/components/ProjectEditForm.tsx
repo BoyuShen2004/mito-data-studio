@@ -20,11 +20,9 @@ export default function ProjectEditForm({
   const [status, setStatus] = useState(project.status);
   const [deadline, setDeadline] = useState(project.deadline ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
     setBusy(true);
-    setError(null);
     try {
       await updateProject(project.id, {
         title,
@@ -37,7 +35,7 @@ export default function ProjectEditForm({
       });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      window.alert(err instanceof Error ? err.message : "Save failed");
     } finally {
       setBusy(false);
     }
@@ -46,7 +44,6 @@ export default function ProjectEditForm({
   return (
     <div className="card edit-form">
       <h3>Edit project</h3>
-      {error && <div className="error">{error}</div>}
       <div className="row fields">
         <label className="field" style={{ flex: 2 }}>
           <span>Title</span>

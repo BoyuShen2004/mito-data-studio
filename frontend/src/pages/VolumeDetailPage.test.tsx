@@ -18,12 +18,11 @@ describe("StreamingStatusCard", () => {
         volume={volume("failed")}
         isManager
         busy={false}
-        notice={null}
         onBuild={onBuild}
       />,
     );
     expect(screen.getByText(/continue through the original source/)).toBeTruthy();
-    expect(screen.getByText("checksum mismatch")).toBeTruthy();
+    expect(screen.getByTitle("checksum mismatch")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry pyramid" }));
     expect(onBuild).toHaveBeenCalledOnce();
   });
@@ -34,7 +33,6 @@ describe("StreamingStatusCard", () => {
         volume={volume("building")}
         isManager
         busy={false}
-        notice={null}
         onBuild={vi.fn()}
       />,
     );
@@ -47,7 +45,6 @@ describe("StreamingStatusCard", () => {
         volume={volume("ready")}
         isManager
         busy={null}
-        notice={null}
         onBuild={vi.fn()}
       />,
     );
@@ -67,11 +64,10 @@ describe("StreamingStatusCard", () => {
         } as Volume}
         isManager
         busy={null}
-        notice={null}
         onBuild={onBuild}
       />,
     );
-    expect(screen.getByText("region source unreadable")).toBeTruthy();
+    expect(screen.getByTitle("region source unreadable")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry region" }));
     expect(onBuild).toHaveBeenCalledWith("region");
     fireEvent.click(screen.getByRole("button", { name: "Rebuild pyramid" }));
@@ -88,7 +84,6 @@ describe("StreamingStatusCard", () => {
         } as Volume}
         isManager
         busy="region"
-        notice={null}
         onBuild={vi.fn()}
       />,
     );

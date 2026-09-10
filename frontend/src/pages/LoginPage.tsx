@@ -21,9 +21,7 @@ export default function LoginPage() {
   const [portal, setPortal] = useState<LoginPortal>("annotator");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [resetError, setResetError] = useState<string | null>(null);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [mockAccounts, setMockAccounts] = useState<MockAccount[]>([]);
   const [release, setRelease] = useState<string | null>(null);
@@ -37,13 +35,10 @@ export default function LoginPage() {
     setPortal(account.role === "requester" ? "requester" : "annotator");
     setUsername(account.username);
     setPassword(account.password);
-    setError(null);
   };
 
   const resetDevelopmentData = async () => {
-    setResetError(null);
     setResetMessage(null);
-    setError(null);
     setBusy(true);
     try {
       // GET both proves that this deployment has explicitly enabled the
@@ -61,7 +56,7 @@ export default function LoginPage() {
       await clearDevelopmentData(status.confirmation);
       setResetMessage("All development data and files were cleared.");
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : "Development reset failed");
+      window.alert(err instanceof Error ? err.message : "Development reset failed");
     } finally {
       setBusy(false);
     }
@@ -75,11 +70,10 @@ export default function LoginPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    setError(null);
     try {
       await login(username, password, portal);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      window.alert(err instanceof Error ? err.message : "Login failed");
     } finally {
       setBusy(false);
     }
@@ -156,8 +150,6 @@ export default function LoginPage() {
             </p>
           )}
 
-          {error && <div className="error">{error}</div>}
-
           <form className="login-form" onSubmit={onSubmit}>
             <label className="field">
               <span>Username</span>
@@ -209,7 +201,6 @@ export default function LoginPage() {
                 Clearing application data retains these reusable identities.
               </div>
               <div className="dev-reset">
-                {resetError && <div className="error">{resetError}</div>}
                 {resetMessage && <div className="success">{resetMessage}</div>}
                 <button
                   type="button"

@@ -28,7 +28,7 @@ function renderRail(
     tracking={tracking} trackingParentIds={tracking ? [50, 51] : []}
     promptEditing={promptTool != null} promptTool={promptTool} promptBrushSize={8} promptEraserSize={12}
     savingProgress={false} progressSaved={progressSaved}
-    trackError={null} axisIsZ prompts={prompts} selectedParentId={prompts[0]?.parent_id ?? null}
+    axisIsZ prompts={prompts} selectedParentId={prompts[0]?.parent_id ?? null}
     pendingReview={pendingReview} promptUndoCount={promptUndoCount} promptRedoCount={promptRedoCount}
     reviewAction={reviewAction}
     overwriteMode="overwrite_empty"
@@ -281,7 +281,7 @@ describe("TrackRail", () => {
       hidden={false} disabled={false} activeId={50} queueClassId={61} activeColorCss="#fff"
       tracking={false} trackingParentIds={[]} promptEditing={false} promptTool={null}
       savingProgress={false} progressSaved={false}
-      promptBrushSize={8} promptEraserSize={12} trackError={null} axisIsZ prompts={[]}
+      promptBrushSize={8} promptEraserSize={12} axisIsZ prompts={[]}
       selectedParentId={null} pendingReview={null}
       reviewAction={null} promptUndoCount={0} promptRedoCount={0}
       overwriteMode="overwrite_empty" layerCount={20} onRange={vi.fn()}
@@ -301,7 +301,7 @@ describe("TrackRail", () => {
       hidden={false} disabled={false} activeId={50} activeColorCss="#fff"
       tracking={false} trackingParentIds={[]} promptEditing={false} promptTool={null}
       savingProgress={false} progressSaved={false}
-      promptBrushSize={8} promptEraserSize={12} trackError={null} axisIsZ prompts={[]}
+      promptBrushSize={8} promptEraserSize={12} axisIsZ prompts={[]}
       selectedParentId={null} pendingReview={null}
       reviewAction={null} promptUndoCount={0} promptRedoCount={0}
       overwriteMode="overwrite_empty" layerCount={20} onRange={vi.fn()}
@@ -403,19 +403,19 @@ describe("TrackRail", () => {
     const missing = renderRail([{ ...base, start_z: null, end_z: null, z_range: [0, 0] }]);
     expect(propagate().disabled).toBe(true);
     expect(all().textContent).toBe("Propagate all (0)");
-    expect(screen.getByText(/Set both Start and End/)).toBeTruthy();
+    expect(propagate().title).toMatch(/Set both Start and End/);
     missing.unmount();
 
     // Reversed range.
     const reversed = renderRail([{ ...base, start_z: 8, end_z: 2, z_range: [8, 2] }]);
     expect(propagate().disabled).toBe(true);
-    expect(screen.getByText(/must not be before Start layer/)).toBeTruthy();
+    expect(propagate().title).toMatch(/must not be before Start layer/);
     reversed.unmount();
 
     // A seed outside the chosen range, reported in layer numbers.
     const outside = renderRail([{ ...base, start_z: 5, end_z: 8, z_range: [5, 8] }]);
     expect(propagate().disabled).toBe(true);
-    expect(screen.getByText(/Seed layer 4 falls? outside 6–9/)).toBeTruthy();
+    expect(propagate().title).toMatch(/Seed layer 4 falls? outside 6–9/);
     outside.unmount();
 
     // Seeds but no range vs. a range but no seeds — both blocked.
@@ -423,7 +423,7 @@ describe("TrackRail", () => {
       ...base, subclasses: [{ index: 1, seeds: [] }], start_z: 0, end_z: 9, z_range: [0, 9],
     }]);
     expect(propagate().disabled).toBe(true);
-    expect(screen.getByText(/Draw at least one seed/)).toBeTruthy();
+    expect(propagate().title).toMatch(/Draw at least one seed/);
     seedless.unmount();
 
     // Valid: one seed inside a wider inclusive range.
@@ -643,7 +643,7 @@ describe("TrackRail", () => {
       tracking={false} trackingParentIds={[]}
       promptEditing={false} promptTool={null} promptBrushSize={8} promptEraserSize={12}
       savingProgress={false} progressSaved={false}
-      trackError={null} axisIsZ={false} prompts={[]} selectedParentId={null}
+      axisIsZ={false} prompts={[]} selectedParentId={null}
       pendingReview={{ parent_ids: [50], status: "pending_review" }}
       promptUndoCount={0} promptRedoCount={0} reviewAction={null}
       overwriteMode="overwrite_empty"

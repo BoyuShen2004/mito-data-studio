@@ -412,6 +412,7 @@ describe("Register Data interrupted response reconciliation", () => {
       status: "complete",
       volumes: [{id: 91, name: "heart", dataset: 44}],
     });
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
 
     await submitRegistration();
 
@@ -422,29 +423,35 @@ describe("Register Data interrupted response reconciliation", () => {
       1,
       {dataset: null, volumeIds: []},
     );
-    expect(screen.queryByText(/Some directories could not be registered/)).toBeNull();
-    expect(screen.queryByText(/Failed to fetch/)).toBeNull();
+    expect(alert).not.toHaveBeenCalled();
+    alert.mockRestore();
   });
 
   it("shows a real failure when reconciliation confirms the dataset is missing", async () => {
     harness.reconcile.mockResolvedValue({status: "missing"});
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
 
     await submitRegistration();
 
-    expect(await screen.findByText(
-      /Some directories could not be registered: nag_p10_batch2 \(Failed to fetch\)/,
-    )).toBeTruthy();
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(
+      "Some directories could not be registered: nag_p10_batch2 (Failed to fetch)",
+    ));
     expect(screen.queryByText("nag_p10_batch2 (1)")).toBeNull();
+    alert.mockRestore();
   });
 
   it("uses a cautious message when project-state verification is inconclusive", async () => {
     harness.reconcile.mockResolvedValue({status: "inconclusive"});
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
 
     await submitRegistration();
 
-    expect((await screen.findByRole("status")).textContent).toMatch(
-      /Registration may have completed.*check the project Data tab/i,
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(
+      expect.stringMatching(/Registration may have completed.*check the project Data tab/i),
+    ));
+    expect(alert).not.toHaveBeenCalledWith(
+      expect.stringMatching(/Some directories could not be registered/),
     );
-    expect(screen.queryByText(/Some directories could not be registered/)).toBeNull();
+    alert.mockRestore();
   });
 });

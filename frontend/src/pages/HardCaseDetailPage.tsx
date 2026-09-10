@@ -48,8 +48,7 @@ export default function HardCaseDetailPage() {
     [caseId],
   );
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const [axisControls, setAxisControls] = useState<AxisControls | null>(null);
   const onAxisControls = useCallback((c: AxisControls | null) => {
     setAxisControls(c);
@@ -62,7 +61,7 @@ export default function HardCaseDetailPage() {
       await navigator.clipboard.writeText(publicUrl);
       setCopyState("copied");
     } catch {
-      setCopyState("failed");
+      window.alert("Could not copy the link.");
     }
   };
 
@@ -78,12 +77,11 @@ export default function HardCaseDetailPage() {
       return;
     }
     setBusy(true);
-    setNotice(null);
     try {
       await setHardCaseStatus(hardCase.id, next);
       reload();
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Could not update the case.");
+      window.alert(e instanceof Error ? e.message : "Could not update the case.");
     } finally {
       setBusy(false);
     }
@@ -92,12 +90,11 @@ export default function HardCaseDetailPage() {
   const toggleRevoked = async () => {
     if (!hardCase) return;
     setBusy(true);
-    setNotice(null);
     try {
       await setHardCaseRevoked(hardCase.id, !hardCase.revoked);
       reload();
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Could not update the link.");
+      window.alert(e instanceof Error ? e.message : "Could not update the link.");
     } finally {
       setBusy(false);
     }
@@ -253,7 +250,6 @@ export default function HardCaseDetailPage() {
                   {hardCase.revoked ? "Restore link" : "Revoke link"}
                 </button>
               )}
-              {copyState === "failed" && <span className="error">Could not copy the link.</span>}
             </div>
           </div>
 
@@ -272,7 +268,6 @@ export default function HardCaseDetailPage() {
               </div>
             </div>
           )}
-          {notice && <p className="error" role="alert">{notice}</p>}
         </aside>
       </div>
     </div>

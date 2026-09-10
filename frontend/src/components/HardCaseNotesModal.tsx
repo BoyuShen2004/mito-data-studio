@@ -76,7 +76,6 @@ export function HardCaseDiscussion({
   const [reply, setReply] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Track the row the host re-fetched, so a take-down elsewhere on the page is
   // reflected here without remounting and losing a half-typed reply.
@@ -93,7 +92,7 @@ export function HardCaseDiscussion({
         if (live) setMessages(rows);
       })
       .catch((e: unknown) => {
-        if (live) setError(e instanceof Error ? e.message : "Could not load discussion.");
+        if (live) window.alert(e instanceof Error ? e.message : "Could not load discussion.");
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -103,13 +102,12 @@ export function HardCaseDiscussion({
 
   const saveCategory = async (next: string) => {
     setBusy(true);
-    setError(null);
     try {
       const updated = await updateHardCaseCategory(hardCase.id, next);
       setHardCase(updated);
       onChanged?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not change the category.");
+      window.alert(e instanceof Error ? e.message : "Could not change the category.");
     } finally {
       setBusy(false);
     }
@@ -117,14 +115,13 @@ export function HardCaseDiscussion({
 
   const saveNote = async () => {
     setBusy(true);
-    setError(null);
     try {
       const updated = await updateHardCaseNote(hardCase.id, note);
       setHardCase(updated);
       setNote(updated.note);
       onChanged?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save note.");
+      window.alert(e instanceof Error ? e.message : "Could not save note.");
     } finally {
       setBusy(false);
     }
@@ -134,14 +131,13 @@ export function HardCaseDiscussion({
     const body = reply.trim();
     if (!body) return;
     setBusy(true);
-    setError(null);
     try {
       const created = await addHardCaseMessage(hardCase.id, body);
       setMessages((rows) => [...rows, created]);
       setReply("");
       onChanged?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not post message.");
+      window.alert(e instanceof Error ? e.message : "Could not post message.");
     } finally {
       setBusy(false);
     }
@@ -249,7 +245,6 @@ export function HardCaseDiscussion({
           </div>
         </div>
       )}
-      {error && <p className="error" role="alert">{error}</p>}
     </>
   );
 }

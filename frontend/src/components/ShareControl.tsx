@@ -23,7 +23,6 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
   const remote = useAsync(() => getEntityShare(params), [scope, projectId, datasetId, volumeId]);
   const [local, setLocal] = useState<EntityShareState | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
   const copiedReset = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -38,7 +37,6 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
   const current = local ?? remote.data;
   const share = async () => {
     setBusy(true);
-    setMessage("");
     try {
       const row = await createPublicShare(params);
       setLocal({
@@ -54,7 +52,7 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
         // Share succeeded; Copy link is available — no chrome tip.
       }
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      window.alert(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -62,7 +60,6 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
 
   const stop = async () => {
     setBusy(true);
-    setMessage("");
     try {
       await Promise.all((current?.shares ?? []).map(row => revokePublicShare(row.id)));
       // Patch immediately. Parent aggregate state is then refreshed inside this
@@ -73,7 +70,7 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
       // only this compact control to learn that aggregate LED, never its page.
       if (scope !== "volume") setLocal(await getEntityShare(params));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      window.alert(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -94,7 +91,6 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
     )}
     {active && liveShare && (
       <button type="button" className="secondary share-copy-button" onClick={async () => {
-        setMessage("");
         try {
           await navigator.clipboard.writeText(withViewLocation(liveShare.url, getViewLocation?.()));
           setCopied(true);
@@ -109,14 +105,13 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
             copiedReset.current = null;
           }
           setCopied(false);
-          setMessage("Could not copy link. Try again.");
+          window.alert("Could not copy link. Try again.");
         }
       }}>{copied ? "Copied" : "Copy link"}</button>
     )}
     {active && canStop && (
       <button type="button" className="secondary" disabled={busy} onClick={stop}>Stop sharing</button>
     )}
-    {message && <span className="error" aria-live="polite">{message}</span>}
   </span>;
 }
 

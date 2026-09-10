@@ -38,7 +38,6 @@ export default function ProfilePage() {
     () => ({ ...(user?.annotate_shortcuts ?? {}) }),
   );
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   const tools = user?.annotate_shortcut_tools ?? [];
@@ -66,7 +65,6 @@ export default function ProfilePage() {
 
   const save = async () => {
     setSaving(true);
-    setError(null);
     setSaved(false);
     try {
       await updateMyProfile({
@@ -77,7 +75,7 @@ export default function ProfilePage() {
       await refresh();
       setSaved(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save your profile");
+      window.alert(e instanceof Error ? e.message : "Could not save your profile");
     } finally {
       setSaving(false);
     }
@@ -153,12 +151,6 @@ export default function ProfilePage() {
                 );
               })}
             </div>
-            {conflicts.size > 0 && (
-              <p className="error profile-shortcut-error" role="alert">
-                Two tools cannot share a letter — one shortcut, one tool. Change one
-                of the highlighted boxes.
-              </p>
-            )}
             <button
               type="button"
               className="secondary"
@@ -183,7 +175,6 @@ export default function ProfilePage() {
           {saving ? "Saving…" : "Save profile"}
         </button>
         {saved && <span className="muted" role="status">Saved.</span>}
-        {error && <span className="error">{error}</span>}
       </div>
     </div>
   );

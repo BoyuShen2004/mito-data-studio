@@ -47,7 +47,6 @@ export default function VolumeDetailPage() {
   );
 
   const [pyramidBusy, setPyramidBusy] = useState<"image" | "region" | null>(null);
-  const [pyramidNotice, setPyramidNotice] = useState<string | null>(null);
 
   const building =
     vol.data?.streaming_status === "building" ||
@@ -63,17 +62,11 @@ export default function VolumeDetailPage() {
 
   const buildPyramid = async (layer: "image" | "region") => {
     setPyramidBusy(layer);
-    setPyramidNotice(null);
     try {
       await buildVolumePyramid(volumeId, layer);
-      setPyramidNotice(
-        layer === "region"
-          ? "Region-mask build queued. The Region overlay keeps using full layers while it builds."
-          : "Pyramid build queued. The original source remains available while it builds.",
-      );
       vol.reload();
     } catch (error) {
-      setPyramidNotice(error instanceof Error ? error.message : "Could not queue pyramid build.");
+      window.alert(error instanceof Error ? error.message : "Could not queue pyramid build.");
     } finally {
       setPyramidBusy(null);
     }
@@ -123,7 +116,6 @@ export default function VolumeDetailPage() {
             volume={v}
             isManager={isManager}
             busy={pyramidBusy}
-            notice={pyramidNotice}
             onBuild={buildPyramid}
           />
         </div>
@@ -221,7 +213,7 @@ function StreamingLayerRow({
             <strong>{layer === "image" ? "Image" : "Region mask"}</strong>
             <StatusBadge value={state} />
           </div>
-          <p className="muted" style={{ marginBottom: 0 }}>{STREAMING_COPY[layer][state]}</p>
+          <p className="muted" style={{ marginBottom: 0 }} title={error || undefined}>{STREAMING_COPY[layer][state]}</p>
         </div>
         {isManager && (
           <button
@@ -234,7 +226,6 @@ function StreamingLayerRow({
           </button>
         )}
       </div>
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }
@@ -243,14 +234,12 @@ export function StreamingStatusCard({
   volume,
   isManager,
   busy,
-  notice,
   onBuild,
 }: {
   volume: Volume | AnnotationTask;
   isManager: boolean;
   /** Which layer is mid-request, so only that row's button says "Queueing…". */
   busy: "image" | "region" | null | boolean;
-  notice: string | null;
   onBuild: (layer: "image" | "region") => void;
 }) {
   const state = volume.streaming_status ?? (volume.ready_streaming ? "ready" : "not_built");
@@ -281,7 +270,6 @@ export function StreamingStatusCard({
           onBuild={() => onBuild("region")}
         />
       )}
-      {notice && <p className="error" role="alert">{notice}</p>}
     </section>
   );
 }
@@ -306,7 +294,6 @@ function VolumeMetadataSidebar({
   const [labelPath, setLabelPath] = useState(volume.label_path);
   const [labelType, setLabelType] = useState<string>(volume.label_type);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const dirty =
     name !== volume.name ||
@@ -321,20 +308,18 @@ function VolumeMetadataSidebar({
     setRegionMaskPath(volume.region_mask_path);
     setLabelPath(volume.label_path);
     setLabelType(volume.label_type);
-    setError(null);
   };
 
   const save = async () => {
     setBusy(true);
-    setError(null);
     try {
       const hasMask = Boolean(labelPath.trim());
       if (!hasMask && labelType !== "none") {
-        setError("Without a mask path, label type must be none.");
+        window.alert("Without a mask path, label type must be none.");
         return;
       }
       if (hasMask && labelType === "none") {
-        setError("With a mask path, label type cannot be none.");
+        window.alert("With a mask path, label type cannot be none.");
         return;
       }
       await editVolume(volume.id, {
@@ -346,7 +331,7 @@ function VolumeMetadataSidebar({
       });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      window.alert(err instanceof Error ? err.message : "Save failed");
     } finally {
       setBusy(false);
     }
@@ -357,7 +342,6 @@ function VolumeMetadataSidebar({
 
   return (
     <aside className="volume-sidebar" aria-label="Volume metadata">
-      {error && <div className="error">{error}</div>}
       <label className="field">
         <span>Name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />

@@ -10,7 +10,7 @@ export default function AdminSettingsPage() {
   const [phrase, setPhrase] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (user?.is_superuser) getResetStatus().then(setStatus).catch((e) => setMessage(e.message)); }, [user]);
+  useEffect(() => { if (user?.is_superuser) getResetStatus().then(setStatus).catch((e) => window.alert(e.message)); }, [user]);
   if (!user?.is_superuser) return <Navigate to="/" replace />;
 
   const clear = async () => {
@@ -22,7 +22,7 @@ export default function AdminSettingsPage() {
       setMessage(`Reset completed. Manifest: ${JSON.stringify(result)}`);
       setPassword(""); setPhrase("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Reset failed");
+      window.alert(error instanceof Error ? error.message : "Reset failed");
     } finally { setBusy(false); }
   };
 
@@ -47,6 +47,6 @@ export default function AdminSettingsPage() {
         </button>
       </div>
     </>}
-    {message && <div role="status" className={message.startsWith("Reset completed") ? "success" : "error"}>{message}</div>}
+    {message && <div role="status" className="success">{message}</div>}
   </section>;
 }

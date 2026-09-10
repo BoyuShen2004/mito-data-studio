@@ -75,7 +75,6 @@ export default function AnnotateToolChrome({
   activeId,
   onActiveId,
   onNewInstance,
-  aiError,
   aiPointCount,
   hasAiPreview,
   onFinalizeAiPoints,
@@ -146,7 +145,6 @@ export default function AnnotateToolChrome({
   activeId: number;
   onActiveId: (id: number) => void;
   onNewInstance: () => void;
-  aiError: string | null;
   aiPointCount: number;
   hasAiPreview: boolean;
   onFinalizeAiPoints: () => void;
@@ -401,7 +399,6 @@ export default function AnnotateToolChrome({
         )}
         {(paintTool === "point_mask" || paintTool === "boundary") && (
           <>
-            {aiError && <span className="error">{aiError}</span>}
             <button onClick={onFinalizeAiPoints} disabled={aiPointCount === 0}>
               Commit (Enter)
             </button>
@@ -412,7 +409,6 @@ export default function AnnotateToolChrome({
         )}
         {paintTool === "box_mask" && (
           <>
-            {aiError && <span className="error">{aiError}</span>}
             <button onClick={onCommitAiPreview} disabled={!hasAiPreview}>
               Commit (Enter)
             </button>

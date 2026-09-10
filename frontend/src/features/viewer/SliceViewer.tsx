@@ -24,7 +24,6 @@ import {
 } from "./viewLocation";
 import {
   ChunkRenderedImageSource,
-  chunkFallbackMessage,
   phase14ChunkRendererEnabled,
 } from "../rendering";
 
@@ -94,7 +93,6 @@ export default function SliceViewer({ volumeId, onViewLocation }: { volumeId: nu
   // "window" = classic fit-to-viewport (Cellable's fitWindow); "width" = fill
   // the horizontal space and let the viewport scroll vertically (fitWidth).
   const [fitMode, setFitMode] = useState<"window" | "width">("window");
-  const [rendererNotice, setRendererNotice] = useState<string | null>(null);
   const [rendererRevision, setRendererRevision] = useState(0);
   const chunkRenderer = useRef<ChunkRenderedImageSource | null>(null);
   const chunkFallback = useRef(false);
@@ -117,12 +115,8 @@ export default function SliceViewer({ volumeId, onViewLocation }: { volumeId: nu
     chunkRenderer.current?.dispose();
     chunkRenderer.current = null;
     chunkFallback.current = false;
-    setRendererNotice(null);
     if (!phase14ChunkRendererEnabled() || !meta.data) return;
-    if (meta.data.ready_streaming !== true) {
-      setRendererNotice("Streaming pyramid is not ready; using the original source.");
-      return;
-    }
+    if (meta.data.ready_streaming !== true) return;
     const source = new ChunkRenderedImageSource({
       volumeId,
       deployment: window.location.origin,
@@ -230,7 +224,6 @@ export default function SliceViewer({ volumeId, onViewLocation }: { volumeId: nu
           chunkFallback.current = true;
           chunkRenderer.current?.dispose();
           chunkRenderer.current = null;
-          setRendererNotice(chunkFallbackMessage(error));
           url = await fetchObjectUrl(
             imageSlicePath(volumeId, { axis: a, index: i }),
             signal,
@@ -304,7 +297,6 @@ export default function SliceViewer({ volumeId, onViewLocation }: { volumeId: nu
           regionFallback.current = true;
           regionRenderer.current?.dispose();
           regionRenderer.current = null;
-          setRendererNotice(chunkFallbackMessage(error, "region"));
           url = await fetchObjectUrl(regionMaskSlicePath(volumeId, a, i), signal);
         }
       } else {
@@ -687,7 +679,6 @@ export default function SliceViewer({ volumeId, onViewLocation }: { volumeId: nu
       >
         z{shape.z} · y{shape.y} · x{shape.x} · Ctrl/Cmd+scroll zoom · A/D slice
       </p>
-      {rendererNotice && <p className="muted" role="status">{rendererNotice}</p>}
     </div>
   );
 }

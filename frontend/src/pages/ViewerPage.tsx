@@ -162,7 +162,6 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
     [taskId],
   );
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
   // The submit response carries the refreshed task, so the topbar updates
   // (status, submission_count, can_submit) *without* re-running the loader —
   // a reload here would unmount the canvas mid-session and throw away the
@@ -220,12 +219,11 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
 
   const submitForReview = async () => {
     setSubmitting(true);
-    setSubmitError(null);
     try {
       const submission = await submitInappTask(task.id);
       setSubmittedTask(submission.task_detail);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : "Submit failed");
+      window.alert(e instanceof Error ? e.message : "Submit failed");
     } finally {
       setSubmitting(false);
     }
@@ -276,9 +274,6 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
                 getViewLocation={() => axisControls?.currentLocation() ?? null}
               />
             </div>
-            {submitError && (
-              <span className="error editor-topbar-meta">{submitError}</span>
-            )}
           </div>
           <div className="editor-center-slot">
             {axisControls && <RegionOnlyButton controls={axisControls} />}
@@ -397,12 +392,10 @@ function ReviewLabelCommentModal({
 }) {
   const [body, setBody] = useState(existing?.body ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
     if (!body.trim()) return;
     setBusy(true);
-    setError(null);
     try {
       await saveReviewLabelComment(
         submissionId,
@@ -413,7 +406,7 @@ function ReviewLabelCommentModal({
       );
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save label comment.");
+      window.alert(e instanceof Error ? e.message : "Could not save label comment.");
     } finally {
       setBusy(false);
     }
@@ -440,7 +433,6 @@ function ReviewLabelCommentModal({
             placeholder="What should the annotator review on this mitochondrion?"
           />
         </label>
-        {error && <div className="error" role="alert">{error}</div>}
         <div className="row spread">
           <span className="muted">{body.length}/1000</span>
           <div className="row">

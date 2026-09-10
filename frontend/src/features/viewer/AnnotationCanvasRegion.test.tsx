@@ -21,7 +21,6 @@ vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: 4 } }) 
 
 vi.mock("../rendering", () => ({
   phase14ChunkRendererEnabled: () => false,
-  chunkFallbackMessage: () => "",
   ChunkRenderedImageSource: class {},
 }));
 
@@ -132,16 +131,18 @@ describe("AnnotationCanvas region features", () => {
   });
 
   it("keeps the source image visible when the label layer fails", async () => {
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
     api.getLabelIds.mockRejectedValueOnce(new Error("working-label lock denied"));
     mount();
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(
       "Label layer unavailable: working-label lock denied",
-    );
+    ));
     await waitFor(() => {
       const image = document.querySelector(".canvas-stage img") as HTMLImageElement;
       expect(image?.getAttribute("src")).toBe("blob:/image/3/z/0");
     });
+    alert.mockRestore();
   });
 
   it("assigns the source plane without waiting for the region overlay", async () => {

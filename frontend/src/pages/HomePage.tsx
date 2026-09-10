@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { listHardCases } from "../api/hardCases";
@@ -193,8 +193,11 @@ export default function HomePage() {
   // from one queue would silently empty the next.
   const selectTab = (id: string) => setSearchParams({ tab: id });
 
-  const errors = [myTasks.error, completed.error, waiting.error, projects.error, cases.error]
-    .filter(Boolean);
+  const firstError = [myTasks.error, completed.error, waiting.error, projects.error, cases.error]
+    .find(Boolean);
+  useEffect(() => {
+    if (firstError) window.alert(firstError);
+  }, [firstError]);
 
   return (
     <div className="role-home">
@@ -216,8 +219,6 @@ export default function HomePage() {
           </div>
         )}
       </header>
-
-      {errors.length > 0 && <div className="error">{errors[0]}</div>}
 
       <SectionTabs
         tabs={tabs.map(({ id, label, count }) => ({ id, label, count })) as SectionTab<string>[]}

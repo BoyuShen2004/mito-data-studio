@@ -14,7 +14,6 @@ vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: 4 } }) 
 
 vi.mock("../rendering", () => ({
   phase14ChunkRendererEnabled: () => false,
-  chunkFallbackMessage: () => "",
   ChunkRenderedImageSource: class {},
 }));
 
@@ -318,10 +317,12 @@ describe("Select tool label picking", () => {
   it("keeps the last known label state when a summary refresh fails", async () => {
     mount();
     await screen.findByTitle(/64 voxels/);
+    const calls = api.getLabelsSummary.mock.calls.length;
     api.getLabelsSummary.mockRejectedValueOnce(new Error("temporary network failure"));
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
-    await screen.findByRole("alert");
+    await waitFor(() => expect(api.getLabelsSummary.mock.calls.length).toBeGreaterThan(calls));
+    await act(async () => {});
     expect(screen.getByTitle(/64 voxels/)).toBeTruthy();
   });
 

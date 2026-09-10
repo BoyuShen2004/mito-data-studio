@@ -83,7 +83,7 @@ describe("ProfilePage annotate shortcuts", () => {
     await userEvent.clear(letterBox("Brush"));
     await userEvent.type(letterBox("Brush"), "g"); // Merge already has G.
 
-    expect(screen.getByRole("alert").textContent).toMatch(/cannot share a letter/i);
+    expect(letterBox("Brush").closest("label")?.classList.contains("conflict")).toBe(true);
     expect((screen.getByRole("button", { name: "Save profile" }) as HTMLButtonElement).disabled)
       .toBe(true);
     expect(hoisted.updateMyProfile).not.toHaveBeenCalled();

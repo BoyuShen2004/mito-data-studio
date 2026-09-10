@@ -248,25 +248,13 @@ td.volume-name-cell {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
+  margin-bottom: 0.75rem;
 }
 .plan-btn-autofill {
   min-width: 11.75rem;
 }
 .plan-btn-save {
   min-width: 7.75rem;
-}
-/* Reserved status line — notices/errors never shove the table down. */
-.plan-status {
-  min-height: 1.5rem;
-  margin: 0.5rem 0 0.75rem;
-  display: flex;
-  align-items: center;
-}
-.plan-status .error {
-  margin: 0;
-}
-.plan-status .muted {
-  margin: 0;
 }
 .plan-table {
   min-width: 1240px;
@@ -778,14 +766,6 @@ button.danger-outline:hover:not(:disabled) {
 .edit-form h3 {
   margin-top: 0;
 }
-/* A delete the server refused because annotation work would be lost. */
-.delete-blocked {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: flex-end;
-}
-
 /* --- Register Data: shared 3 equal columns across Directories + volumes --- */
 .register-align {
   display: grid;
@@ -1609,13 +1589,6 @@ button.dev-reset-btn:hover:not(:disabled) {
   flex-wrap: nowrap;
   min-width: 0;
 }
-/* A share error must not be able to widen the slot it lives in. */
-.editor-share-slot .share-control .error {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .editor-share-slot .share-control button {
   flex: 0 0 auto;
 }
@@ -1887,10 +1860,6 @@ button.dev-reset-btn:hover:not(:disabled) {
   padding-top: 0.35rem;
   margin-top: 0.35rem;
 }
-.track-rail-error {
-  font-size: 0.68rem;
-  line-height: 1.25;
-}
 .track-rail-body p {
   margin: 0;
   font-size: 0.7rem;
@@ -2085,10 +2054,6 @@ button.dev-reset-btn:hover:not(:disabled) {
 .track-range-hint {
   font-size: 0.66rem;
   white-space: nowrap;
-}
-.track-range-issue {
-  margin: 0.2rem 0 0;
-  font-size: 0.68rem;
 }
 /* Propagation status sits above Confirm/Reject in the footer. */
 .track-review-panel {
@@ -2358,9 +2323,7 @@ button.dev-reset-btn:hover:not(:disabled) {
   width: 100%;
   height: 100%;
 }
-/* Wraps LabelsPanel + its lifecycle-error line — needs its own element
-   (unlike the 3D panel/canvas viewport above) because two things share
-   this one grid area. */
+/* Wraps LabelsPanel so it fills the `labels` grid area. */
 .labels-panel-slot {
   grid-area: labels;
   position: relative;
@@ -2548,8 +2511,7 @@ button.dev-reset-btn:hover:not(:disabled) {
   font-size: 0.78rem;
   line-height: 1.2;
 }
-.tool-context .muted,
-.tool-context .error {
+.tool-context .muted {
   white-space: nowrap;
 }
 /* Wraps the tool-strip + tool-context rows so `disabled={swapped}` (#31
@@ -2850,12 +2812,6 @@ button.dev-reset-btn:hover:not(:disabled) {
   padding: 0.16rem 0.35rem;
   font-size: 0.68rem;
 }
-.labels-lifecycle-error {
-  flex-shrink: 0;
-  margin: 0;
-  font-size: 0.72rem;
-}
-
 /* --- "Record hard case" button + confirm/link modal --------------------- */
 /* Distinct from the blue primary Save (emerald) and deliberately a touch
    larger so it reads as its own action, per progress/history/02. */
@@ -2920,12 +2876,6 @@ button.dev-reset-btn:hover:not(:disabled) {
   font-size: 0.8rem;
   background: var(--bg);
   color: var(--text);
-}
-/* Reserved line so "Copied!!!" / "Copy failed" never reflows the modal. */
-.share-modal-copy-status {
-  margin: 0.3rem 0 0 !important;
-  font-size: 0.74rem;
-  min-height: 1.05rem;
 }
 .share-modal-actions {
   display: flex;
@@ -3386,9 +3336,6 @@ button.dev-reset-btn:hover:not(:disabled) {
 .profile-shortcut.conflict .profile-shortcut-key {
   border-color: var(--danger);
   outline: 1px solid var(--danger);
-}
-.profile-shortcut-error {
-  font-size: 0.8rem;
 }
 .profile-actions {
   gap: 0.6rem;

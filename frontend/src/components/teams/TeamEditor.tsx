@@ -28,7 +28,6 @@ export default function TeamEditor({
   const [name, setName] = useState(team?.name ?? defaultName);
   const [newMemberIds, setNewMemberIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     setName(team?.name ?? defaultName);
@@ -44,13 +43,12 @@ export default function TeamEditor({
 
   const run = async (body: Record<string, unknown>) => {
     setBusy(true);
-    setError("");
     try {
       const state = await mutateCollaboration(body);
       onChanged?.(state);
       return state;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      window.alert(reason instanceof Error ? reason.message : String(reason));
       return null;
     } finally {
       setBusy(false);
@@ -133,7 +131,6 @@ export default function TeamEditor({
           {team ? "Rename" : "Create team"}
         </button>
       </div>
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }

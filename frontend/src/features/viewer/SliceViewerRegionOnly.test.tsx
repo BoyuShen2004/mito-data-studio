@@ -21,7 +21,6 @@ vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: 9 } }) 
 
 vi.mock("../rendering", () => ({
   phase14ChunkRendererEnabled: () => false,
-  chunkFallbackMessage: () => "",
   ChunkRenderedImageSource: class {},
 }));
 

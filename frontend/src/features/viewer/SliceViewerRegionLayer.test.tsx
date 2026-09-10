@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SliceViewer from "./SliceViewer";
 
@@ -26,10 +26,6 @@ vi.mock("../../auth/AuthContext", () => ({
 
 vi.mock("../rendering", () => ({
   phase14ChunkRendererEnabled: () => viewer.enabled,
-  chunkFallbackMessage: (_error: unknown, layer = "image") =>
-    layer === "region"
-      ? "The region mask is not streaming yet; using the full-slice source."
-      : "Chunk loading failed; using the TIFF/PNG source.",
   ChunkRenderedImageSource: class {
     layer?: string;
     constructor(options: { layer?: string }) {
@@ -113,9 +109,6 @@ describe("SliceViewer region-mask transport", () => {
     viewer.renderRegion.mockRejectedValue(new Error("region chunks gone"));
     render(<SliceViewer volumeId={7} />);
 
-    await screen.findByText(
-      "The region mask is not streaming yet; using the full-slice source.",
-    );
     await waitFor(() => expect(viewer.regionSlicePath).toHaveBeenCalled());
     // The image never left the chunk path.
     expect(viewer.renderImage).toHaveBeenCalled();

@@ -40,31 +40,28 @@ export default function ReviewBox({
   // backend/annotation/services.py approve_submission).
   const [allowFurther, setAllowFurther] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [decided, setDecided] = useState<ReviewDecision | null>(null);
 
   const decide = async (decision: ReviewDecision) => {
     setBusy(true);
-    setError(null);
     try {
       await reviewSubmission(submissionId, decision, comments, allowFurther);
       setDecided(decision);
       setComments("");
       onDecided();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Review failed");
+      window.alert(e instanceof Error ? e.message : "Review failed");
     } finally {
       setBusy(false);
     }
   };
 
   const removeLabelComment = async (comment: ReviewLabelComment) => {
-    setError(null);
     try {
       await deleteReviewLabelComment(comment.id);
       labelComments.reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not delete label comment");
+      window.alert(e instanceof Error ? e.message : "Could not delete label comment");
     }
   };
 
@@ -142,7 +139,6 @@ export default function ReviewBox({
         )}
       </div>
 
-      {error && <div className="error">{error}</div>}
       <label className="field">
         <span>Comments</span>
         <textarea rows={3} value={comments} onChange={(e) => setComments(e.target.value)} />

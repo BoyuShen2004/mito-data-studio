@@ -21,16 +21,14 @@ export default function NewProjectPage() {
   const [annotationTarget, setAnnotationTarget] = useState("mitochondria");
   const [deadline, setDeadline] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent, thenRegister: boolean) => {
     e.preventDefault();
     if (!title.trim()) {
-      setError("A project title is required.");
+      window.alert("A project title is required.");
       return;
     }
     setBusy(true);
-    setError(null);
     try {
       const project = await createProject({
         title: title.trim(),
@@ -45,7 +43,7 @@ export default function NewProjectPage() {
           : `/projects/${project.id}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create project");
+      window.alert(err instanceof Error ? err.message : "Could not create project");
     } finally {
       setBusy(false);
     }
@@ -54,8 +52,6 @@ export default function NewProjectPage() {
   return (
     <>
       <h1>New project</h1>
-
-      {error && <div className="error">{error}</div>}
 
       <form onSubmit={(e) => submit(e, true)}>
         <div className="card">

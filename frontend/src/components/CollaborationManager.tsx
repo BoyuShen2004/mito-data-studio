@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { getCollaboration, mutateCollaboration } from "../api/collaboration";
 import { listProjects } from "../api/projects";
@@ -10,17 +9,15 @@ export default function CollaborationManager() {
   const projectId = Number(searchParams.get("project")) || null;
   const collaboration = useAsync(getCollaboration, []);
   const projects = useAsync(listProjects, []);
-  const [error, setError] = useState("");
   const currentProject = (projects.data ?? []).find((project) => project.id === projectId);
 
   const run = async (body: Record<string, unknown>) => {
-    setError("");
     try {
       await mutateCollaboration(body);
       collaboration.reload();
       projects.reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      window.alert(reason instanceof Error ? reason.message : String(reason));
     }
   };
   const data = collaboration.data;
@@ -99,7 +96,6 @@ export default function CollaborationManager() {
       {!collaboration.loading && (data?.teams.length ?? 0) === 0 && (
         <p className="muted">No teams yet.</p>
       )}
-      {error && <div className="error">{error}</div>}
     </div>
   );
 }

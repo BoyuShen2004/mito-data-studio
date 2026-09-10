@@ -131,7 +131,6 @@ import {
 } from "./viewLocation";
 import {
   ChunkRenderedImageSource,
-  chunkFallbackMessage,
   phase14ChunkRendererEnabled,
 } from "../rendering";
 
@@ -767,9 +766,9 @@ export default function AnnotationCanvas({
   // on its own, and never touches the label write path.
   const regionRendererRef = useRef<ChunkRenderedImageSource | null>(null);
   const regionFallbackRef = useRef(false);
-  const [rendererNotice, setRendererNotice] = useState<string | null>(null);
-  const [canvasRecoveryNotice, setCanvasRecoveryNotice] = useState<string | null>(null);
-  const [labelLoadError, setLabelLoadError] = useState<string | null>(null);
+  // Set while the label layer is failing to load, so its popup fires once per
+  // outage rather than on every layer the annotator steps through.
+  const labelLoadFailedRef = useRef(false);
   const [chunkRendererRevision, setChunkRendererRevision] = useState(0);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -793,7 +792,6 @@ export default function AnnotationCanvas({
   // predicted preview mask, awaiting an explicit Commit (so a bad/slow
   // prediction never silently flattens into the raster before the user
   // sees it — Cellable's Shape stayed editable/undo-able until then too).
-  const [aiError, setAiError] = useState<string | null>(null);
   const [hasAiPreview, setHasAiPreview] = useState(false);
   const [aiPointCount, setAiPointCount] = useState(0);
 
@@ -865,7 +863,6 @@ export default function AnnotationCanvas({
   // every child back into its parent class.
   const [tracking, setTracking] = useState(false);
   const [trackingParentIds, setTrackingParentIds] = useState<number[]>([]);
-  const [trackError, setTrackError] = useState<string | null>(null);
   const [trackingPrompts, setTrackingPrompts] = useState<TrackingPrompt[]>([]);
   const [selectedTrackParent, setSelectedTrackParent] = useState<number | null>(null);
   /** `local` marks a preview that only exists in this browser's pending buffer
@@ -915,7 +912,7 @@ export default function AnnotationCanvas({
           setSelectedTrackParent((current) => current ?? queue.items[0].parent_id);
         }
       })
-      .catch((e) => live && setTrackError(e instanceof Error ? e.message : "Could not load Track prompts"));
+      .catch((e) => live && window.alert(e instanceof Error ? e.message : "Could not load Track prompts"));
     return () => { live = false; };
   }, [annotateMode, firstImageReady, resolveTrackingPendingReview, taskId]);
 
@@ -949,11 +946,9 @@ export default function AnnotationCanvas({
   const labelsSummaryRowsRef = useRef(labelsSummaryRows);
   labelsSummaryRowsRef.current = labelsSummaryRows;
   const [labelsSummaryLoading, setLabelsSummaryLoading] = useState(false);
-  const [labelsSummaryError, setLabelsSummaryError] = useState<string | null>(null);
   // Default OFF so all labels are visible on open (Hide Verified is an
   // opt-in filter, sitting beside Filters Options — not buried inside it).
   const [hideVerified, setHideVerified] = useState(false);
-  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   // 3D pin set — the single source of truth for what the 3D panel loads (see
   // `label3DIds`). Seeded with `initialSoloId` so the share page opens with
   // the shared label already in 3D instead of an empty scene.
@@ -1186,23 +1181,16 @@ export default function AnnotationCanvas({
   const refreshLabelsSummary = useCallback(() => {
     const request = ++labelsSummaryRequestRef.current;
     setLabelsSummaryLoading(true);
-    setLabelsSummaryError(null);
     api.getLabelsSummary(taskId)
       .then((res) => {
         if (request === labelsSummaryRequestRef.current) {
           setLabelsSummaryRows(res.labels ?? []);
         }
       })
-      .catch((error) => {
-        if (request !== labelsSummaryRequestRef.current) return;
+      .catch(() => {
         // Keep the last known lifecycle state. Clearing it on a transient
         // request failure made verified labels appear to vanish and removed
         // their client-side edit protection until the next successful fetch.
-        setLabelsSummaryError(
-          error instanceof Error
-            ? error.message
-            : "Could not refresh label verification state.",
-        );
       })
       .finally(() => {
         if (request === labelsSummaryRequestRef.current) {
@@ -1690,21 +1678,12 @@ export default function AnnotationCanvas({
     chunkRendererRef.current?.dispose();
     chunkRendererRef.current = null;
     chunkFallbackRef.current = false;
-    setRendererNotice(null);
     if (
       !phase14ChunkRendererEnabled() ||
       !meta.data ||
       meta.data.ready_streaming !== true ||
       !api.chunkEndpoints
     ) {
-      if (
-        phase14ChunkRendererEnabled() &&
-        meta.data &&
-        meta.data.ready_streaming !== true &&
-        api.chunkEndpoints
-      ) {
-        setRendererNotice("Streaming pyramid is not ready; using the original source.");
-      }
       return;
     }
     const source = new ChunkRenderedImageSource({
@@ -1920,7 +1899,6 @@ export default function AnnotationCanvas({
           chunkFallbackRef.current = true;
           chunkRendererRef.current?.dispose();
           chunkRendererRef.current = null;
-          setRendererNotice(chunkFallbackMessage(error));
           return fetchObjectUrl(
             api.imageSlicePath(volumeId, { axis: a, index: z }),
             signal,
@@ -1951,7 +1929,6 @@ export default function AnnotationCanvas({
   const recoverCurrentImage = useCallback(async () => {
     if (imageRecoveryInFlightRef.current || sliceLoading) return;
     imageRecoveryInFlightRef.current = true;
-    setCanvasRecoveryNotice("Recovering canvas image…");
     const a = axisRef.current;
     const z = indexRef.current;
     const key = `image:${sliceKey(a, z)}`;
@@ -1964,7 +1941,7 @@ export default function AnnotationCanvas({
         imgRef.current.src = url;
       }
     } catch {
-      setCanvasRecoveryNotice("Canvas image could not reload — retrying shortly.");
+      // The next canvas health check retries.
     } finally {
       imageRecoveryInFlightRef.current = false;
     }
@@ -2010,7 +1987,6 @@ export default function AnnotationCanvas({
               regionFallbackRef.current = true;
               regionRendererRef.current?.dispose();
               regionRendererRef.current = null;
-              setRendererNotice(chunkFallbackMessage(error, "region"));
               return fromSlice();
             })
         : fromSlice();
@@ -2116,18 +2092,21 @@ export default function AnnotationCanvas({
         try {
           if (labels.error) throw labels.error;
           resp = labels.response as LabelIdsResponse;
-          setLabelLoadError(null);
+          labelLoadFailedRef.current = false;
         } catch (error) {
           if (signal?.aborted) return;
           // Never leave a previous plane's ids armed beneath a fresh image.
           // Showing the source is safe; annotating without a baseline is not.
           idsRef.current = null;
           idsIndexRef.current = null;
-          setLabelLoadError(
-            error instanceof Error
-              ? `Label layer unavailable: ${error.message}`
-              : "Label layer unavailable. Reload or contact an administrator.",
-          );
+          if (!labelLoadFailedRef.current) {
+            labelLoadFailedRef.current = true;
+            window.alert(
+              error instanceof Error
+                ? `Label layer unavailable: ${error.message}`
+                : "Label layer unavailable. Reload or contact an administrator.",
+            );
+          }
           return;
         }
         if (signal?.aborted) return;
@@ -2198,9 +2177,7 @@ export default function AnnotationCanvas({
         draggingPointIdxRef.current = null;
         setHasAiPreview(false);
         setAiPointCount(0);
-        setAiError(null);
         boxDragRef.current = null;
-        setTrackError(null);
         const stillDirty = pendingSlicesRef.current.size > 0;
         dirtyRef.current = stillDirty;
         setDirty(stillDirty);
@@ -2460,7 +2437,6 @@ export default function AnnotationCanvas({
     syncHistoryCounts();
     const remaining = syncDirtyFromPending();
     setStatus(remaining > 0 ? "dirty" : "idle");
-    setLifecycleError(null);
     renderOverlay();
     refreshInstances();
     setLabelsSummaryToken((value) => value + 1);
@@ -2727,7 +2703,7 @@ export default function AnnotationCanvas({
   // resolves (03 item D). Recording deliberately does NOT auto-copy — a modal
   // that opens already saying "Copied" is indistinguishable from one that
   // silently failed to copy.
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
 
   const canShareActive = useMemo(
     () => activeId > 0 && labelsSummaryRows.some((r) => r.id === activeId),
@@ -2794,7 +2770,7 @@ export default function AnnotationCanvas({
       await navigator.clipboard.writeText(shareUrl);
       setCopyState("copied");
     } catch {
-      setCopyState("failed");
+      window.alert("Couldn't reach the clipboard — select the link and copy it manually.");
     }
   }, [shareUrl]);
 
@@ -3240,9 +3216,6 @@ export default function AnnotationCanvas({
       const requestIndex = indexRef.current;
       const points: [number, number][] = pts.map((p) => [p.x, p.y]);
       const pointLabels = pts.map((p) => p.label);
-      if (!silent) {
-        setAiError(null);
-      }
       try {
         const res =
           paintTool === "boundary"
@@ -3267,9 +3240,6 @@ export default function AnnotationCanvas({
           if (!live) {
             aiPreviewRef.current = null;
             setHasAiPreview(false);
-            setAiError(
-              "No usable mask yet — add a point on the same object, or try Box Mask.",
-            );
           }
           return;
         }
@@ -3283,7 +3253,7 @@ export default function AnnotationCanvas({
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         if (aiSeqRef.current !== seq) return;
-        if (!silent) setAiError(e instanceof Error ? e.message : "Prediction failed");
+        if (!silent) window.alert(e instanceof Error ? e.message : "Prediction failed");
       } finally {
         renderOverlay();
         if (live) {
@@ -3352,7 +3322,6 @@ export default function AnnotationCanvas({
       const seq = ++aiSeqRef.current;
       const requestAxis = axisRef.current;
       const requestIndex = indexRef.current;
-      setAiError(null);
       try {
         const res = await predictMaskFromBox(
           taskId,
@@ -3377,7 +3346,6 @@ export default function AnnotationCanvas({
           // Nothing to commit, so a pending double-click intent must not
           // survive to fire against some later prediction.
           finalizeBoxWhenReadyRef.current = false;
-          setAiError("No mask found for this box — try a tighter/looser box.");
           return;
         }
         aiPreviewRef.current = {
@@ -3393,7 +3361,7 @@ export default function AnnotationCanvas({
         // A failed prediction has no proposal to commit; drop the deferred
         // double-click intent rather than letting it apply to a later one.
         finalizeBoxWhenReadyRef.current = false;
-        setAiError(e instanceof Error ? e.message : "Prediction failed");
+        window.alert(e instanceof Error ? e.message : "Prediction failed");
       } finally {
         renderOverlay();
       }
@@ -3537,7 +3505,6 @@ export default function AnnotationCanvas({
     drawingRef.current = false;
     setHasAiPreview(false);
     setAiPointCount(0);
-    setAiError(null);
     renderOverlay();
   }, [renderOverlay, finishOpenStroke]);
 
@@ -4840,7 +4807,6 @@ export default function AnnotationCanvas({
   }, [labelsSummaryRows, trackingPrompts, dirty, labelsSummaryToken, activeId]);
 
   const queueActiveTrackingPrompt = useCallback(async () => {
-    setTrackError(null);
     // Same mint as Select → New: the queued class is always a fresh id, and
     // Active follows it so the next paint/seed lands on that class.
     const classId = allocateFreshLabelId();
@@ -4865,7 +4831,7 @@ export default function AnnotationCanvas({
       await persistTrackingPrompt(prompt);
       setSelectedTrackParent(classId);
     } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Could not queue the class");
+      window.alert(e instanceof Error ? e.message : "Could not queue the class");
     }
   }, [allocateFreshLabelId, index, persistTrackingPrompt, selectTrackingPrompt, trackingPrompts]);
 
@@ -4887,10 +4853,9 @@ export default function AnnotationCanvas({
     setTrackingPrompts((items) => items.map((item) => item.parent_id === parentId ? next : item));
     try {
       await persistTrackingPrompt(next);
-      setTrackError(null);
     } catch (e) {
       setTrackingPrompts((items) => items.map((item) => item.parent_id === parentId ? prompt : item));
-      setTrackError(e instanceof Error ? e.message : "Could not set the propagation range");
+      window.alert(e instanceof Error ? e.message : "Could not set the propagation range");
     }
   }, [persistTrackingPrompt, trackingPrompts]);
 
@@ -4902,7 +4867,7 @@ export default function AnnotationCanvas({
       setTrackingPrompts(remaining);
       setSelectedTrackParent(remaining[0]?.parent_id ?? null);
     } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Could not remove the class");
+      window.alert(e instanceof Error ? e.message : "Could not remove the class");
     }
   }, [selectedTrackParent, taskId, trackingPrompts]);
 
@@ -4916,14 +4881,14 @@ export default function AnnotationCanvas({
       ? trackRangeIssue(candidates[0] ?? null, axisLen)
       : null;
     if (blocked) {
-      setTrackError(blocked);
+      window.alert(blocked);
       return;
     }
     const parentIds = candidates
       .filter((prompt) => canPropagatePrompt(prompt, axisLen))
       .map((prompt) => prompt.parent_id);
     if (!parentIds.length) {
-      setTrackError(
+      window.alert(
         "No queued class is ready: each needs at least one seed and "
         + "a Start/End range that contains every seed layer.",
       );
@@ -4931,7 +4896,6 @@ export default function AnnotationCanvas({
     }
     setTracking(true);
     setTrackingParentIds(parentIds);
-    setTrackError(null);
     // A live Box/Point proposal and an in-flight seed write are both part of
     // "what the annotator drew". Commit and flush them *before* the request
     // goes out, so the server propagates the seeds actually on screen rather
@@ -4973,13 +4937,12 @@ export default function AnnotationCanvas({
       if (message.includes("Confirm or Reject")) {
         try {
           await syncTrackingQueue();
-          setTrackError(null);
         } catch (syncError) {
-          setTrackError(syncError instanceof Error ? syncError.message : message);
+          window.alert(syncError instanceof Error ? syncError.message : message);
         }
       } else {
         setTrackingPrompts((items) => items.map((item) => parentIds.includes(item.parent_id) ? { ...item, status: "error" } : item));
-        setTrackError(message);
+        window.alert(message);
       }
     } finally {
       setTracking(false);
@@ -5066,10 +5029,9 @@ export default function AnnotationCanvas({
       setTrackingPrompts((items) => items.map((item) => item.parent_id === next.parent_id ? next : item));
       try {
         await persistTrackingPrompt(next);
-        setTrackError(null);
         return true;
       } catch (e) {
-        setTrackError(e instanceof Error ? e.message : "Could not save the seed");
+        window.alert(e instanceof Error ? e.message : "Could not save the seed");
         const queue = await getTrackingPrompts(taskId).catch(() => null);
         if (queue) setTrackingPrompts(queue.items);
         // Drop the local surface too, so the canvas re-reads from the queue the
@@ -5148,11 +5110,9 @@ export default function AnnotationCanvas({
     if (!mask.some(Boolean)) {
       trackPromptFinalizeWhenReadyRef.current = false;
       trackPromptProposalRef.current = null;
-      setTrackError("No proposal found — adjust the Box or Point prompts.");
       setTrackPromptRevision((value) => value + 1);
       return;
     }
-    setTrackError(null);
     trackPromptProposalRef.current = { key, mask };
     setTrackPromptRevision((value) => value + 1);
     if (trackPromptFinalizeWhenReadyRef.current) void commitTrackingProposal();
@@ -5182,7 +5142,6 @@ export default function AnnotationCanvas({
     if (trackPromptTool == null || trackProgressSaving) return;
     setTrackProgressSaving(true);
     setTrackProgressSaved(false);
-    setTrackError(null);
     try {
       const prediction = trackPromptPredictionPromiseRef.current;
       if (prediction) await prediction;
@@ -5193,7 +5152,7 @@ export default function AnnotationCanvas({
       if (proposal) {
         if (!await commitTrackingProposal()) return;
       } else if (prediction && !trackPromptSavePromiseRef.current) {
-        setTrackError("Could not save progress because the Box/Point proposal is empty. Adjust the prompt and try again.");
+        window.alert("Could not save progress because the Box/Point proposal is empty. Adjust the prompt and try again.");
         return;
       }
       const pendingSave = trackPromptSavePromiseRef.current;
@@ -5231,13 +5190,12 @@ export default function AnnotationCanvas({
       const selected = restored.items.find((item) => item.parent_id === selectedTrackParent) ?? restored.items[0] ?? null;
       setSelectedTrackParent(selected?.parent_id ?? null);
       setTrackPromptRevision((value) => value + 1);
-      setTrackError(null);
     } catch (error) {
       destination.pop();
       source.push(target);
       setTrackingPrompts(trackingPrompts);
       syncTrackingHistoryCounts();
-      setTrackError(error instanceof Error ? error.message : `Could not ${direction} Track prompt edit`);
+      window.alert(error instanceof Error ? error.message : `Could not ${direction} Track prompt edit`);
     } finally {
       setTrackPromptHistoryBusy(false);
     }
@@ -5306,7 +5264,6 @@ export default function AnnotationCanvas({
   const reviewTrackPreview = useCallback(async (action: "confirm" | "reject") => {
     if (!trackingPendingReview || trackReviewAction) return;
     setTrackReviewAction(action);
-    setTrackError(null);
     changeTrackPromptTool(null);
     try {
       if (trackingPendingReview.local) {
@@ -5328,7 +5285,7 @@ export default function AnnotationCanvas({
       setLabelsSummaryToken((value) => value + 1);
       setLabels3DRefreshKey((value) => value + 1);
     } catch (error) {
-      setTrackError(error instanceof Error ? error.message : `Could not ${action} Track preview`);
+      window.alert(error instanceof Error ? error.message : `Could not ${action} Track preview`);
     } finally {
       setTrackReviewAction(null);
     }
@@ -5510,7 +5467,7 @@ export default function AnnotationCanvas({
           if (seq !== trackPromptPredictSeqRef.current) return;
           trackPromptPredictingRef.current = false;
           trackPromptFinalizeWhenReadyRef.current = false;
-          setTrackError(error instanceof Error ? error.message : "Point prompt failed");
+          window.alert(error instanceof Error ? error.message : "Point prompt failed");
         }
       })();
       trackPromptPredictionPromiseRef.current = prediction;
@@ -5593,7 +5550,7 @@ export default function AnnotationCanvas({
           if (seq !== trackPromptPredictSeqRef.current) return;
           trackPromptPredictingRef.current = false;
           trackPromptFinalizeWhenReadyRef.current = false;
-          setTrackError(error instanceof Error ? error.message : "Box prompt failed");
+          window.alert(error instanceof Error ? error.message : "Box prompt failed");
         }
       })();
       trackPromptPredictionPromiseRef.current = prediction;
@@ -5642,7 +5599,6 @@ export default function AnnotationCanvas({
 
   const handleLifecycleAction = useCallback(
     async (labelId: number, action: LabelLifecycleAction) => {
-      setLifecycleError(null);
       try {
         if (action === "reject") {
           const result = await planDeleteLabel(
@@ -5671,7 +5627,7 @@ export default function AnnotationCanvas({
         setLabelsSummaryToken((v) => v + 1);
         return true;
       } catch (e) {
-        setLifecycleError(e instanceof Error ? e.message : `Failed to ${action} label ${labelId}`);
+        window.alert(e instanceof Error ? e.message : `Failed to ${action} label ${labelId}`);
         return false;
       }
     },
@@ -6263,10 +6219,7 @@ export default function AnnotationCanvas({
       if (blackCanvasChecksRef.current < 2) return;
       blackCanvasChecksRef.current = 0;
       if (missingImage) void recoverCurrentImage();
-      if (stranded) {
-        setCanvasRecoveryNotice("Canvas view recovered.");
-        requestFit("window");
-      }
+      if (stranded) requestFit("window");
     };
     const timer = window.setInterval(check, 4000);
     return () => window.clearInterval(timer);
@@ -6563,11 +6516,6 @@ export default function AnnotationCanvas({
                     {copyState === "copied" ? "Copied" : "Copy"}
                   </button>
                 </div>
-                {copyState === "failed" && (
-                  <p className="share-modal-copy-status error" aria-live="polite">
-                    Couldn&apos;t reach the clipboard — select the link above and copy it manually.
-                  </p>
-                )}
               </>
             )}
             <div className="share-modal-actions">
@@ -6672,7 +6620,6 @@ export default function AnnotationCanvas({
           activeId={activeId}
           onActiveId={setActiveId}
           onNewInstance={newInstance}
-          aiError={aiError}
           aiPointCount={aiPointCount}
           hasAiPreview={hasAiPreview}
           onFinalizeAiPoints={finalizeAiPoints}
@@ -6745,7 +6692,6 @@ export default function AnnotationCanvas({
             progressSaved={trackProgressSaved}
             promptBrushSize={trackPromptBrushSize}
             promptEraserSize={trackPromptEraserSize}
-            trackError={trackError}
             prompts={trackingPrompts}
             pendingReview={trackingPendingReview}
             reviewAction={trackReviewAction}
@@ -6829,7 +6775,6 @@ export default function AnnotationCanvas({
                     ref={imgRef}
                     onLoad={() => {
                       setPaintedImageKey(openImageKey);
-                      setCanvasRecoveryNotice(null);
                       updateIntensityCanvas();
                       // Preserve pan across slice swaps: capture scroll before
                       // layout may rebuild stage metrics, then restore unless
@@ -6976,16 +6921,6 @@ export default function AnnotationCanvas({
                 Loading layer {index + 1}…
               </div>
             )}
-            {(canvasRecoveryNotice || rendererNotice) && (
-              <div className="canvas-renderer-notice" role="status">
-                {canvasRecoveryNotice || rendererNotice}
-              </div>
-            )}
-            {labelLoadError && (
-              <div className="canvas-renderer-notice error" role="alert">
-                {labelLoadError}
-              </div>
-            )}
             {swapped && (
               <div className="canvas-swap-overlay" aria-live="polite">
                 {editable ? "View only — Swap to annotate" : "Swap to enlarge canvas"}
@@ -7050,14 +6985,6 @@ export default function AnnotationCanvas({
             focusId={initialActiveId ?? null}
             pinActiveToTopToken={pinActiveToTopToken}
           />
-          {editable && lifecycleError && (
-            <p className="error labels-lifecycle-error">{lifecycleError}</p>
-          )}
-          {labelsSummaryError && (
-            <p className="error labels-lifecycle-error" role="alert">
-              Verification state could not be refreshed. Existing protections remain active. {labelsSummaryError}
-            </p>
-          )}
         </div>
       </div>
 

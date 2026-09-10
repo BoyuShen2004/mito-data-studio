@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { listProjects } from "../api/projects";
 import { useAsync } from "../hooks/useAsync";
@@ -10,6 +11,9 @@ import WorkList, { useWorkFilter } from "../components/WorkList";
 export default function ProjectListPage() {
   const { data, loading, error } = useAsync(listProjects, []);
   const [filter, setFilter] = useWorkFilter();
+  useEffect(() => {
+    if (error) window.alert(error);
+  }, [error]);
 
   return (
     <>
@@ -25,7 +29,6 @@ export default function ProjectListPage() {
         </div>
       </div>
 
-      {error && <div className="error">{error}</div>}
       <WorkList
         kind="project"
         rows={data ?? []}

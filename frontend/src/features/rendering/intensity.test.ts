@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { grayscaleRgba, validateWindow } from "./intensity";
-import { ChunkClientError } from "../chunks";
-import {
-  chunkFallbackMessage,
-  phase14ChunkRendererEnabled,
-} from "./chunkRenderedImageSource";
+import { phase14ChunkRendererEnabled } from "./chunkRenderedImageSource";
 
 describe("stable intensity conversion", () => {
   it("maps and clamps uint16 against a volume-wide window", () => {
@@ -73,12 +69,5 @@ describe("stable intensity conversion", () => {
       VITE_FEATURE_CHUNK_RENDERER: "false",
       VITE_MITO_UPGRADE_PROFILE: "webknossos",
     })).toBe(false);
-  });
-
-  it("distinguishes permission, missing, corrupt and temporary fallback", () => {
-    expect(chunkFallbackMessage(new ChunkClientError("x", "unauthorized"))).toMatch(/permitted/);
-    expect(chunkFallbackMessage(new ChunkClientError("x", "missing"))).toMatch(/pyramid/);
-    expect(chunkFallbackMessage(new ChunkClientError("x", "malformed"))).toMatch(/corrupt/);
-    expect(chunkFallbackMessage(new ChunkClientError("x", "network"))).toMatch(/temporarily/);
   });
 });

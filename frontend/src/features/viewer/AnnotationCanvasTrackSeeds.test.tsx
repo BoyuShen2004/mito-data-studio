@@ -32,7 +32,6 @@ vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: 4 } }) 
 
 vi.mock("../rendering", () => ({
   phase14ChunkRendererEnabled: () => false,
-  chunkFallbackMessage: () => "",
   ChunkRenderedImageSource: class {},
 }));
 
@@ -305,6 +304,7 @@ describe("Track seeds on one layer", () => {
     // like a successful one.
     track.predictMaskFromPoints.mockResolvedValue({ shape: [4, 4], runs: topLeftPair });
     track.putTrackingPrompt.mockRejectedValue(new Error("Seed rejected"));
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
 
     mount();
     await screen.findByRole("button", { name: "Fit window" });
@@ -318,7 +318,7 @@ describe("Track seeds on one layer", () => {
     fireEvent.keyDown(window, { key: "Enter" });
 
     // The failure is surfaced and the queue re-read from the server.
-    await screen.findByText("Seed rejected");
+    await waitFor(() => expect(alert).toHaveBeenCalledWith("Seed rejected"));
     await waitFor(() => expect(track.getTrackingPrompts.mock.calls.length).toBeGreaterThan(1));
     expect(screen.getByText("no seeds")).toBeTruthy();
 

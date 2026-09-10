@@ -83,8 +83,6 @@ export default function RegisterDataPage() {
   const [renamingIndex, setRenamingIndex] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [registrationNotice, setRegistrationNotice] = useState<string | null>(null);
   // Ignore an older scan response if the user starts another scan before it
   // completes. HPC directory scans can have noticeably different latencies.
   const scanRequest = useRef(0);
@@ -158,7 +156,6 @@ export default function RegisterDataPage() {
     setRows([]);
     setRenamingIndex(null);
     setLabelType("none");
-    setError(null);
   };
 
   // Clear the dataset-specific inputs so the same project stays selected and the
@@ -174,13 +171,11 @@ export default function RegisterDataPage() {
     setNotes("");
     setScan(null);
     setRows([]);
-    setError(null);
   };
 
   const runScan = async (image: string, mask: string, regionMask: string) => {
     const requestId = ++scanRequest.current;
     setScanning(true);
-    setError(null);
     setLastResult(null);
     try {
       const res = await scanDataSources(image, mask, regionMask);
@@ -197,7 +192,7 @@ export default function RegisterDataPage() {
       prefillFromManifest(res);
     } catch (e) {
       if (requestId !== scanRequest.current) return;
-      setError(e instanceof Error ? e.message : "Scan failed");
+      window.alert(e instanceof Error ? e.message : "Scan failed");
       setScan(null);
       setRows([]);
     } finally {
@@ -279,24 +274,24 @@ export default function RegisterDataPage() {
   // error and return null when it is incomplete.
   const buildCurrentEntry = (): StagedDataset | null => {
     if (!scan) {
-      setError("Scan a directory first.");
+      window.alert("Scan a directory first.");
       return null;
     }
     if (!imageDir.trim()) {
-      setError("Enter a raw image directory and scan it first.");
+      window.alert("Enter a raw image directory and scan it first.");
       return null;
     }
     const chosen = rows.filter((r) => r.selected);
     if (chosen.length === 0) {
-      setError("Select at least one image to register.");
+      window.alert("Select at least one image to register.");
       return null;
     }
     if (!dataset.trim()) {
-      setError("Enter a dataset name for this directory.");
+      window.alert("Enter a dataset name for this directory.");
       return null;
     }
     if (anySelectedMask && !LABEL_TYPES_WITH_MASK.includes(labelType)) {
-      setError("Choose partial or prediction for the selected editable labels.");
+      window.alert("Choose partial or prediction for the selected editable labels.");
       return null;
     }
     return {
@@ -322,7 +317,6 @@ export default function RegisterDataPage() {
 
   // Queue the current directory and reset the form for the next one.
   const stageCurrent = () => {
-    setError(null);
     const entry = buildCurrentEntry();
     if (!entry) return;
     setStaged((s) => [...s, entry]);
@@ -337,10 +331,8 @@ export default function RegisterDataPage() {
   // chosen project — one dataset per directory, in one action.
   const registerAll = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setRegistrationNotice(null);
     if (!projectId) {
-      setError("Choose the project to register this data into.");
+      window.alert("Choose the project to register this data into.");
       return;
     }
     const queuedEntries = [...staged];
@@ -352,7 +344,7 @@ export default function RegisterDataPage() {
       entries.push(currentEntry);
     }
     if (entries.length === 0) {
-      setError("Add at least one directory to register.");
+      window.alert("Add at least one directory to register.");
       return;
     }
 
@@ -398,7 +390,6 @@ export default function RegisterDataPage() {
         // rejection/abort does not: ingress may have lost the response while
         // gunicorn continued and committed the registration.
         if (!(err instanceof ApiError)) {
-          setRegistrationNotice(`Request interrupted; verifying ${entry.dataset}…`);
           const reconciled = await reconcileRegistration(
             targetProjectId,
             entry.dataset,
@@ -436,6 +427,13 @@ export default function RegisterDataPage() {
 
     if (succeeded.length > 0) {
       setLastResult(succeeded);
+      const skipped = succeeded.reduce((sum, result) => sum + (result.skippedVolumes ?? 0), 0);
+      if (skipped > 0) {
+        window.alert(
+          `${skipped} volume(s) were registered but their source headers could not be read, so tasks could not be `
+          + "created yet. Check the source-file permissions, then open Assign volumes to retry.",
+        );
+      }
       // Do not erase an unqueued current form when only queued entries
       // succeeded, or when this current entry itself failed.
       if (currentSucceeded) resetForAnother();
@@ -444,16 +442,14 @@ export default function RegisterDataPage() {
     // could duplicate a registration which actually committed server-side.
     if (currentInconclusive) resetForAnother();
     if (failed.length > 0) {
-      setError(
+      window.alert(
         "Some directories could not be registered: " +
           failed.map((f) => `${f.dataset} (${f.message})`).join("; "),
       );
     }
-    setRegistrationNotice(
-      inconclusive.length > 0
-        ? `Registration may have completed for ${inconclusive.join(", ")} — check the project Data tab before trying again.`
-        : null,
-    );
+    if (inconclusive.length > 0) {
+      window.alert(`Registration may have completed for ${inconclusive.join(", ")} — check the project Data tab before trying again.`);
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -481,8 +477,6 @@ export default function RegisterDataPage() {
 
       <p className="muted">Ingest data paths and set imaging metadata and label Type here. Create a team and pick its annotators in People.</p>
 
-      {error && <div className="error">{error}</div>}
-      {registrationNotice && <div className="info" role="status">{registrationNotice}</div>}
 
       {lastResult && lastResult.length > 0 && (
         <div className="card">
@@ -513,13 +507,7 @@ export default function RegisterDataPage() {
             project can hold many datasets — queue more directories below, or open
             the project when you are done.
           </p>
-          {lastResult.some((result) => (result.skippedVolumes ?? 0) > 0) ? (
-            <div className="error" role="alert">
-              {lastResult.reduce((sum, result) => sum + (result.skippedVolumes ?? 0), 0)} volume(s)
-              were registered but their source headers could not be read, so tasks could not be
-              created yet. Check the source-file permissions, then open Assign volumes to retry.
-            </div>
-          ) : lastResult.some((result) => result.createdTasks !== undefined) ? (
+          {lastResult.some((result) => result.createdTasks !== undefined) ? (
             <p className="muted">
               {lastResult.reduce((sum, result) => sum + (result.createdTasks ?? 0), 0)} task(s)
               are ready under the project’s Tasks tab.

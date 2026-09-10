@@ -15,7 +15,6 @@ vi.mock("../../auth/AuthContext", () => ({
 
 vi.mock("../rendering", () => ({
   phase14ChunkRendererEnabled: () => viewer.enabled,
-  chunkFallbackMessage: () => "Chunk loading failed; using the TIFF/PNG source.",
   ChunkRenderedImageSource: class {
     render = viewer.render;
     dispose = viewer.dispose;
@@ -53,16 +52,17 @@ describe("SliceViewer Phase 14 data-source selection", () => {
     render(<SliceViewer volumeId={7} />);
     await waitFor(() => expect(viewer.fetchObjectUrl).toHaveBeenCalled());
     expect(viewer.render).not.toHaveBeenCalled();
-    expect(screen.queryByText(/using the TIFF/)).toBeNull();
   });
 
-  it("falls back visibly and one-way when a chunk foreground read fails", async () => {
+  it("falls back one-way when a chunk foreground read fails", async () => {
     viewer.enabled = true;
     viewer.render.mockRejectedValue(new Error("malformed chunk"));
     render(<SliceViewer volumeId={7} />);
-    await screen.findByText("Chunk loading failed; using the TIFF/PNG source.");
-    expect(viewer.render.mock.calls.length).toBeGreaterThan(0);
-    await waitFor(() => expect(viewer.fetchObjectUrl).toHaveBeenCalled());
+    await waitFor(() => expect(viewer.render).toHaveBeenCalled());
+    const failedRead = viewer.render.mock.invocationCallOrder[0];
+    await waitFor(() =>
+      expect(viewer.fetchObjectUrl.mock.invocationCallOrder.some((order) => order > failedRead)).toBe(true),
+    );
   });
 
   it("disposes the chunk session on unmount", async () => {

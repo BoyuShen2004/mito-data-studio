@@ -1,5 +1,5 @@
 import type { Axis, VolumeMeta } from "../../api/viewer";
-import { ChunkClientError, ChunkDataSource, PullPriority } from "../chunks";
+import { ChunkDataSource, PullPriority } from "../chunks";
 import type { ChunkEndpoints } from "../chunks/chunkClient";
 import { phase13ChunkLoadingEnabled } from "../chunks/feature";
 import type { ChunkLayer } from "../chunks/types";
@@ -48,28 +48,6 @@ export class ChunkRendererUnavailableError extends Error {
     super(message);
     this.name = "ChunkRendererUnavailableError";
   }
-}
-
-export function chunkFallbackMessage(error: unknown, layer: ChunkLayer = "image"): string {
-  const cause = error instanceof ChunkRendererUnavailableError ? error.cause : error;
-  const what = layer === "region" ? "The region mask is" : "";
-  if (cause instanceof ChunkClientError) {
-    if (cause.code === "unauthorized") {
-      return "Chunk access is no longer permitted; using the TIFF/PNG source.";
-    }
-    if (cause.code === "missing") {
-      return what
-        ? `${what} not streaming yet; using the full-slice source.`
-        : "The chunk pyramid is unavailable; using the TIFF/PNG source.";
-    }
-    if (cause.code === "malformed" || cause.code === "too_large") {
-      return "Chunk data is unsupported or corrupt; using the TIFF/PNG source.";
-    }
-    if (cause.code === "network" || cause.code === "server") {
-      return "Chunk loading is temporarily unavailable; using the TIFF/PNG source.";
-    }
-  }
-  return "Chunk loading failed; using the TIFF/PNG source.";
 }
 
 /**

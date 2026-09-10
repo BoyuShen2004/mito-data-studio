@@ -81,7 +81,6 @@ export default function PublicShareTree() {
   const [openDatasets, setOpenDatasets] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
-  const [messageIsError, setMessageIsError] = useState(false);
 
   useEffect(() => {
     if (remote.data) setData(remote.data);
@@ -95,7 +94,6 @@ export default function PublicShareTree() {
   const share = async (key: string, params: Parameters<typeof patchShareTree>[1]) => {
     setBusy(key);
     setMessage("");
-    setMessageIsError(false);
     try {
       const row = await createPublicShare(params);
       setData(current => current ? patchShareTree(current, params, [row]) : current);
@@ -107,8 +105,7 @@ export default function PublicShareTree() {
       }
       setMessage(`${params.scope[0].toUpperCase()}${params.scope.slice(1)} share created.`);
     } catch (e) {
-      setMessageIsError(true);
-      setMessage(e instanceof Error ? e.message : String(e));
+      window.alert(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy("");
     }
@@ -116,14 +113,12 @@ export default function PublicShareTree() {
   const stop = async (key: string, params: Parameters<typeof patchShareTree>[1], rows: PublicShare[]) => {
     setBusy(key);
     setMessage("");
-    setMessageIsError(false);
     try {
       await Promise.all(rows.map(row => revokePublicShare(row.id)));
       setData(current => current ? patchShareTree(current, params, []) : current);
       setMessage(`${params.scope[0].toUpperCase()}${params.scope.slice(1)} share stopped.`);
     } catch (e) {
-      setMessageIsError(true);
-      setMessage(e instanceof Error ? e.message : String(e));
+      window.alert(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy("");
     }
@@ -186,6 +181,6 @@ export default function PublicShareTree() {
       </div>;
     })}
     {!remote.loading && (data?.projects.length ?? 0) === 0 && <p className="muted">No projects yet.</p>}
-    {message && <p className={messageIsError ? "error" : "info"} aria-live="polite">{message}</p>}
+    {message && <p className="info" aria-live="polite">{message}</p>}
   </div>;
 }

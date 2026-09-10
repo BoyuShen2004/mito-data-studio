@@ -176,19 +176,17 @@ function ProjectMembers({ projectId }: { projectId: number }) {
   const annotators = useAsync(listAnnotators, []);
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const memberIds = new Set((members.data ?? []).map((row) => row.user_id));
 
   const add = async () => {
     if (!selected) return;
     setBusy(true);
-    setError(null);
     try {
       await addProjectMember(projectId, Number(selected));
       setSelected("");
       members.reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not add member.");
+      window.alert(e instanceof Error ? e.message : "Could not add member.");
     } finally {
       setBusy(false);
     }
@@ -196,12 +194,11 @@ function ProjectMembers({ projectId }: { projectId: number }) {
 
   const remove = async (userId: number) => {
     setBusy(true);
-    setError(null);
     try {
       await removeProjectMember(projectId, userId);
       members.reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove member.");
+      window.alert(e instanceof Error ? e.message : "Could not remove member.");
     } finally {
       setBusy(false);
     }
@@ -230,7 +227,6 @@ function ProjectMembers({ projectId }: { projectId: number }) {
           Add member
         </button>
       </div>
-      {error && <div className="error">{error}</div>}
       {members.loading ? <p className="muted">Loading members…</p> : (
         <div className="table-wrap">
           <table>
