@@ -1446,6 +1446,19 @@ class TaskPredictMaskView(APIView):
             return Response({"detail": str(exc)}, status=503)
         except (ValueError, SliceIOError, OSError) as exc:
             return Response({"detail": str(exc)}, status=400)
+        except RuntimeError as exc:
+            # CUDA OOM / first-click races after a worker boot must not become
+            # a naked 500. The model is often fine a second later; tell the
+            # client to retry instead of crashing the interaction.
+            return Response(
+                {
+                    "detail": (
+                        "Interactive AI is temporarily unavailable "
+                        f"({exc}). Retry in a moment."
+                    )
+                },
+                status=503,
+            )
         return Response(result)
 
 

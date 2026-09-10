@@ -719,6 +719,25 @@ class CellablePortApiTests(TestCase):
 
         self.assertEqual(resp.status_code, 503)
 
+    def test_predict_mask_cuda_runtime_error_reports_503_not_500(self):
+        # First-click races / transient OOM used to escape as a naked 500.
+        from annotation.cellable_port.ai import registry
+
+        registry.reset_mask_model()
+        self.addCleanup(registry.reset_mask_model)
+        with unittest.mock.patch(
+            "annotation.api.predict_ai_mask",
+            side_effect=RuntimeError("CUDA error: an illegal memory access was encountered"),
+        ):
+            resp = self._client(self.annotator).post(
+                f"/api/tasks/{self.task.id}/predict-mask/",
+                {"axis": "z", "index": 2, "mode": "points", "points": [[16, 16]], "point_labels": [1]},
+                format="json",
+            )
+
+        self.assertEqual(resp.status_code, 503, resp.content)
+        self.assertIn("temporarily unavailable", resp.json()["detail"])
+
     def test_warm_embedding_unavailable_reports_200_not_error(self):
         from annotation.cellable_port.ai import registry
 

@@ -389,3 +389,48 @@ class OpportunisticWarmTests(SimpleTestCase):
         self.assertFalse(w.is_slice_warm(None))
         store.files["z1"] = {"features": "x", "orig_hw": [(8, 8)]}
         self.assertTrue(w.is_slice_warm("z1"))
+
+    def test_two_threads_build_only_one_image_predictor(self):
+        # The first Point Mask click after boot races a warm on the second
+        # gunicorn thread. Creating two SAM2ImagePredictor wrappers on one
+        # CUDA model without the image lock is what 500'd that click.
+        import sys
+        import threading
+        import time
+        import types
+
+        w = _wrapper(None)
+        w.predictor = object()
+        created = []
+
+        class FakeImagePredictor:
+            def __init__(self, model):
+                # Widen the race window; without the lock both threads enter.
+                time.sleep(0.05)
+                created.append(model)
+
+        fake_mod = types.ModuleType("sam2.sam2_image_predictor")
+        fake_mod.SAM2ImagePredictor = FakeImagePredictor
+        parent = types.ModuleType("sam2")
+        errors = []
+
+        with unittest.mock.patch.dict(
+            sys.modules,
+            {"sam2": parent, "sam2.sam2_image_predictor": fake_mod},
+        ):
+            def worker():
+                try:
+                    w._get_image_predictor()
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(2)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(created), 1)
+        self.assertIsNotNone(w._image_predictor)
+        self.assertEqual(created[0], w.predictor)

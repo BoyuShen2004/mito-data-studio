@@ -5,7 +5,7 @@
 // each slice with the header and hand back an object URL. Volume SliceViewer
 // keeps those URLs in a bounded LRU; task View/Annotate share AnnotationCanvas.
 
-import { api } from "./client";
+import { api, ApiError } from "./client";
 import {
   authedChunkEndpoints,
   type ChunkEndpoints,
@@ -336,6 +336,45 @@ export interface MaskPrediction {
 // `signal` lets the caller drop a superseded predict (rapid clicks / a new
 // box drag before the last one resolved) — see AnnotationCanvas.tsx's
 // sequence-guarded predict handlers.
+//
+// A single 503 retry covers the worker-boot window where SAM 2 is still
+// loading or the GPU briefly OOMed. Happy-path clicks pay nothing: we only
+// wait when the server already said "try again".
+
+const PREDICT_RETRY_MS = 750;
+
+async function postPredictMask(
+  taskId: number,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<MaskPrediction> {
+  const path = `/tasks/${taskId}/predict-mask/`;
+  try {
+    return await api.post<MaskPrediction>(path, body, signal);
+  } catch (error) {
+    if (
+      !(error instanceof ApiError) ||
+      error.status !== 503 ||
+      signal?.aborted
+    ) {
+      throw error;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(resolve, PREDICT_RETRY_MS);
+      const onAbort = () => {
+        window.clearTimeout(timer);
+        reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      };
+      if (!signal) return;
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    return api.post<MaskPrediction>(path, body, signal);
+  }
+}
 
 export const predictMaskFromPoints = (
   taskId: number,
@@ -346,8 +385,8 @@ export const predictMaskFromPoints = (
   signal?: AbortSignal,
   roiOnly = false,
 ) =>
-  api.post<MaskPrediction>(
-    `/tasks/${taskId}/predict-mask/`,
+  postPredictMask(
+    taskId,
     { axis, index, mode: "points", points, point_labels: pointLabels, roi_only: roiOnly },
     signal,
   );
@@ -360,8 +399,8 @@ export const predictMaskFromBox = (
   signal?: AbortSignal,
   roiOnly = false,
 ) =>
-  api.post<MaskPrediction>(
-    `/tasks/${taskId}/predict-mask/`,
+  postPredictMask(
+    taskId,
     { axis, index, mode: "box", box, roi_only: roiOnly },
     signal,
   );
@@ -375,8 +414,8 @@ export const predictBoundary = (
   signal?: AbortSignal,
   roiOnly = false,
 ) =>
-  api.post<MaskPrediction>(
-    `/tasks/${taskId}/predict-mask/`,
+  postPredictMask(
+    taskId,
     { axis, index, mode: "boundary", points, point_labels: pointLabels, roi_only: roiOnly },
     signal,
   );

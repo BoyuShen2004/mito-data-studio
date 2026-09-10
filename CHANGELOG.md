@@ -16,15 +16,25 @@ follows semantic versioning for tagged releases.
 
 ### Fixed
 
+- **Point Mask could 500 on the first click after a worker booted.** Two
+  gunicorn threads in one worker (a warm plus the click) could each build a
+  `SAM2ImagePredictor` on the shared CUDA model without holding the image
+  lock; the race threw, the UI alerted `Server error (500)`, and a later
+  click worked once only one predictor existed. Predictor creation now
+  happens under the same lock as encode/decode. Transient GPU load failures
+  (OOM while several workers start) are no longer sticky for the life of the
+  worker, checkpoint loads are serialized across workers, and a CUDA
+  `RuntimeError` during predict returns 503 so the client can retry once —
+  happy-path prompt latency is unchanged. Production runs two gunicorn
+  workers instead of three on the 11 GiB GPU so concurrent model loads fit.
 
 - **Deleting a project, dataset or volume left its generated files on disk.**
   The rows went, but the working mask, lifecycle sidecar, pyramids, SAM feature
   caches, Track preview snapshot, approved labels and submission uploads stayed
   — on production, 1 GiB under a project whose datasets were all gone. They are
-  now removed once the delete commits, and no folder is left behind: a deleted
-  dataset's or project's folder goes entirely, and any dataset or project
-  folder left empty is removed even when its row survives (writers recreate
-  folders on demand). A volume renamed to `<stem>_v<id>_mask.tif` also takes its earlier un-suffixed
+  now removed once the delete commits. A deleted dataset's or project's folder
+  goes entirely; a dataset or project folder whose row still exists stays, with
+  its emptied artifact subfolders removed. A volume renamed to `<stem>_v<id>_mask.tif` also takes its earlier un-suffixed
   draft, unless a surviving volume in that folder still uses the name. Never
   removed: a registered image, label or region mask (even one stored inside the
   data root), anything a surviving volume still references, anything outside

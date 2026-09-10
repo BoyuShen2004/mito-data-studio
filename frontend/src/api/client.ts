@@ -109,9 +109,11 @@ export async function apiRequest<T>(
   }
 
   if (!res.ok) {
-    const fallback = res.status >= 500
-      ? `Server error (${res.status})`
-      : (res.statusText || `Request failed (${res.status})`);
+    const fallback = res.status === 503
+      ? "Interactive AI is temporarily unavailable. Retry in a moment."
+      : res.status >= 500
+        ? `Server error (${res.status})`
+        : (res.statusText || `Request failed (${res.status})`);
     throw new ApiError(res.status, extractMessage(data, fallback), data);
   }
   return data as T;

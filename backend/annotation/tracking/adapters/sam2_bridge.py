@@ -304,12 +304,22 @@ class SAM2Wrapper:
         production GPU already sits at 9.2 of 11.3 GB with three workers
         holding the video model. Sharing makes the image path cost nothing
         extra whenever tracking is loaded, which it always is here.
-        """
-        if self._image_predictor is None:
-            from sam2.sam2_image_predictor import SAM2ImagePredictor
 
-            self._image_predictor = SAM2ImagePredictor(self.predictor)
-        return self._image_predictor
+        Creation is under ``_image_lock`` (an ``RLock``). Gunicorn runs two
+        threads per worker; Point Mask's first click often races a background
+        warm on the same process. Building two ``SAM2ImagePredictor`` wrappers
+        on one CUDA model without a lock is what turned that race into a 500
+        on the annotator's first click after a worker boot.
+        """
+        pred = self._image_predictor
+        if pred is not None:
+            return pred
+        with self._image_lock:
+            if self._image_predictor is None:
+                from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+                self._image_predictor = SAM2ImagePredictor(self.predictor)
+            return self._image_predictor
 
     def predict_single_frame(
         self,
@@ -344,8 +354,6 @@ class SAM2Wrapper:
         if box is None and not points:
             raise ValueError("predict_single_frame requires box and/or points")
 
-        predictor = self._get_image_predictor()
-
         # Deliberately *not* under `_inference_context()`, unlike every other
         # CUDA path here. That looks like an oversight and is not: measured on
         # this deployment, autocasting the image encoder runs 343 ms against
@@ -365,10 +373,13 @@ class SAM2Wrapper:
                 dtype=np.int32,
             )
 
-        # One lock across encode *and* decode: `predict` reads the feature slot
-        # that `_ensure_image_features` just filled, so releasing in between
-        # would let a second caller overwrite it mid-prompt.
+        # One lock across create *and* encode *and* decode: `predict` reads the
+        # feature slot that `_ensure_image_features` just filled, so releasing
+        # in between would let a second caller overwrite it mid-prompt. The
+        # predictor itself must be created under the same hold — see
+        # `_get_image_predictor`.
         with self._image_lock:
+            predictor = self._get_image_predictor()
             self._ensure_image_features(predictor, slice_2d, cache_key)
             masks, ious, _ = predictor.predict(normalize_coords=True, **kwargs)
         masks = np.asarray(masks, dtype=bool)
@@ -427,9 +438,10 @@ class SAM2Wrapper:
         cost off the click path and returns "hit" when the work was already
         done, so warming a slice the annotator scrubbed back to is free.
         """
-        predictor = self._get_image_predictor()
         with self._image_lock:
-            return self._ensure_image_features(predictor, slice_2d, cache_key)
+            return self._ensure_image_features(
+                self._get_image_predictor(), slice_2d, cache_key
+            )
 
     def _ensure_image_features(self, predictor, slice_2d, cache_key) -> str:
         """Put `cache_key`'s encoder features into the predictor's feature slot.

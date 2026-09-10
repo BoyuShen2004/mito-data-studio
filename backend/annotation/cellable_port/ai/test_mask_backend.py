@@ -382,6 +382,26 @@ class MaskBackendSelectionTests(SimpleTestCase):
 
         loader.assert_called_once()
 
+    def test_a_transient_gpu_failure_is_retried_on_the_next_request(self):
+        # Multi-worker boot can OOM the first load; branding that sticky would
+        # leave the worker dead for Point Mask until gunicorn recycled it.
+        provider = unittest.mock.Mock()
+        provider._load.side_effect = [
+            RuntimeError("CUDA out of memory"),
+            FakeWrapper(),
+        ]
+        with unittest.mock.patch(
+            "annotation.tracking.registry.get_tracking_provider",
+            return_value=provider,
+        ):
+            with self.assertRaises(registry.AiUnavailable) as first:
+                registry.get_mask_model()
+            self.assertIn("retry", str(first.exception).lower())
+            model = registry.get_mask_model()
+
+        self.assertIsInstance(model, Sam2Masks)
+        self.assertEqual(provider._load.call_count, 2)
+
     def test_the_backend_is_resolved_once_per_process(self):
         provider = unittest.mock.Mock()
         provider._load.return_value = FakeWrapper()
