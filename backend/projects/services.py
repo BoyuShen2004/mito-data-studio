@@ -601,9 +601,10 @@ def _remove_generated_files(plan: dict) -> None:
     for rel in purge:
         removed += _purge_tree(_absolute(rel), protected)
 
-    # Then no empty folder is left, deepest first: artifact subfolders, dataset
-    # folders, project folders — even when their rows survive, since every
-    # writer recreates its parent directory. rmdir refuses anything with content.
+    # Then artifact subfolders left empty inside datasets that survive, deepest
+    # first. A dataset's or project's own folder goes only with its row (above):
+    # it mirrors the hierarchy for as long as the row exists. rmdir refuses
+    # anything with content.
     empty_candidates: list[str] = []
     for dataset_dir in plan["touched_dirs"]:
         embeddings = _absolute(f"{dataset_dir}/embeddings")
@@ -617,10 +618,6 @@ def _remove_generated_files(plan: dict) -> None:
             f"{dataset_dir}/{name}"
             for name in ("embeddings", "pyramids", "metadata", "approved")
         ]
-    empty_candidates += plan["touched_dirs"]
-    empty_candidates += sorted({rel.split("/", 1)[0] for rel in plan["touched_dirs"]})
-    if plan["project_dir"]:
-        empty_candidates.append(plan["project_dir"])
     for rel in empty_candidates:
         path = _absolute(rel)
         if path == root or path.is_symlink() or not path.is_dir() or not is_owned(path):

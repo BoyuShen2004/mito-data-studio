@@ -214,7 +214,7 @@ class DeleteRemovesGeneratedFilesTests(TestCase):
 
         self.assertTrue(source.exists())
 
-    def test_deleting_a_dataset_leaves_no_folder_behind(self):
+    def test_deleting_a_dataset_removes_its_folder_and_keeps_the_project_folder(self):
         self._generate(self._volume("case_00"))
         self._touch("Study/CellMap/notes.txt")
         self._touch("Study/CellMap/embeddings/sam2-hiera-l/retired_z_0_1.npz")
@@ -222,8 +222,9 @@ class DeleteRemovesGeneratedFilesTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             delete_dataset(self.dataset)
 
-        # The project row survives; its folder, now empty, does not.
-        self.assertFalse((self.root / "Study").exists())
+        self.assertFalse((self.root / "Study" / "CellMap").exists())
+        # The project still exists, so its folder stays.
+        self.assertTrue((self.root / "Study").is_dir())
 
     def test_a_deleted_dataset_keeps_only_its_registered_sources(self):
         registered = "Study/CellMap/labels/case_00_label.tif"
@@ -241,15 +242,16 @@ class DeleteRemovesGeneratedFilesTests(TestCase):
         )
         self.assertEqual(left, [registered])
 
-    def test_deleting_the_last_volume_leaves_no_empty_folders(self):
+    def test_deleting_the_last_volume_empties_but_keeps_the_dataset_folder(self):
         volume = self._volume("case_00")
         self._generate(volume)
 
         with self.captureOnCommitCallbacks(execute=True):
             delete_volume(volume)
 
-        # Dataset and project rows survive; their emptied folders do not.
-        self.assertFalse((self.root / "Study").exists())
+        # Dataset and project still exist: their folders stay, with nothing left
+        # inside — emptied artifact subfolders go too.
+        self.assertEqual(list((self.root / "Study" / "CellMap").iterdir()), [])
 
     def test_deleting_a_project_removes_its_folder(self):
         self._generate(self._volume("case_00"))
@@ -384,8 +386,9 @@ class DeleteThroughTheApiTests(TransactionTestCase):
         response = self._delete(f"/api/datasets/{self.dataset.pk}/?force=true")
 
         self.assertEqual(response.status_code, 200, response.data)
-        # The project row survives; its emptied folder does not.
-        self.assertFalse((self.root / "mds validation").exists())
+        self.assertFalse((self.root / self.dataset_dir).exists())
+        # The project still exists: its folder stays, empty.
+        self.assertEqual(list((self.root / "mds validation").iterdir()), [])
         self.assertKept([self.external / "a" / "me2-podo_train01_0000.nii.gz"])
 
     def test_project_delete_removes_the_project_folder(self):
