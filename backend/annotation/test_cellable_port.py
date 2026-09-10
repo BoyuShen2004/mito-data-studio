@@ -536,6 +536,29 @@ class WorkingLabelRecoveryTests(TestCase):
         mm = slice_io.open_label_volume_writable(path, (3, 8, 8))
         self.assertEqual(int(np.asarray(mm).max()), 9)
 
+    def test_open_writable_views_legacy_nifti_axes_without_rewriting(self):
+        from pathlib import Path
+
+        path = Path(self._tmp("legacy-nifti-labels.tif"))
+        legacy = np.zeros((8, 6, 3), dtype=np.uint16)  # historical X,Y,Z
+        legacy[4, 2, 1] = 9
+        tifffile.imwrite(str(path), legacy)
+        slice_io.clear_caches()
+        before_inode = path.stat().st_ino
+
+        canonical = slice_io.open_label_volume_writable(
+            path, (3, 6, 8), allow_reversed_axes=True
+        )
+
+        self.assertEqual(canonical.shape, (3, 6, 8))
+        self.assertEqual(int(canonical[1, 2, 4]), 9)
+        canonical[2, 3, 5] = 11
+        canonical.flush()
+        self.assertEqual(path.stat().st_ino, before_inode)
+        raw = tifffile.memmap(str(path), mode="r")
+        self.assertEqual(raw.shape, (8, 6, 3))
+        self.assertEqual(int(raw[5, 3, 2]), 11)
+
     def test_read_label_array_leaves_unreadable_file_untouched(self):
         from pathlib import Path
 

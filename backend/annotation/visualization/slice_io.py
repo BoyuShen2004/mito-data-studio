@@ -477,7 +477,12 @@ def read_label_array(path: Path) -> np.ndarray:
         ) from exc
 
 
-def open_label_volume_writable(path: Path, shape: tuple[int, int, int]) -> np.memmap:
+def open_label_volume_writable(
+    path: Path,
+    shape: tuple[int, int, int],
+    *,
+    allow_reversed_axes: bool = False,
+) -> np.memmap:
     """Open (or create) a label volume as a **writable** memmap, LRU-cached.
 
     This is the difference between a paint stroke costing milliseconds and
@@ -516,7 +521,16 @@ def open_label_volume_writable(path: Path, shape: tuple[int, int, int]) -> np.me
     if path.exists():
         try:
             mm = tifffile.memmap(str(path), mode="r+")
-            if tuple(mm.shape) != tuple(shape) or mm.size == 0:
+            if (
+                allow_reversed_axes
+                and tuple(mm.shape) == tuple(reversed(shape))
+                and mm.size > 0
+            ):
+                # Early NIfTI working copies were accidentally created in
+                # nibabel's (X,Y,Z) order. Keep their bytes/layout intact and
+                # expose a writable canonical (Z,Y,X) view.
+                mm = mm.transpose(2, 1, 0)
+            elif tuple(mm.shape) != tuple(shape) or mm.size == 0:
                 raise ValueError(
                     f"label file shape {getattr(mm, 'shape', None)} incompatible "
                     f"with expected {tuple(shape)}"

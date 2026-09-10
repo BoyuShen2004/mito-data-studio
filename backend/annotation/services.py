@@ -2536,6 +2536,7 @@ def _writable_label(volume, shape):
     from the current official label (or zeros) the first time it's
     touched. Returns ``(memmap, owned_rel_path)``."""
     from .label_paths import working_label_rel_path
+    from .visualization.nifti_io import is_nifti_path
     from .visualization.slice_io import open_label_volume_writable, resolve_path
 
     owned_rel = working_label_rel_path(volume)
@@ -2544,7 +2545,11 @@ def _writable_label(volume, shape):
     if not owned_path.exists():
         _seed_working_label(volume, owned_path, shape, volume.label_location)
 
-    return open_label_volume_writable(owned_path, shape), owned_rel
+    return open_label_volume_writable(
+        owned_path,
+        shape,
+        allow_reversed_axes=is_nifti_path(volume.image_location),
+    ), owned_rel
 
 
 def _load_label_metadata_store(volume):
@@ -2695,6 +2700,23 @@ def get_label_slice_ids(volume, axis: str, index: int) -> dict:
     owned_path = resolve_path(working_label_rel_path(volume))
 
     def _encode(mm) -> dict:
+        actual_shape = tuple(int(v) for v in mm.shape)
+        expected_shape = tuple(int(v) for v in image.shape)
+        if actual_shape != expected_shape:
+            from .visualization.nifti_io import is_nifti_path
+
+            if (
+                is_nifti_path(volume.image_location)
+                and actual_shape == tuple(reversed(expected_shape))
+            ):
+                # Read the same legacy NIfTI working-copy layout through a
+                # canonical view; never transpose or replace the file itself.
+                mm = mm.transpose(2, 1, 0)
+            else:
+                raise SliceIOError(
+                    f"Working label shape {actual_shape} does not match image "
+                    f"shape {expected_shape}."
+                )
         axis_i = AXES[axis]
         n = mm.shape[axis_i]
         idx = max(0, min(int(index), n - 1))
