@@ -7,6 +7,16 @@ follows semantic versioning for tagged releases.
 
 ### Fixed
 
+- **Deleting a project, dataset or volume left its generated files on disk.**
+  The rows went, but the working mask, lifecycle sidecar, pyramids, SAM feature
+  caches, Track preview snapshot, approved labels and submission uploads stayed
+  — on production, 1 GiB under a project whose datasets were all gone. They are
+  now removed once the delete commits, along with folders left empty. Never
+  removed: a registered image, label or region mask (even one stored inside the
+  data root), anything a surviving volume still references, anything outside
+  the data root, and symlinks. A failure to remove a file is logged; the delete
+  itself still succeeds.
+
 - **Legacy NIfTI working labels were read with their axes reversed.** Early
   NIfTI imports wrote the working label copy in nibabel's X,Y,Z order while the
   image is served Z,Y,X, so a z plane of labels came back the wrong shape and

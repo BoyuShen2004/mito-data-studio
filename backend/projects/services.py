@@ -7,11 +7,21 @@ return model instances or plain dicts.
 
 from __future__ import annotations
 
+import glob
+import logging
+import os
+import re
+import shutil
+from pathlib import Path
+
+from django.db import transaction
 from django.utils import timezone
 
 from core.choices import ANNOTATION_TYPE_TO_WORKFLOW, TaskStatus, WorkflowType
 
 from .models import Dataset, Project
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_project_folder(project: Project) -> None:
@@ -316,22 +326,275 @@ def _guard(label: str, counts: dict, force: bool) -> None:
     )
 
 
+# --- Generated files that go with a deleted row ------------------------------
+#
+# Deleting a row used to leave everything the app had generated for it on
+# disk: working mask, lifecycle sidecar, pyramids, SAM feature caches, Track
+# preview snapshot, approved labels and submission uploads. They are now
+# removed once the delete commits. What is never removed: any volume's
+# registered image / label / region-mask path (even inside the data root), a
+# file a surviving volume still references, anything outside the data root,
+# and symlinks.
+
+# ``<mask stem>_<axis>_<index>_<mtime>…`` — SAM 2 ``.npz`` and legacy ``.npy``
+# caches, their ``.lock`` files and ``#up1024`` variants alike.
+_FEATURE_CACHE_NAME = r"^{stem}_[zyx]_\d+_"
+
+
+def _absolute(location: str) -> Path:
+    from annotation.visualization.slice_io import resolve_path
+
+    return Path(os.path.abspath(resolve_path(location)))
+
+
+def _registered_paths(volume, *, uploads: bool) -> list[str]:
+    values = [volume.image_path, volume.label_path, volume.region_mask_path]
+    if uploads:
+        values += [
+            field.name
+            for field in (volume.image_file, volume.label_file, volume.region_mask_file)
+            if field
+        ]
+    return [value for value in values if value]
+
+
+def _generated_paths(volume) -> tuple[list[str], list[str]]:
+    """Root-relative ``(files, directories)`` the app generated for ``volume``."""
+    from annotation.label_paths import (
+        dataset_folder_rel_path,
+        volume_embeddings_dir_rel_path,
+        working_label_metadata_rel_path,
+        working_label_rel_path,
+        working_mask_stem,
+    )
+    from annotation.models import AnnotationTask
+    from annotation.services import _tracking_preview_snapshot_rel
+    from volumes.pyramid.store import LAYER_IMAGE, LAYER_REGION, pyramid_rel_path
+
+    dataset_dir = dataset_folder_rel_path(volume.project, volume.dataset)
+    stem = working_mask_stem(volume)
+    working = working_label_rel_path(volume)
+    snapshot = _tracking_preview_snapshot_rel(volume)
+    metadata = working_label_metadata_rel_path(volume)
+    files = [
+        working, f"{working}.write.lock",
+        snapshot, f"{snapshot}.write.lock",
+        metadata, f"{metadata}.bak",
+    ]
+    dirs = [
+        f"submissions/task_{pk}"
+        for pk in AnnotationTask.objects.filter(volume=volume).values_list("pk", flat=True)
+    ]
+    for layer in (LAYER_IMAGE, LAYER_REGION):
+        rel = pyramid_rel_path(volume, layer)
+        dirs += [rel, f"{rel}.building", f"{rel}.previous"]
+
+    approved = _absolute(f"{dataset_dir}/approved")
+    if approved.is_dir():
+        files += [
+            f"{dataset_dir}/approved/{path.name}"
+            for path in approved.glob(f"{glob.escape(stem)}_approved_s*")
+        ]
+    embeddings_dir = volume_embeddings_dir_rel_path(volume)
+    embeddings = _absolute(embeddings_dir)
+    cache_name = re.compile(_FEATURE_CACHE_NAME.format(stem=re.escape(stem)))
+    if embeddings.is_dir():
+        for variant in embeddings.iterdir():
+            if variant.is_dir() and not variant.is_symlink():
+                files += [
+                    f"{embeddings_dir}/{variant.name}/{path.name}"
+                    for path in variant.iterdir()
+                    if cache_name.match(path.name)
+                ]
+    return files, dirs
+
+
+def _plan_file_cleanup(volumes, *, datasets=(), project=None) -> dict | None:
+    """Decide, while the rows still exist, which generated files to remove.
+
+    ``datasets`` and ``project`` are rows being deleted outright. Their folders
+    go too, but only if empty afterwards and no surviving row maps to the same
+    folder name.
+    """
+    from annotation.label_paths import (
+        dataset_folder_rel_path,
+        project_folder_rel_path,
+        working_label_rel_path,
+    )
+    from volumes.models import Volume
+
+    try:
+        dataset_dirs = [dataset_folder_rel_path(d.project, d) for d in datasets]
+        doomed = list(volumes.select_related("project", "dataset"))
+        doomed_ids = {volume.pk for volume in doomed}
+        surviving = list(
+            Volume.objects.select_related("project", "dataset").exclude(pk__in=doomed_ids)
+        )
+        protected = {
+            _absolute(path)
+            for volume in surviving
+            for path in _registered_paths(volume, uploads=True)
+        }
+        touched_dirs = {dataset_folder_rel_path(v.project, v.dataset) for v in doomed}
+        touched_dirs.update(dataset_dirs)
+        # Identically named projects/datasets share a folder: never remove a
+        # mask a surviving volume resolves to.
+        shared = {
+            working_label_rel_path(volume)
+            for volume in surviving
+            if dataset_folder_rel_path(volume.project, volume.dataset) in touched_dirs
+        }
+        files: list[str] = []
+        dirs: list[str] = []
+        for volume in doomed:
+            if working_label_rel_path(volume) in shared:
+                logger.warning(
+                    "Keeping generated files of volume %s: a surviving volume "
+                    "resolves to the same working mask.", volume.pk,
+                )
+                continue
+            own_files, own_dirs = _generated_paths(volume)
+            approved = {_absolute(path) for path in own_files if "/approved/" in path}
+            # A deleted volume's registered sources stay; only its own approved
+            # label — generated by this app — may go with it.
+            protected |= {
+                _absolute(path) for path in _registered_paths(volume, uploads=False)
+            } - approved
+            files += own_files
+            dirs += own_dirs
+
+        surviving_dataset_dirs = {
+            dataset_folder_rel_path(d.project, d)
+            for d in Dataset.objects.select_related("project").exclude(
+                pk__in=[d.pk for d in datasets]
+            )
+            if project is None or d.project_id != project.pk
+        }
+        removable_dirs = [d for d in dataset_dirs if d not in surviving_dataset_dirs]
+        project_dir = None
+        if project is not None:
+            project_dir = project_folder_rel_path(project)
+            if any(
+                project_folder_rel_path(other) == project_dir
+                for other in Project.objects.exclude(pk=project.pk)
+            ):
+                project_dir = None
+        return {
+            "files": files,
+            "dirs": dirs,
+            "protected": protected,
+            "touched_dirs": sorted(touched_dirs),
+            "removable_dirs": removable_dirs,
+            "project_dir": project_dir,
+        }
+    except Exception:
+        logger.exception("Could not plan generated-file cleanup; files are kept.")
+        return None
+
+
+def _remove_generated_files(plan: dict) -> None:
+    from annotation.cellable_port.labels_3d import forget_summary
+    from annotation.visualization.slice_io import drop_file
+    from core.data_root import is_owned
+
+    root = _absolute(".")
+    protected = plan["protected"]
+    removed = 0
+    for rel in plan["files"]:
+        path = _absolute(rel)
+        if path in protected or path.is_symlink() or not path.is_file() or not is_owned(path):
+            continue
+        drop_file(path)
+        forget_summary(path)
+        try:
+            path.unlink()
+            removed += 1
+        except OSError as exc:
+            logger.warning("Could not remove %s: %s", path, exc)
+    for rel in plan["dirs"]:
+        path = _absolute(rel)
+        if (
+            path.is_symlink() or not path.is_dir() or not is_owned(path)
+            or any(p == path or p.is_relative_to(path) for p in protected)
+        ):
+            continue
+        try:
+            shutil.rmtree(path)
+            removed += 1
+        except OSError as exc:
+            logger.warning("Could not remove %s: %s", path, exc)
+
+    # Folders that only held generated files, deepest first; rmdir refuses
+    # anything that still has content.
+    empty_candidates: list[str] = []
+    for dataset_dir in plan["touched_dirs"]:
+        embeddings = _absolute(f"{dataset_dir}/embeddings")
+        if embeddings.is_dir():
+            empty_candidates += [
+                f"{dataset_dir}/embeddings/{child.name}"
+                for child in embeddings.iterdir()
+                if child.is_dir() and not child.is_symlink()
+            ]
+        empty_candidates += [
+            f"{dataset_dir}/{name}"
+            for name in ("embeddings", "pyramids", "metadata", "approved")
+        ]
+    empty_candidates += plan["removable_dirs"]
+    if plan["project_dir"]:
+        empty_candidates.append(plan["project_dir"])
+    for rel in empty_candidates:
+        path = _absolute(rel)
+        if path == root or path.is_symlink() or not path.is_dir() or not is_owned(path):
+            continue
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+    if removed:
+        logger.info("Removed %d generated file(s)/folder(s) after delete.", removed)
+
+
+def _clean_up_after_commit(plan: dict | None) -> None:
+    if plan is None:
+        return
+
+    def run():
+        try:
+            _remove_generated_files(plan)
+        except Exception:
+            logger.exception("Generated-file cleanup failed; the delete itself stands.")
+
+    transaction.on_commit(run)
+
+
 def delete_project(project: Project, *, force: bool = False) -> dict:
     counts = describe_project_dependents(project)
     _guard(f"project '{project.title}'", counts, force)
+    plan = _plan_file_cleanup(
+        project.volumes.all(),
+        datasets=list(project.datasets.select_related("project")),
+        project=project,
+    )
     project.delete()
+    _clean_up_after_commit(plan)
     return counts
 
 
 def delete_dataset(dataset: Dataset, *, force: bool = False) -> dict:
     counts = describe_dataset_dependents(dataset)
     _guard(f"dataset '{dataset.name}'", counts, force)
+    plan = _plan_file_cleanup(dataset.volumes.all(), datasets=[dataset])
     dataset.delete()
+    _clean_up_after_commit(plan)
     return counts
 
 
 def delete_volume(volume, *, force: bool = False) -> dict:
+    from volumes.models import Volume
+
     counts = describe_volume_dependents(volume)
     _guard(f"volume '{volume.name}'", counts, force)
+    plan = _plan_file_cleanup(Volume.objects.filter(pk=volume.pk))
     volume.delete()
+    _clean_up_after_commit(plan)
     return counts
