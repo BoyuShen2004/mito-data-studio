@@ -10,6 +10,7 @@ import {
   type MockAccount,
 } from "../api/auth";
 import { getDeploymentRelease } from "../api/deployment";
+import { showError } from "../errorPopup";
 
 function releaseLabel(release: string): string {
   return release.match(/v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/)?.[1] ?? release;
@@ -56,7 +57,7 @@ export default function LoginPage() {
       await clearDevelopmentData(status.confirmation);
       setResetMessage("All development data and files were cleared.");
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Development reset failed");
+      showError(err instanceof Error ? err.message : "Development reset failed");
     } finally {
       setBusy(false);
     }
@@ -73,7 +74,7 @@ export default function LoginPage() {
     try {
       await login(username, password, portal);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Login failed");
+      showError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setBusy(false);
     }

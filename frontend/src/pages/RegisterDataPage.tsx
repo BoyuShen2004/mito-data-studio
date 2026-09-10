@@ -16,6 +16,7 @@ import type { DatasetMetadata } from "../types/project";
 import type { LabelType } from "../types";
 import type { Volume } from "../types/volume";
 import { DatasetVolumesTable } from "../components/VolumeMeta";
+import { showError } from "../errorPopup";
 
 const METADATA_FIELDS: { key: keyof DatasetMetadata; label: string }[] = [
   { key: "organism", label: "Organism / species" },
@@ -192,7 +193,7 @@ export default function RegisterDataPage() {
       prefillFromManifest(res);
     } catch (e) {
       if (requestId !== scanRequest.current) return;
-      window.alert(e instanceof Error ? e.message : "Scan failed");
+      showError(e instanceof Error ? e.message : "Scan failed");
       setScan(null);
       setRows([]);
     } finally {
@@ -274,24 +275,24 @@ export default function RegisterDataPage() {
   // error and return null when it is incomplete.
   const buildCurrentEntry = (): StagedDataset | null => {
     if (!scan) {
-      window.alert("Scan a directory first.");
+      showError("Scan a directory first.");
       return null;
     }
     if (!imageDir.trim()) {
-      window.alert("Enter a raw image directory and scan it first.");
+      showError("Enter a raw image directory and scan it first.");
       return null;
     }
     const chosen = rows.filter((r) => r.selected);
     if (chosen.length === 0) {
-      window.alert("Select at least one image to register.");
+      showError("Select at least one image to register.");
       return null;
     }
     if (!dataset.trim()) {
-      window.alert("Enter a dataset name for this directory.");
+      showError("Enter a dataset name for this directory.");
       return null;
     }
     if (anySelectedMask && !LABEL_TYPES_WITH_MASK.includes(labelType)) {
-      window.alert("Choose partial or prediction for the selected editable labels.");
+      showError("Choose partial or prediction for the selected editable labels.");
       return null;
     }
     return {
@@ -332,7 +333,7 @@ export default function RegisterDataPage() {
   const registerAll = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectId) {
-      window.alert("Choose the project to register this data into.");
+      showError("Choose the project to register this data into.");
       return;
     }
     const queuedEntries = [...staged];
@@ -344,7 +345,7 @@ export default function RegisterDataPage() {
       entries.push(currentEntry);
     }
     if (entries.length === 0) {
-      window.alert("Add at least one directory to register.");
+      showError("Add at least one directory to register.");
       return;
     }
 
@@ -429,7 +430,7 @@ export default function RegisterDataPage() {
       setLastResult(succeeded);
       const skipped = succeeded.reduce((sum, result) => sum + (result.skippedVolumes ?? 0), 0);
       if (skipped > 0) {
-        window.alert(
+        showError(
           `${skipped} volume(s) were registered but their source headers could not be read, so tasks could not be `
           + "created yet. Check the source-file permissions, then open Assign volumes to retry.",
         );
@@ -442,13 +443,13 @@ export default function RegisterDataPage() {
     // could duplicate a registration which actually committed server-side.
     if (currentInconclusive) resetForAnother();
     if (failed.length > 0) {
-      window.alert(
+      showError(
         "Some directories could not be registered: " +
           failed.map((f) => `${f.dataset} (${f.message})`).join("; "),
       );
     }
     if (inconclusive.length > 0) {
-      window.alert(`Registration may have completed for ${inconclusive.join(", ")} — check the project Data tab before trying again.`);
+      showError(`Registration may have completed for ${inconclusive.join(", ")} — check the project Data tab before trying again.`);
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };

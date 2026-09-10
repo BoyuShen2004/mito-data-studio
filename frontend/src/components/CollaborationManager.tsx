@@ -3,6 +3,7 @@ import { getCollaboration, mutateCollaboration } from "../api/collaboration";
 import { listProjects } from "../api/projects";
 import { useAsync } from "../hooks/useAsync";
 import TeamEditor from "./teams/TeamEditor";
+import { showError } from "../errorPopup";
 
 export default function CollaborationManager() {
   const [searchParams] = useSearchParams();
@@ -17,7 +18,7 @@ export default function CollaborationManager() {
       collaboration.reload();
       projects.reload();
     } catch (reason) {
-      window.alert(reason instanceof Error ? reason.message : String(reason));
+      showError(reason instanceof Error ? reason.message : String(reason));
     }
   };
   const data = collaboration.data;

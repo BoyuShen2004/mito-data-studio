@@ -15,6 +15,7 @@ import WorkList, { useWorkFilter } from "../components/WorkList";
 import type { AnnotationTask } from "../types/task";
 import type { HardCase } from "../types/hardCase";
 import type { Project } from "../types/project";
+import { showError } from "../errorPopup";
 
 /**
  * One personal home for every role.
@@ -196,7 +197,7 @@ export default function HomePage() {
   const firstError = [myTasks.error, completed.error, waiting.error, projects.error, cases.error]
     .find(Boolean);
   useEffect(() => {
-    if (firstError) window.alert(firstError);
+    if (firstError) showError(firstError);
   }, [firstError]);
 
   return (

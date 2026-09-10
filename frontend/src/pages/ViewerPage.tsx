@@ -21,6 +21,7 @@ import {
   saveReviewLabelComment,
 } from "../api/reviewLabelComments";
 import type { ReviewLabelComment } from "../types/reviewLabelComment";
+import { showError } from "../errorPopup";
 
 /**
  * Volume View — same AnnotationCanvas as task View (canvas + Labels + 3D)
@@ -223,7 +224,7 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
       const submission = await submitInappTask(task.id);
       setSubmittedTask(submission.task_detail);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Submit failed");
+      showError(e instanceof Error ? e.message : "Submit failed");
     } finally {
       setSubmitting(false);
     }
@@ -406,7 +407,7 @@ function ReviewLabelCommentModal({
       );
       onSaved();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not save label comment.");
+      showError(e instanceof Error ? e.message : "Could not save label comment.");
     } finally {
       setBusy(false);
     }

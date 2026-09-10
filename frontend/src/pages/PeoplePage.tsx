@@ -8,6 +8,7 @@ import StatusBadge from "../components/StatusBadge";
 import AnnotatorTimeSection from "../components/AnnotatorTimeSection";
 import CollaborationManager from "../components/CollaborationManager";
 import type { Person, PersonStats } from "../types/people";
+import { showError } from "../errorPopup";
 
 /**
  * People — one app section, role-specific panels.
@@ -150,7 +151,7 @@ function ProfileCard({ me, onSaved }: { me: Person; onSaved: () => void }) {
       setEditing(false);
       onSaved();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not save your profile.");
+      showError(e instanceof Error ? e.message : "Could not save your profile.");
     } finally {
       setBusy(false);
     }

@@ -8,6 +8,7 @@ import type { ReviewDecision } from "../types";
 import type { ReviewLabelComment } from "../types/reviewLabelComment";
 import ReviewLabelCommentList from "./ReviewLabelCommentList";
 import StatusBadge from "./StatusBadge";
+import { showError } from "../errorPopup";
 
 /**
  * The manager's decision, at the end of the conversation it concludes.
@@ -50,7 +51,7 @@ export default function ReviewBox({
       setComments("");
       onDecided();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Review failed");
+      showError(e instanceof Error ? e.message : "Review failed");
     } finally {
       setBusy(false);
     }
@@ -61,7 +62,7 @@ export default function ReviewBox({
       await deleteReviewLabelComment(comment.id);
       labelComments.reload();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not delete label comment");
+      showError(e instanceof Error ? e.message : "Could not delete label comment");
     }
   };
 

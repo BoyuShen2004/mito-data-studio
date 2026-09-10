@@ -17,6 +17,7 @@ import StatusBadge from "./StatusBadge";
 import RegionCoverage from "./RegionCoverage";
 import TeamEditor from "./teams/TeamEditor";
 import { AnnotationTimeCell, formatShape, formatVoxelSize } from "./VolumeMeta";
+import { showError } from "../errorPopup";
 
 // A <select> over 1–5 levels. Falls back to showing an unexpected stored value
 // so an out-of-range number is never silently changed just by opening the row.
@@ -250,7 +251,7 @@ export default function AssignmentPlanEditor({
       setMeta(metaMap);
       setOrder(ids);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not build a plan.");
+      showError(e instanceof Error ? e.message : "Could not build a plan.");
     } finally {
       setBusy(false);
     }
@@ -276,7 +277,7 @@ export default function AssignmentPlanEditor({
       setOrder(fresh.map((t) => t.id));
       onSaved?.();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Saving the plan failed.");
+      showError(e instanceof Error ? e.message : "Saving the plan failed.");
     } finally {
       setBusy(false);
     }
@@ -333,7 +334,7 @@ export default function AssignmentPlanEditor({
       ));
       onSaved?.();
     } catch (reason) {
-      window.alert(reason instanceof Error ? reason.message : "Could not update the working team.");
+      showError(reason instanceof Error ? reason.message : "Could not update the working team.");
     } finally {
       setBusy(false);
     }
@@ -635,7 +636,7 @@ function AnnotationLockButton({
           await setTaskAnnotationLock(task.id, nextLocked);
           onChanged(nextLocked);
         } catch (reason) {
-          window.alert(reason instanceof Error ? reason.message : "Could not change annotation access.");
+          showError(reason instanceof Error ? reason.message : "Could not change annotation access.");
         } finally {
           setRunning(false);
         }
@@ -688,7 +689,7 @@ function ResetLabelsButton({
             await resetWorkingLabels(taskId);
             onReset();
           } catch (e) {
-            window.alert(e instanceof Error ? e.message : "Reset failed");
+            showError(e instanceof Error ? e.message : "Reset failed");
           } finally {
             setRunning(false);
           }

@@ -12,6 +12,7 @@ import {
   categoryLabel,
 } from "../features/viewer/hardCaseCategory";
 import type { HardCase, HardCaseMessage } from "../types/hardCase";
+import { showError } from "../errorPopup";
 
 /** The quick look at a case from a `WorkList` row: the same discussion the
  * case's own page renders, in a dialog. */
@@ -92,7 +93,7 @@ export function HardCaseDiscussion({
         if (live) setMessages(rows);
       })
       .catch((e: unknown) => {
-        if (live) window.alert(e instanceof Error ? e.message : "Could not load discussion.");
+        if (live) showError(e instanceof Error ? e.message : "Could not load discussion.");
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -107,7 +108,7 @@ export function HardCaseDiscussion({
       setHardCase(updated);
       onChanged?.();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not change the category.");
+      showError(e instanceof Error ? e.message : "Could not change the category.");
     } finally {
       setBusy(false);
     }
@@ -121,7 +122,7 @@ export function HardCaseDiscussion({
       setNote(updated.note);
       onChanged?.();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not save note.");
+      showError(e instanceof Error ? e.message : "Could not save note.");
     } finally {
       setBusy(false);
     }
@@ -137,7 +138,7 @@ export function HardCaseDiscussion({
       setReply("");
       onChanged?.();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not post message.");
+      showError(e instanceof Error ? e.message : "Could not post message.");
     } finally {
       setBusy(false);
     }

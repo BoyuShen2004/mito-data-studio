@@ -12,6 +12,7 @@
 import "fake-indexeddb/auto";
 import { configure } from "@testing-library/dom";
 import { beforeEach } from "vitest";
+import { resetShowError } from "../errorPopup";
 
 // --- async timeout ----------------------------------------------------------
 // Testing Library's default `waitFor` / `findBy*` budget is 1000 ms. That is
@@ -37,6 +38,8 @@ configure({ asyncUtilTimeout: 5000 });
 // it was opened from a saved layer.
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
+  // A popup one test just "dismissed" must not swallow the next test's.
+  resetShowError();
 });
 
 // --- working Web Storage ----------------------------------------------------

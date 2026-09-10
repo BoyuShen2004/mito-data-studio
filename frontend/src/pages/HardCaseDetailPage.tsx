@@ -19,6 +19,7 @@ import { displayTaskLayerRange } from "../features/viewer/layerIndex";
 import { categoryLabel } from "../features/viewer/hardCaseCategory";
 import { relativeTime } from "../time";
 import { hasViewCoordinates } from "../features/viewer/viewLocation";
+import { showError } from "../errorPopup";
 
 /**
  * One hard case, opened by a project member at `/hard-cases/:id` — this
@@ -61,7 +62,7 @@ export default function HardCaseDetailPage() {
       await navigator.clipboard.writeText(publicUrl);
       setCopyState("copied");
     } catch {
-      window.alert("Could not copy the link.");
+      showError("Could not copy the link.");
     }
   };
 
@@ -81,7 +82,7 @@ export default function HardCaseDetailPage() {
       await setHardCaseStatus(hardCase.id, next);
       reload();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not update the case.");
+      showError(e instanceof Error ? e.message : "Could not update the case.");
     } finally {
       setBusy(false);
     }
@@ -94,7 +95,7 @@ export default function HardCaseDetailPage() {
       await setHardCaseRevoked(hardCase.id, !hardCase.revoked);
       reload();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not update the link.");
+      showError(e instanceof Error ? e.message : "Could not update the link.");
     } finally {
       setBusy(false);
     }

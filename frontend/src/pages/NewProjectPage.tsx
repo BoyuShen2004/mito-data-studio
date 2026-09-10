@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { createProject } from "../api/projects";
 import { ANNOTATION_TYPES } from "../labels";
 import type { AnnotationType } from "../types";
+import { showError } from "../errorPopup";
 
 /** Step 1 of starting new work: create the project.
  *
@@ -25,7 +26,7 @@ export default function NewProjectPage() {
   const submit = async (e: React.FormEvent, thenRegister: boolean) => {
     e.preventDefault();
     if (!title.trim()) {
-      window.alert("A project title is required.");
+      showError("A project title is required.");
       return;
     }
     setBusy(true);
@@ -43,7 +44,7 @@ export default function NewProjectPage() {
           : `/projects/${project.id}`,
       );
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Could not create project");
+      showError(err instanceof Error ? err.message : "Could not create project");
     } finally {
       setBusy(false);
     }

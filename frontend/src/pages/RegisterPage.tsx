@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { homePathForRole } from "../routes/AppRoutes";
 import BackButton from "../components/BackButton";
+import { showError } from "../errorPopup";
 
 type RegRole = "annotator" | "requester";
 
@@ -33,7 +34,7 @@ export default function RegisterPage() {
       });
       navigate(homePathForRole(u.role), { replace: true });
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Registration failed");
+      showError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setBusy(false);
     }

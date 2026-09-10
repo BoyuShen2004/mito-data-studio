@@ -7,6 +7,7 @@ import { useAsync } from "../hooks/useAsync";
 import FileUpload from "../components/FileUpload";
 import StatusBadge from "../components/StatusBadge";
 import { offlineSubmitLabel } from "../labels";
+import { showError } from "../errorPopup";
 
 export default function SubmitTaskPage() {
   const { id } = useParams();
@@ -21,7 +22,7 @@ export default function SubmitTaskPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      window.alert("Please choose a label file.");
+      showError("Please choose a label file.");
       return;
     }
     setBusy(true);
@@ -35,7 +36,7 @@ export default function SubmitTaskPage() {
       // in its timeline.
       setResult(`Submitted. QC: ${sub.qc_status}.`);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Submission failed");
+      showError(err instanceof Error ? err.message : "Submission failed");
     } finally {
       setBusy(false);
     }

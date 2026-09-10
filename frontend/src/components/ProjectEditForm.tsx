@@ -2,6 +2,7 @@ import { useState } from "react";
 import { updateProject } from "../api/projects";
 import { ANNOTATION_TYPES, PROJECT_STATUSES, titleize } from "../labels";
 import type { Project } from "../types/project";
+import { showError } from "../errorPopup";
 
 /** Edit a project's own fields. Dataset-level details live on each dataset. */
 export default function ProjectEditForm({
@@ -35,7 +36,7 @@ export default function ProjectEditForm({
       });
       onSaved();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Save failed");
+      showError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setBusy(false);
     }

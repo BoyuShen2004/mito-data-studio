@@ -13,6 +13,7 @@ import { METADATA_FIELDS } from "../metadataFields";
 import DeleteButton from "./DeleteButton";
 import DatasetMeta from "./DatasetMeta";
 import { DatasetVolumesTable } from "./VolumeMeta";
+import { showError } from "../errorPopup";
 
 /** Datasets in a project, rendered as sections inside one card (not separate cards). */
 export default function DatasetsCard({
@@ -151,7 +152,7 @@ function DatasetEditForm({
       });
       onSaved();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Save failed");
+      showError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setBusy(false);
     }

@@ -17,6 +17,7 @@ import type { Volume } from "../types/volume";
 import type { AnnotationTask } from "../types/task";
 import { useAuth } from "../auth/AuthContext";
 import { useAsync } from "../hooks/useAsync";
+import { showError } from "../errorPopup";
 
 /**
  * A volume is the **artifact** — the thing being annotated — the way a file in
@@ -66,7 +67,7 @@ export default function VolumeDetailPage() {
       await buildVolumePyramid(volumeId, layer);
       vol.reload();
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Could not queue pyramid build.");
+      showError(error instanceof Error ? error.message : "Could not queue pyramid build.");
     } finally {
       setPyramidBusy(null);
     }
@@ -315,11 +316,11 @@ function VolumeMetadataSidebar({
     try {
       const hasMask = Boolean(labelPath.trim());
       if (!hasMask && labelType !== "none") {
-        window.alert("Without a mask path, label type must be none.");
+        showError("Without a mask path, label type must be none.");
         return;
       }
       if (hasMask && labelType === "none") {
-        window.alert("With a mask path, label type cannot be none.");
+        showError("With a mask path, label type cannot be none.");
         return;
       }
       await editVolume(volume.id, {
@@ -331,7 +332,7 @@ function VolumeMetadataSidebar({
       });
       onSaved();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Save failed");
+      showError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setBusy(false);
     }

@@ -12,6 +12,7 @@ import {
 } from "../api/shares";
 import { useAsync } from "../hooks/useAsync";
 import RegionCoverage from "./RegionCoverage";
+import { showError } from "../errorPopup";
 
 function Led({state}: {state: AggregateShareState | "shared" | "not_shared"}) {
   const label = state === "all" ? "All shared" : state === "partial" ? "Partially shared" : state === "shared" ? "Shared" : "Not shared";
@@ -105,7 +106,7 @@ export default function PublicShareTree() {
       }
       setMessage(`${params.scope[0].toUpperCase()}${params.scope.slice(1)} share created.`);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : String(e));
+      showError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy("");
     }
@@ -118,7 +119,7 @@ export default function PublicShareTree() {
       setData(current => current ? patchShareTree(current, params, []) : current);
       setMessage(`${params.scope[0].toUpperCase()}${params.scope.slice(1)} share stopped.`);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : String(e));
+      showError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy("");
     }

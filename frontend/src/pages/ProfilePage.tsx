@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import { updateMyProfile } from "../api/people";
 import { roleLabel } from "../labels";
 import { shortcutModifierLabel } from "../features/viewer/annotate/shortcutKeys";
+import { showError } from "../errorPopup";
 
 // Same paired rows as the canvas context menu, followed by its Verify | Solo
 // action row. Nulls deliberately hold the open cells beside single tools.
@@ -75,7 +76,7 @@ export default function ProfilePage() {
       await refresh();
       setSaved(true);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not save your profile");
+      showError(e instanceof Error ? e.message : "Could not save your profile");
     } finally {
       setSaving(false);
     }

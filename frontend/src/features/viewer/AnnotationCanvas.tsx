@@ -134,6 +134,7 @@ import {
   ChunkRenderedImageSource,
   phase14ChunkRendererEnabled,
 } from "../rendering";
+import { showError } from "../../errorPopup";
 
 // Shared canvas for View + Annotate. Annotate-only chrome (tool strip,
 // Track/SAM2) lives under `./annotate/` and mounts only in `mode="annotate"`;
@@ -920,7 +921,7 @@ export default function AnnotationCanvas({
           setSelectedTrackParent((current) => current ?? queue.items[0].parent_id);
         }
       })
-      .catch((e) => live && window.alert(e instanceof Error ? e.message : "Could not load Track prompts"));
+      .catch((e) => live && showError(e instanceof Error ? e.message : "Could not load Track prompts"));
     return () => { live = false; };
   }, [annotateMode, firstImageReady, resolveTrackingPendingReview, taskId]);
 
@@ -2119,7 +2120,7 @@ export default function AnnotationCanvas({
           idsIndexRef.current = null;
           if (!labelLoadFailedRef.current) {
             labelLoadFailedRef.current = true;
-            window.alert(
+            showError(
               error instanceof Error
                 ? `Label layer unavailable: ${error.message}`
                 : "Label layer unavailable. Reload or contact an administrator.",
@@ -2587,7 +2588,7 @@ export default function AnnotationCanvas({
               const repaired = await recoverPendingAfterVerifiedLock(
                 saveAxis, rejectedSliceIndex,
               );
-              window.alert(
+              showError(
                 `Repaired ${repaired.repaired} verified pixel`
                 + `${repaired.repaired === 1 ? "" : "s"} from the saved layer. `
                 + `${repaired.kept} unrelated pending edit`
@@ -2600,7 +2601,7 @@ export default function AnnotationCanvas({
             } catch (recoveryError) {
               syncDirtyFromPending();
               setStatus("error");
-              window.alert(
+              showError(
                 `${error.message}\n\nAutomatic verified-label repair could not finish: `
                 + (recoveryError instanceof Error ? recoveryError.message : "unknown error")
                 + " Your unsaved edits are still kept in this tab.",
@@ -2611,7 +2612,7 @@ export default function AnnotationCanvas({
           if (error instanceof ApiError && error.status === 409 && reason === "write_conflict") {
             try {
               const recovered = await recoverPendingAfterConflict(saveAxis);
-              window.alert(
+              showError(
                 "Newer annotation work was saved from another tab or session. "
                 + "This tab reloaded the latest working volume and kept "
                 + `${recovered.reapplied} non-overlapping unsaved voxel edit`
@@ -2629,7 +2630,7 @@ export default function AnnotationCanvas({
             } catch (recoveryError) {
               syncDirtyFromPending();
               setStatus("error");
-              window.alert(
+              showError(
                 `${error.message}\n\nAutomatic recovery could not finish: `
                 + (recoveryError instanceof Error ? recoveryError.message : "unknown error")
                 + " Your unsaved edits are still kept in this tab.",
@@ -2639,7 +2640,7 @@ export default function AnnotationCanvas({
           }
           syncDirtyFromPending();
           setStatus("error");
-          window.alert(
+          showError(
             error instanceof Error
               ? error.message
               : "Save failed. Reload the layer before retrying.",
@@ -2788,7 +2789,7 @@ export default function AnnotationCanvas({
       await navigator.clipboard.writeText(shareUrl);
       setCopyState("copied");
     } catch {
-      window.alert("Couldn't reach the clipboard — select the link and copy it manually.");
+      showError("Couldn't reach the clipboard — select the link and copy it manually.");
     }
   }, [shareUrl]);
 
@@ -2925,7 +2926,7 @@ export default function AnnotationCanvas({
     (next: Axis) => {
       if (next === axisRef.current) return;
       if (saveInFlightRef.current) {
-        window.alert("Please wait for the current save to finish before switching axis.");
+        showError("Please wait for the current save to finish before switching axis.");
         return;
       }
       aiSeqRef.current += 1;
@@ -3271,7 +3272,7 @@ export default function AnnotationCanvas({
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         if (aiSeqRef.current !== seq) return;
-        if (!silent) window.alert(e instanceof Error ? e.message : "Prediction failed");
+        if (!silent) showError(e instanceof Error ? e.message : "Prediction failed");
       } finally {
         renderOverlay();
         if (live) {
@@ -3379,7 +3380,7 @@ export default function AnnotationCanvas({
         // A failed prediction has no proposal to commit; drop the deferred
         // double-click intent rather than letting it apply to a later one.
         finalizeBoxWhenReadyRef.current = false;
-        window.alert(e instanceof Error ? e.message : "Prediction failed");
+        showError(e instanceof Error ? e.message : "Prediction failed");
       } finally {
         renderOverlay();
       }
@@ -3888,7 +3889,7 @@ export default function AnnotationCanvas({
       verifiedIdsRef.current,
     );
     if (conflicts === 0) return false;
-    window.alert(
+    showError(
       `${conflicts} pending pixel${conflicts === 1 ? "" : "s"} already touch `
       + "verified labels. Undo or Revert pending edits before running this tool.",
     );
@@ -4011,7 +4012,7 @@ export default function AnnotationCanvas({
           requireBefore: true,
         });
       } catch (e) {
-        window.alert(e instanceof Error ? e.message : "Split failed");
+        showError(e instanceof Error ? e.message : "Split failed");
       } finally {
         setSplitRunning(false);
       }
@@ -4056,7 +4057,7 @@ export default function AnnotationCanvas({
       setMergeIdB(null);
       mergeClickSlotRef.current = 1;
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Merge failed");
+      showError(e instanceof Error ? e.message : "Merge failed");
     } finally {
       setMergeRunning(false);
     }
@@ -4709,7 +4710,7 @@ export default function AnnotationCanvas({
       setRegionMembershipToken((v) => v + 1);
       setLabels3DRefreshKey((v) => v + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not reset labels");
+      showError(e instanceof Error ? e.message : "Could not reset labels");
     } finally {
       setResetRunning(false);
     }
@@ -4731,7 +4732,7 @@ export default function AnnotationCanvas({
   const runWatershedNow = useCallback(async () => {
     if (!wsTargetLabel || wsSeeds.length === 0) return;
     if (verifiedIdsRef.current.has(wsTargetLabel)) {
-      window.alert(
+      showError(
         `Verified label(s) ${wsTargetLabel} are locked. Unverify them before running this tool.`,
       );
       return;
@@ -4756,7 +4757,7 @@ export default function AnnotationCanvas({
       setWsSeeds([]);
       setWsTargetLabel(null);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Watershed failed");
+      showError(e instanceof Error ? e.message : "Watershed failed");
     } finally {
       setWsRunning(false);
     }
@@ -4849,7 +4850,7 @@ export default function AnnotationCanvas({
       await persistTrackingPrompt(prompt);
       setSelectedTrackParent(classId);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not queue the class");
+      showError(e instanceof Error ? e.message : "Could not queue the class");
     }
   }, [allocateFreshLabelId, index, persistTrackingPrompt, selectTrackingPrompt, trackingPrompts]);
 
@@ -4873,7 +4874,7 @@ export default function AnnotationCanvas({
       await persistTrackingPrompt(next);
     } catch (e) {
       setTrackingPrompts((items) => items.map((item) => item.parent_id === parentId ? prompt : item));
-      window.alert(e instanceof Error ? e.message : "Could not set the propagation range");
+      showError(e instanceof Error ? e.message : "Could not set the propagation range");
     }
   }, [persistTrackingPrompt, trackingPrompts]);
 
@@ -4885,7 +4886,7 @@ export default function AnnotationCanvas({
       setTrackingPrompts(remaining);
       setSelectedTrackParent(remaining[0]?.parent_id ?? null);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not remove the class");
+      showError(e instanceof Error ? e.message : "Could not remove the class");
     }
   }, [selectedTrackParent, taskId, trackingPrompts]);
 
@@ -4899,14 +4900,14 @@ export default function AnnotationCanvas({
       ? trackRangeIssue(candidates[0] ?? null, axisLen)
       : null;
     if (blocked) {
-      window.alert(blocked);
+      showError(blocked);
       return;
     }
     const parentIds = candidates
       .filter((prompt) => canPropagatePrompt(prompt, axisLen))
       .map((prompt) => prompt.parent_id);
     if (!parentIds.length) {
-      window.alert(
+      showError(
         "No queued class is ready: each needs at least one seed and "
         + "a Start/End range that contains every seed layer.",
       );
@@ -4956,11 +4957,11 @@ export default function AnnotationCanvas({
         try {
           await syncTrackingQueue();
         } catch (syncError) {
-          window.alert(syncError instanceof Error ? syncError.message : message);
+          showError(syncError instanceof Error ? syncError.message : message);
         }
       } else {
         setTrackingPrompts((items) => items.map((item) => parentIds.includes(item.parent_id) ? { ...item, status: "error" } : item));
-        window.alert(message);
+        showError(message);
       }
     } finally {
       setTracking(false);
@@ -5049,7 +5050,7 @@ export default function AnnotationCanvas({
         await persistTrackingPrompt(next);
         return true;
       } catch (e) {
-        window.alert(e instanceof Error ? e.message : "Could not save the seed");
+        showError(e instanceof Error ? e.message : "Could not save the seed");
         const queue = await getTrackingPrompts(taskId).catch(() => null);
         if (queue) setTrackingPrompts(queue.items);
         // Drop the local surface too, so the canvas re-reads from the queue the
@@ -5170,7 +5171,7 @@ export default function AnnotationCanvas({
       if (proposal) {
         if (!await commitTrackingProposal()) return;
       } else if (prediction && !trackPromptSavePromiseRef.current) {
-        window.alert("Could not save progress because the Box/Point proposal is empty. Adjust the prompt and try again.");
+        showError("Could not save progress because the Box/Point proposal is empty. Adjust the prompt and try again.");
         return;
       }
       const pendingSave = trackPromptSavePromiseRef.current;
@@ -5213,7 +5214,7 @@ export default function AnnotationCanvas({
       source.push(target);
       setTrackingPrompts(trackingPrompts);
       syncTrackingHistoryCounts();
-      window.alert(error instanceof Error ? error.message : `Could not ${direction} Track prompt edit`);
+      showError(error instanceof Error ? error.message : `Could not ${direction} Track prompt edit`);
     } finally {
       setTrackPromptHistoryBusy(false);
     }
@@ -5303,7 +5304,7 @@ export default function AnnotationCanvas({
       setLabelsSummaryToken((value) => value + 1);
       setLabels3DRefreshKey((value) => value + 1);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : `Could not ${action} Track preview`);
+      showError(error instanceof Error ? error.message : `Could not ${action} Track preview`);
     } finally {
       setTrackReviewAction(null);
     }
@@ -5485,7 +5486,7 @@ export default function AnnotationCanvas({
           if (seq !== trackPromptPredictSeqRef.current) return;
           trackPromptPredictingRef.current = false;
           trackPromptFinalizeWhenReadyRef.current = false;
-          window.alert(error instanceof Error ? error.message : "Point prompt failed");
+          showError(error instanceof Error ? error.message : "Point prompt failed");
         }
       })();
       trackPromptPredictionPromiseRef.current = prediction;
@@ -5568,7 +5569,7 @@ export default function AnnotationCanvas({
           if (seq !== trackPromptPredictSeqRef.current) return;
           trackPromptPredictingRef.current = false;
           trackPromptFinalizeWhenReadyRef.current = false;
-          window.alert(error instanceof Error ? error.message : "Box prompt failed");
+          showError(error instanceof Error ? error.message : "Box prompt failed");
         }
       })();
       trackPromptPredictionPromiseRef.current = prediction;
@@ -5645,7 +5646,7 @@ export default function AnnotationCanvas({
         setLabelsSummaryToken((v) => v + 1);
         return true;
       } catch (e) {
-        window.alert(e instanceof Error ? e.message : `Failed to ${action} label ${labelId}`);
+        showError(e instanceof Error ? e.message : `Failed to ${action} label ${labelId}`);
         return false;
       }
     },
@@ -5668,7 +5669,7 @@ export default function AnnotationCanvas({
         .values()
         .some((ids) => ids.some((v) => v === labelId));
     if (!inSummary && !inPending) {
-      window.alert(`Label ${labelId} does not exist.`);
+      showError(`Label ${labelId} does not exist.`);
       return;
     }
     if (
@@ -5680,7 +5681,7 @@ export default function AnnotationCanvas({
     }
     setDeleteRunning(true);
     const deleted = await handleLifecycleAction(labelId, "reject");
-    if (!deleted) window.alert(`Could not delete label ${labelId}.`);
+    if (!deleted) showError(`Could not delete label ${labelId}.`);
     setDeleteRunning(false);
   }, [deleteRunning, labelsSummaryRows, handleLifecycleAction]);
 

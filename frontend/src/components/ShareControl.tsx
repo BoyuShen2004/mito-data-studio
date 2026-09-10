@@ -9,6 +9,7 @@ import {
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { withViewLocation, type ViewLocation } from "../features/viewer/viewLocation";
+import { showError } from "../errorPopup";
 
 export default function ShareControl({scope, projectId, datasetId, volumeId, getViewLocation}: {
   scope: PublicShare["scope"];
@@ -52,7 +53,7 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
         // Share succeeded; Copy link is available — no chrome tip.
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : String(e));
+      showError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -70,7 +71,7 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
       // only this compact control to learn that aggregate LED, never its page.
       if (scope !== "volume") setLocal(await getEntityShare(params));
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : String(e));
+      showError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -105,7 +106,7 @@ export default function ShareControl({scope, projectId, datasetId, volumeId, get
             copiedReset.current = null;
           }
           setCopied(false);
-          window.alert("Could not copy link. Try again.");
+          showError("Could not copy link. Try again.");
         }
       }}>{copied ? "Copied" : "Copy link"}</button>
     )}

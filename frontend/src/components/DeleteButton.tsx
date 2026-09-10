@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError } from "../api/client";
 import type { Dependents } from "../api/datasets";
+import { showError } from "../errorPopup";
 
 function describe(d: Dependents): string {
   const parts = [
@@ -59,7 +60,7 @@ export default function DeleteButton({
       }
       onDone();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Delete failed");
+      showError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setBusy(false);
     }

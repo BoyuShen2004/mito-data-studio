@@ -30,6 +30,7 @@ import type { Volume } from "../types/volume";
 import type { Project, WorkloadRow } from "../types/project";
 import type { HardCase } from "../types/hardCase";
 import { DatasetVolumesTable } from "../components/VolumeMeta";
+import { showError } from "../errorPopup";
 
 /** Nouns, not verbs — "Assign" was the odd one out and is now a bulk action
  * inside Tasks; "Activity" was a junk drawer and its two halves went to
@@ -63,7 +64,7 @@ export default function ProjectDetailPage() {
       summary.reload();
     } catch (e) {
       // Surface via alert so the review banner layout stays put.
-      window.alert(e instanceof Error ? e.message : "Review update failed");
+      showError(e instanceof Error ? e.message : "Review update failed");
     } finally {
       setReviewing(false);
     }
@@ -186,7 +187,7 @@ function ProjectMembers({ projectId }: { projectId: number }) {
       setSelected("");
       members.reload();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not add member.");
+      showError(e instanceof Error ? e.message : "Could not add member.");
     } finally {
       setBusy(false);
     }
@@ -198,7 +199,7 @@ function ProjectMembers({ projectId }: { projectId: number }) {
       await removeProjectMember(projectId, userId);
       members.reload();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Could not remove member.");
+      showError(e instanceof Error ? e.message : "Could not remove member.");
     } finally {
       setBusy(false);
     }

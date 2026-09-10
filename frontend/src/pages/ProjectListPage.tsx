@@ -4,6 +4,7 @@ import { listProjects } from "../api/projects";
 import { useAsync } from "../hooks/useAsync";
 
 import WorkList, { useWorkFilter } from "../components/WorkList";
+import { showError } from "../errorPopup";
 
 /** Every project, on the same list component the task and case lists use.
  * `Register data` lives here rather than in the navbar: it is an action, not a
@@ -12,7 +13,7 @@ export default function ProjectListPage() {
   const { data, loading, error } = useAsync(listProjects, []);
   const [filter, setFilter] = useWorkFilter();
   useEffect(() => {
-    if (error) window.alert(error);
+    if (error) showError(error);
   }, [error]);
 
   return (

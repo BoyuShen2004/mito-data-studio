@@ -7,6 +7,7 @@ import {
   type TeamMember,
 } from "../../api/collaboration";
 import MemberPicker from "./MemberPicker";
+import { showError } from "../../errorPopup";
 
 export default function TeamEditor({
   annotators,
@@ -48,7 +49,7 @@ export default function TeamEditor({
       onChanged?.(state);
       return state;
     } catch (reason) {
-      window.alert(reason instanceof Error ? reason.message : String(reason));
+      showError(reason instanceof Error ? reason.message : String(reason));
       return null;
     } finally {
       setBusy(false);

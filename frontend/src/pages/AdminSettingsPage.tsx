@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { executeReset, getResetStatus, requestResetConfirmation, type ResetStatus } from "../api/adminReset";
+import { showError } from "../errorPopup";
 
 export default function AdminSettingsPage() {
   const { user } = useAuth();
@@ -10,7 +11,7 @@ export default function AdminSettingsPage() {
   const [phrase, setPhrase] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (user?.is_superuser) getResetStatus().then(setStatus).catch((e) => window.alert(e.message)); }, [user]);
+  useEffect(() => { if (user?.is_superuser) getResetStatus().then(setStatus).catch((e) => showError(e.message)); }, [user]);
   if (!user?.is_superuser) return <Navigate to="/" replace />;
 
   const clear = async () => {
@@ -22,7 +23,7 @@ export default function AdminSettingsPage() {
       setMessage(`Reset completed. Manifest: ${JSON.stringify(result)}`);
       setPassword(""); setPhrase("");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Reset failed");
+      showError(error instanceof Error ? error.message : "Reset failed");
     } finally { setBusy(false); }
   };
 
