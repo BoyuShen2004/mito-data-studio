@@ -15,7 +15,7 @@ release candidate in the locked release environment.
 | Frontend unit/component suite | `cd frontend && npx vitest run` | Pass — 86 test files, 647 tests |
 | Frontend production build | `cd frontend && npm run build` (runs `tsc --noEmit`, then `vite build`) | Pass — entry chunk 340 kB (104 kB gzip), no chunk-size warning |
 | Django system check | `cd backend && python manage.py check` | Pass — no issues |
-| Backend suite | `cd backend && python manage.py test --noinput` | BACKEND_RESULT |
+| Backend suite | `cd backend && python manage.py test --noinput` | 1,504 tests in 1,244 s; no failures, 1 error — a stale test, removed (see below) |
 | Markdown relative-link audit | Script over every tracked `.md` file, checking paths and heading anchors | Pass — no broken links |
 | Git whitespace check | `git diff --check` | Pass |
 
@@ -23,6 +23,12 @@ The development environment had the optional readers and model runtime the
 backend tests import (`h5py` 3.16.0, `nibabel` 5.4.2, PyTorch 2.5.1 with CUDA
 available), so no test module was skipped for a missing package. It is not the
 release lock: `requirements-release.txt` pins `nibabel` 5.3.2.
+
+The single backend error was
+`WorkingLabelRecoveryTests.test_open_writable_views_legacy_nifti_axes_without_rewriting`,
+which called `open_label_volume_writable(..., allow_reversed_axes=True)`. Commit
+`db0ba96` removed that reversed-axis NIfTI view on purpose, so the test was
+deleted; `annotation.test_cellable_port` then ran 67 tests OK.
 
 Run the backend suite from `backend/`. Test discovery depends on the working
 directory, and a run that reports zero tests is not evidence; see the release
