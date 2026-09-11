@@ -13,6 +13,15 @@ code. Preserve upstream copyright and license notices.
 EfficientSAM was vendored here until 2026-09-09 and has been removed along with
 its weights; see `THIRD_PARTY_NOTICES.md` for the full record.
 
+## Cellable provenance
+
+Several modules under `backend/annotation/cellable_port/` (prompt handling,
+image normalization, watershed, component split, merge, label state, and 3-D
+label summaries) were ported from the Cellable desktop annotator. Each keeps a
+one-line note naming the function it came from. The upstream license and
+redistribution terms are not yet recorded here; that audit is an open item in
+`documentation/release/RELEASE_CHECKLIST.md`.
+
 ## WEBKNOSSOS provenance
 
 No WEBKNOSSOS source has been copied, modified, or ported into this repository.

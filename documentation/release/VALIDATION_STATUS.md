@@ -1,57 +1,47 @@
 # Current validation status
 
 This page records the latest observed validation state; it is not a claim that
-the repository is release-ready. The session ran on 2026-08-23 in the
-America/New_York time zone. Some server logs use UTC and therefore show
-2026-08-24.
+the repository is release-ready. The checks below ran on 2026-09-10
+(America/New_York) against `main` at commit
+`93aaef3f1fe6525188bf9fe5d44730b07b0f3d37`, in the `mito-data-studio` Conda
+development environment on the reference development host, with a clean
+worktree. Final release evidence must be regenerated from a clean, immutable
+release candidate in the locked release environment.
 
-The worktree contained pre-existing development changes. Final release evidence
-must be regenerated from a clean, immutable release candidate.
+## Checks run
 
-## Passing checks
-
-| Check | Result | Notes |
+| Check | Command | Result |
 | --- | --- | --- |
-| Frontend unit/component suite | Pass | 82 test files, 543 tests |
-| Frontend production build | Pass | TypeScript compilation and Vite build completed |
-| Django system check | Pass | No issues reported in the `mito-data-studio` Conda environment |
-| Markdown relative-link audit | Pass | Documentation links resolved at audit time |
-| Git whitespace check | Pass | `git diff --check` reported no errors |
-| Focused tracking suites | Pass | `annotation.test_tracking`: 82 tests; `annotation.test_tracking_branches`: 60 tests |
+| Frontend unit/component suite | `cd frontend && npx vitest run` | Pass — 86 test files, 647 tests |
+| Frontend production build | `cd frontend && npm run build` (runs `tsc --noEmit`, then `vite build`) | Pass — entry chunk 340 kB (104 kB gzip), no chunk-size warning |
+| Django system check | `cd backend && python manage.py check` | Pass — no issues |
+| Backend suite | `cd backend && python manage.py test --noinput` | BACKEND_RESULT |
+| Markdown relative-link audit | Script over every tracked `.md` file, checking paths and heading anchors | Pass — no broken links |
+| Git whitespace check | `git diff --check` | Pass |
 
-The frontend build warned that the main JavaScript chunk was approximately
-1,037 kB after minification, above Vite's 500 kB warning threshold. This is a
-release performance item, not a build failure.
+The development environment had the optional readers and model runtime the
+backend tests import (`h5py` 3.16.0, `nibabel` 5.4.2, PyTorch 2.5.1 with CUDA
+available), so no test module was skipped for a missing package. It is not the
+release lock: `requirements-release.txt` pins `nibabel` 5.3.2.
 
-## Open backend validation items
+Run the backend suite from `backend/`. Test discovery depends on the working
+directory, and a run that reports zero tests is not evidence; see the release
+checklist.
 
-Running `python manage.py test -v 1` discovered zero tests. Explicitly naming
-the backend application packages discovered 1,373 tests. That combined run was
-stopped after 844 tests because it was long-running; at that point it reported
-3 failures, 19 errors, and 40 skips.
+## Not covered by this run
 
-Observed categories were:
-
-- the active development environment did not contain `h5py` or `nibabel`,
-  although both are present in the release lock file;
-- several combined-suite errors reported an already-existing
-  `unique_registered_image_per_dataset` constraint, indicating a fixture or
-  test-isolation problem that needs investigation;
-- two Cellable sidecar recovery assertions expected `verified` but observed
-  `edited`;
-- one incremental label-summary assertion expected no rescan but observed a
-  rescan.
-
-These observations pre-date any claim of a clean release. Reproduce them in the
-locked release environment, determine whether each is an environment,
-test-isolation, or product defect, and attach the final results to the release
-record.
+- Browser end-to-end tests (Playwright) against a running server.
+- The locked release environment and the Docker `core`, `ai-cpu`, and `ai-gpu`
+  profiles on clean hosts.
+- Manual exercise of upload, preview, annotation, save, Track, export, and
+  deletion against representative TIFF, HDF5, and NIfTI volumes.
 
 ## Required release rerun
 
-1. Create a clean environment from `backend/environment.lock.yml` and
-   `frontend/package-lock.json`.
-2. Run Django system checks and the explicitly enumerated backend suites.
+1. Create a clean environment from `requirements-release.txt` (or the matching
+   Docker profile) and `frontend/package-lock.json`.
+2. Run Django system checks and the backend suite from `backend/`, confirming
+   the reported test count is non-zero.
 3. Run the complete frontend suite and production build.
 4. Exercise upload, preview, annotation, save, tracking, export, and deletion
    against representative TIFF, HDF5, and NIfTI volumes.

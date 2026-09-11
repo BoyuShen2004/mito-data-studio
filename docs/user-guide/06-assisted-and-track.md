@@ -30,11 +30,21 @@ A committed proposal is still only a pending label edit. Inspect the complete
 boundary and neighboring planes, refine it, then use the normal **Save**.
 Unavailable AI controls do not prevent manual annotation.
 
-These proposals come from SAM 2 — the same model Track propagates with. It
-needs a GPU; where one is unavailable the tools report themselves unavailable
-rather than answering with a weaker model, so a proposal you do get is always
-from the model the results were validated on. Manual annotation is unaffected
-either way.
+These proposals come from SAM 2 — the same model Track propagates with. It runs
+on a GPU when the server has one and on the CPU otherwise, where each proposal
+takes noticeably longer. If the model cannot be loaded at all, the tools are
+unavailable rather than answering with a weaker model. Manual annotation is
+unaffected either way.
+
+The live proposal is drawn as a translucent green mask with a light-green
+outline. Point Mask keeps the part of the prediction that contains your click.
+The small tip that follows the cursor only shows where you are pointing; it is
+never sent to the model. If a prompt produces no mask, nothing is added — add
+another point on the object or try Box Mask.
+
+Right after the server restarts, the model may still be loading. The editor
+retries once automatically; if that also fails, one popup says the assistant is
+temporarily unavailable. Wait a moment and prompt again.
 
 ## SAM2 Track workflow
 

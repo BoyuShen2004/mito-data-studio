@@ -77,7 +77,8 @@ persistence, and makes compound changes reversible before Save.
 SAM2 Track uses a bounded z slab spanning queued ranges. Classes are applied in
 request order so earlier classes win protected collisions. The SAM2 adapter is
 a process-local singleton protected by a re-entrant lock because its inference
-state is mutable.
+state is mutable. Point, Box, and Boundary prompts use an image predictor built
+on the same loaded model, created and used under its own lock.
 
 ## Background processing
 
@@ -93,6 +94,10 @@ therefore sized conservatively.
 - Registered images and region masks are read-only inputs.
 - Owned working artifacts are restricted to the configured data root.
 - Writes use path ownership checks and serialized file-write locks.
+- Deleting a project, dataset, or volume removes its generated artifacts after
+  the transaction commits; registered sources, files still referenced by
+  surviving volumes, symlinks, and paths outside the data root are never
+  removed.
 - CSRF, authenticated sessions, server-side permission checks, and optional
   TLS/proxy hardening protect state-changing APIs.
 - Public tokens expose read-only scoped views and can be revoked.

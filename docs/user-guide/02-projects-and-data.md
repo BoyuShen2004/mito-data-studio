@@ -47,7 +47,11 @@ Each volume can contain three layers:
 | Editable labels | Optional starting integer instance segmentation | A working copy is editable; the registered source is not |
 
 Supported registration sources include TIFF, HDF5, and NIfTI layouts handled by
-the scanner. All layers paired into one volume must describe the same 3-D shape.
+the scanner. All three formats are read in on-disk `(z, y, x)` order; NIfTI is
+not reoriented from the medical `(x, y, z)` convention. A NIfTI volume
+registered before this rule was introduced should be registered again so its
+shape is read correctly. All layers paired into one volume must describe the
+same 3-D shape.
 Label value `0` is background and positive integers are instance IDs. A region
 mask is never treated as starting labels.
 
@@ -79,9 +83,22 @@ page. Do not assume a missing voxel size or channel meaning was inferred. Wrong
 physical dimensions can make 3-D display and downstream measurements misleading
 even when the pixels look correct.
 
-Managers and requesters with permission can edit descriptive metadata. Deleting
-a project or dataset may have dependent tasks, submissions, discussions, and
-shares; read the dependency confirmation carefully.
+Managers and requesters with permission can edit descriptive metadata.
+
+## Deleting data
+
+Deleting a project, dataset, or volume also deletes the work that depends on
+it: tasks, submissions, discussions, and shares. The confirmation lists what
+else will be removed; if annotation work still exists, it says so and asks you
+to delete that work as well. This cannot be undone.
+
+Once the delete succeeds, the server also removes the files the application
+generated for the deleted item under its data root: working masks, label-state
+files, streaming pyramids, model feature caches, Track previews, approved
+labels, and submission uploads. Deleting a dataset removes that dataset's
+folder; the project's folder stays until the project itself is deleted.
+Registered source files — the raw image, region mask, and starting labels you
+registered — are never deleted, even when they are stored inside the data root.
 
 ## Streaming pyramids
 

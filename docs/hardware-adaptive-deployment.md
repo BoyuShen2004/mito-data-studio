@@ -10,7 +10,7 @@ The probe detects host CPU count, RAM, visible NVIDIA GPU count, and GPU memory.
 It recommends or applies:
 
 - gunicorn worker and thread counts;
-- the CUDA device used by SAM2 Track;
+- the CUDA device used by SAM 2 (Track and the prompted-mask tools);
 - the maximum Track planning slab size;
 - SAM2 crop padding and window bounds;
 - CPU threads for merge/contact work;

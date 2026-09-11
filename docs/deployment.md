@@ -14,6 +14,7 @@ data local.
 | Web unit | `mito-data-studio-v1.1.5.service` |
 | Pyramid dispatcher | `mito-data-studio-v1.1.5-dispatcher.service` |
 | Gunicorn bind | `127.0.0.1:18191` |
+| Gunicorn workers | 2 — each loads its own SAM 2 copy on the 11 GiB GPU |
 | Python environment | `<checkout>/venv` |
 | Writable data root | `<checkout>/var/data` |
 | Runtime directories | `<checkout>/logs`, `<checkout>/run`, `<checkout>/var` |
@@ -91,8 +92,9 @@ the previous generation after a deployment. Do not empty that directory as
 part of promotion; old hashes can be pruned only after their normal browser
 session lifetime has elapsed.
 
-Then reload the web unit and smoke-check it. The dispatcher needs a restart only
-when its Python code or unit definition changed.
+Then reload the web unit and smoke-check it. Restart the dispatcher too whenever
+backend Python changed: it imports the same application code and keeps running
+what it loaded at start.
 
 ## Public hostname
 
@@ -195,8 +197,9 @@ registered sources as a deployment step.
 
 Deleting a project, dataset, or volume removes the files the app generated for
 it once the delete commits (`backend/projects/services.py`,
-`_plan_file_cleanup`). Deletes made while an older release was running left
-those files behind. To clear them once, as the service user:
+`_plan_file_cleanup`): a deleted dataset's folder goes, a project's folder stays
+until that project is deleted, and registered sources are never touched. Deletes
+made while an older release was running left those files behind. To clear them once, as the service user:
 
 1. **List candidates, read-only.** A candidate is a project or dataset folder
    under `MITO_DATA_ROOT` whose row no longer exists, or a

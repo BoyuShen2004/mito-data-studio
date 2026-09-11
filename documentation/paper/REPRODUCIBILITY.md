@@ -2,11 +2,13 @@
 
 ## Software snapshot
 
-At documentation capture on 2026-09-08:
+At documentation capture on 2026-09-10:
 
 - branch: `main`;
-- base commit: `90df543dfb579edb42464813c20fa2414f810773`;
-- worktree: **clean** — no uncommitted changes;
+- base commit: `93aaef3f1fe6525188bf9fe5d44730b07b0f3d37`; the documentation
+  refresh that wrote this record is committed directly on top of it and
+  changes no code;
+- worktree: **clean** before that documentation refresh;
 - frontend package version: 1.1.5;
 - production baseline noted by the changelog: 1.1.5;
 - annotated tags in this repository: **none**.
@@ -18,9 +20,11 @@ Create a release commit and an annotated tag, and cite that tag together with
 its commit hash, before running anything intended for a manuscript. Without a
 tag, a reader cannot retrieve the exact software a figure came from.
 
-An earlier capture (2026-08-23, commit `69faf4a8…`) recorded a *modified*
-worktree. Do not cite that snapshot: the interface, several API querysets, and
-the label-artifact file mode have all changed since.
+Do not cite the earlier captures. The 2026-09-08 capture (commit `90df543…`)
+predates the move of the prompted-mask tools to SAM 2, the NIfTI `(z, y, x)`
+axis contract, and file cleanup on delete. The 2026-08-23 capture (commit
+`69faf4a8…`) also recorded a *modified* worktree, and the interface, several
+API querysets, and the label-artifact file mode have changed since.
 
 ## Environment authorities
 

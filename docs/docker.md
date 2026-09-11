@@ -127,7 +127,7 @@ Set `MITO_DEPS` in `.env.docker`:
 | Profile | Size | What you get |
 | --- | --- | --- |
 | `core` *(default)* | ~570 MB | Everything except AI assist. Annotation, viewing, 3-D meshes, watershed split, review and sharing. |
-| `ai-cpu` | ~3 GB | Adds SAM2 tracking and the Point/Box Mask tools on CPU. Complete, but slow enough that it is best kept for trying the tools out. |
+| `ai-cpu` | ~3 GB | Adds SAM 2 Track and the Point Mask, Box Mask and Boundary tools on CPU. Complete, but slow enough that it is best kept for trying the tools out. |
 | `ai-gpu` | ~8 GB | The same on CUDA 12.4. Needs a GPU host — see below. |
 
 Both AI profiles also need the `vendor/` weights fetched with `git lfs pull`
@@ -155,8 +155,8 @@ makes compose fail outright on hosts without the toolkit, which would break the
 CPU path for everyone.
 
 With more than one worker, note that each gunicorn worker loads its own copy of
-the model — three workers means three times the VRAM. Drop `GUNICORN_WORKERS`
-to 1–2 on a single GPU.
+SAM 2 (used by both Track and the prompted-mask tools) — two workers need twice
+the VRAM of one. Keep `GUNICORN_WORKERS` at 1–2 on a single GPU.
 
 ---
 

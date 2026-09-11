@@ -27,7 +27,8 @@ The application-wide array convention is `(z, y, x)`.
 - TIFF, HDF5, and NIfTI sources all use on-disk `(z, y, x)` in this
   application — NIfTI is **not** remapped from medical `(x, y, z)`. Pixdim /
   voxel spacing follows the same axis order. Non-singleton channel/time
-  dimensions are rejected.
+  dimensions are rejected. NIfTI volumes registered while the reader still
+  transposed them must be re-registered so their shape is read again.
 - HDF5 datasets may have leading singleton dimensions, which are pinned to
   zero; ambiguous multi-volume files are rejected rather than guessed.
 
@@ -82,6 +83,26 @@ views may use chunk tokens and validated pyramids; the original full-plane
 slice path remains a fallback. AI embedding files are cached under owned
 per-volume paths keyed by model variant, source identity/mtime, axis, layer,
 and ROI.
+
+## Owned artifacts and deletion
+
+Everything the application writes lives under `MITO_DATA_ROOT`, in one folder
+per project and, beneath it, one folder per dataset. Folder names are derived
+by `annotation/label_paths.py` (`project_folder_rel_path`,
+`dataset_folder_rel_path`). A dataset folder holds volume working masks and
+their lock files, label-state metadata, `pyramids/`, `embeddings/<model
+variant>/`, and approved labels; submission uploads are kept per task under
+`submissions/task_<pk>/`.
+
+Deleting a project, dataset, or volume plans its file cleanup before the
+database rows are removed and performs it only after the transaction commits
+(`projects/services.py`). The cleanup removes the generated artifacts of every
+deleted volume, plus the deleted dataset's or project's folder. A project or
+dataset that survives keeps its folder; artifact subfolders emptied by the
+delete are pruned. It never removes a registered image, label, or region-mask
+path (even one stored inside the data root), a file that a surviving volume
+still references, anything outside the data root, or a symlink. A failed
+removal is logged and does not fail the delete.
 
 ## Data-integrity rules for studies
 

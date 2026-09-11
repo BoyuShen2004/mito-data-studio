@@ -50,6 +50,10 @@ All registered layers for one volume must have the same 3-D shape. The system
 does not infer biological channel names or missing voxel sizes. Verify imported
 metadata on the volume page before analysis.
 
+Deleting a project, dataset, or volume later removes its dependent work and the
+files the application generated for it, including a deleted dataset's folder.
+Registered source files are never deleted.
+
 ## 4. Build optional streaming derivatives
 
 The original TIFF, HDF5, or NIfTI remains usable. A manager may request an
@@ -90,8 +94,9 @@ until it passes through the normal confirmation and Save workflow.
 | Merge | Replace one instance ID with another under the selected policy |
 | Split | Separate disconnected components into distinct IDs |
 | Flood fill | Fill a connected region from a seed |
-| Watershed | Split a bounded 3-D target from user-provided seeds |
+| Seeds | Split a bounded 3-D target by watershed from user-provided seeds |
 | Interpolate | Generate intermediate masks between two reviewed endpoint layers |
+| Delete | Remove every voxel of one label ID |
 
 ### Prompted-mask workflow
 

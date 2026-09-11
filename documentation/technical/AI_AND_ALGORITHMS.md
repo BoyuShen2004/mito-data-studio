@@ -38,10 +38,21 @@ plane-fraction limit (`MITO_AI_MASK_MAX_PLANE_FRACTION`), a relaxed limit
 candidate under a hard cap. The browser's hover tip is display chrome and is
 never sent as a prompt.
 
-Until 2026-09-09 these prompts ran on a vendored EfficientSAM-S ONNX model.
-It was replaced because on volumes whose mitochondria are large and mutually
-adjacent it returned a fragment of the clicked object rather than the object,
-and no choice among its mask candidates corrected that.
+A prompt ROI with sides between 128 and 1024 px is upscaled to 1024 px before
+encoding, and the mask is scaled back to the ROI.
+
+The image predictor is created under the same lock as encoding and decoding, so
+concurrent first requests after a worker starts cannot race to build it, and
+checkpoint loads are serialized across workers. A runtime error during
+prediction (for example a transient CUDA out-of-memory while workers load the
+model) returns HTTP 503 with a retry message instead of a 500; the browser
+retries once after 750 ms before reporting it.
+
+Relevant settings are `MITO_AI_ROI_*` (prompt ROI size and padding),
+`MITO_AI_MASK_MAX_PLANE_FRACTION` and `MITO_AI_MASK_FALLBACK_MAX_PLANE_FRACTION`
+(candidate limits), `MITO_SAM2_IMAGE_CACHE_SLOTS` (in-process feature cache,
+default 8), and `MITO_AI_PRELOAD` (load SAM 2 in the background as each worker
+starts, default on). A study must record their effective values.
 
 Primary reference: Ravi et al., “SAM 2: Segment Anything in Images and
 Videos,” arXiv:2408.00714 (2024), <https://arxiv.org/abs/2408.00714>.
@@ -103,16 +114,19 @@ repository: <https://github.com/facebookresearch/sam2>.
 
 ## Licensing and provenance
 
-SAM 2 is carried with its Apache-2.0 license text. The application
-also contains clearly identified Cellable-ported mechanisms and an MTS-derived
-SAM2 wrapper; provenance is recorded in source docstrings and third-party
-notices. WEBKNOSSOS informed architecture and behavior, but no WEBKNOSSOS source
-is recorded as copied into this repository. See `THIRD_PARTY_NOTICES.md` and
-`docs/attribution.md` before publication or distribution.
+SAM 2 is carried with its Apache-2.0 license text (`vendor/sam2/LICENSE`).
+Several modules under `backend/annotation/cellable_port/` — prompt handling,
+image normalization, watershed, component split, merge, label state, and 3-D
+label summaries — were ported from the Cellable desktop annotator. Each keeps a
+one-line provenance note, and their redistribution terms are still to be
+audited (see the release checklist). WEBKNOSSOS informed architecture and
+behavior, but no WEBKNOSSOS source is recorded as copied into this repository.
+See `THIRD_PARTY_NOTICES.md` and `docs/attribution.md` before publication or
+distribution.
 
 ## Scientific limitations
 
-- Neither model is fine-tuned in this repository for a specific EM dataset.
+- SAM 2 is not fine-tuned in this repository for a specific EM dataset.
 - Model accuracy depends on modality, contrast, voxel anisotropy, seed quality,
   crop size, and selected z range.
 - Software correctness tests do not establish biological segmentation quality.

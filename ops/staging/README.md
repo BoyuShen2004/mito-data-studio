@@ -1,7 +1,8 @@
 # Isolated staging deployment
 
 This directory describes the private release-candidate staging identity. It is
-intentionally separate from the live 18188 checkout, database and data root.
+intentionally separate from the live production checkout (port 18191), its
+database and its data root.
 
 Runtime chain:
 

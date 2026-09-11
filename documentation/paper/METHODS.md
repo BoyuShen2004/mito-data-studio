@@ -86,7 +86,9 @@ containing a positive click and selected by predicted IoU under a plane-fraction
 limit, with a relaxed limit and then the smallest anchored candidate under a
 hard cap as fallbacks. Execution used CUDA when available and the CPU otherwise;
 when the model could not be loaded, the tools reported themselves unavailable
-rather than substituting another model. Predictions were returned as pending
+rather than substituting another model. A runtime error during prediction
+returned a retryable response, which the client retried once. Predictions were
+returned as pending
 run-length encoded masks for human inspection and explicit saving.
 
 ## Axial propagation
@@ -110,7 +112,10 @@ serialized within each worker.
 
 The implementation used role- and project-scoped authorization, revision-aware
 label writes, explicit source/working/snapshot separation, deterministic
-pyramid validation, and automated backend/frontend tests. Annotation activity
+pyramid validation, and automated backend/frontend tests. Deleting a project,
+dataset, or volume removed the application-generated artifacts derived from it
+after the database transaction committed; registered source files were never
+removed. Annotation activity
 was recorded only for eligible active editing sessions, excluding read-only or
 inactive browser periods and merging overlapping intervals to avoid double
 counting wall-clock time.

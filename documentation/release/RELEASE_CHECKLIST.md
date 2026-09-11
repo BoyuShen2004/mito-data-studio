@@ -16,15 +16,16 @@ as open source or granting reuse rights. Do not change that decision implicitly.
 - [ ] Select and review the first-party license.
 - [ ] Confirm third-party notices and vendored model hashes/licenses.
 - [ ] Audit the provenance and redistribution terms of the Cellable-derived
-      tracking mechanisms identified in source docstrings.
+      modules under `backend/annotation/cellable_port/`, each marked by a
+      one-line provenance note.
 - [ ] Create a clean release branch/commit with no runtime data or secrets.
 - [ ] Set one consistent semantic version across changelog, frontend package,
       image tags, service assets, and release notes.
 - [ ] Run `make check`, backend/frontend tests, production build, and
       `make check-git` from the release environment.
-- [ ] Review or split the main JavaScript bundle if it remains above the
-      configured 500 kB warning threshold, or approve a measured load-time
-      budget.
+- [x] Review or split the main JavaScript bundle if it remains above the
+      configured 500 kB warning threshold — the entry chunk measured 340 kB on
+      2026-09-10, with routes loaded lazily; re-measure at release.
 - [ ] Make the default backend test command discover the intended suite, or
       document and enforce the explicit Django app list in CI; a zero-test run
       is not release evidence.

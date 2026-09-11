@@ -56,8 +56,10 @@ standalone measure of biological quality or worker performance.
 ## Profile and shortcuts
 
 Open the username in the navigation bar to edit personal information and
-contact details. Annotators and managers can customize annotation shortcut
-letters. Shortcuts are saved to the account and follow it between browsers;
+contact details. Annotators and managers can customize the tool shortcuts that
+are pressed with `Ctrl` (`⌘` on macOS) plus a letter; the plain-letter keys in
+[Manual annotation tools](05-annotation-tools.md#keyboard-shortcuts) are not
+affected. Shortcuts are saved to the account and follow it between browsers;
 each shortcut must be unique. **Reset to defaults** changes the form, and **Save
 profile** persists it.
 
@@ -71,7 +73,8 @@ profile** persists it.
   deletion.
 - Remember that public shares are read-only but still expose the shared data to
   anyone holding the link.
-- Report errors with project, dataset, volume, task, axis, layer, and affected
-  data layer.
+- Errors appear once, as a browser popup, and never as text inside the page.
+  Note the message before closing it, then report it with project, dataset,
+  volume, task, axis, layer, and affected data layer.
 
 [User guide](../user-guide.md) · Previous: [Submit and review](07-submit-and-review.md) · Back to [Guide index](../user-guide.md)
