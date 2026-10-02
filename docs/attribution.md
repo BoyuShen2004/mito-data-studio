@@ -9,6 +9,7 @@ code. Preserve upstream copyright and license notices.
 | Component | Upstream revision | License | Repository path | Relationship |
 | --- | --- | --- | --- | --- |
 | SAM 2 | facebookresearch/sam2 `2b90b9f5ceec907a1c18123530e92e794ad901a4` | Apache-2.0 | `vendor/sam2/` | Pinned source, config, and checkpoint |
+| em_erl skeleton helpers | PytorchConnectomics/em_erl `b1504f2c3edbece34efc417c395432692d54e14d` | MIT | `backend/annotation/third_party/em_erl_skel.py` | `em_erl/skel.py` with one documented change (`progress` keyword); MIT text in `LICENSE.em_erl` |
 
 EfficientSAM was vendored here until 2026-09-09 and has been removed along with
 its weights; see `THIRD_PARTY_NOTICES.md` for the full record.

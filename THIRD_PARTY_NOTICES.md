@@ -19,22 +19,29 @@ vendored material.
 | Component | Path | Upstream | Licence | Relationship |
 |---|---|---|---|---|
 | SAM 2 | `vendor/sam2/` | facebookresearch/sam2 (`2b90b9f5ceec907a1c18123530e92e794ad901a4`) | Apache-2.0 (`vendor/sam2/LICENSE`) | 22 source/config files matching the pinned tree + official SAM 2.1 checkpoint |
+| em_erl skeleton helpers | `backend/annotation/third_party/em_erl_skel.py` | PytorchConnectomics/em_erl (`b1504f2c3edbece34efc417c395432692d54e14d`) | MIT (`backend/annotation/third_party/LICENSE.em_erl`) | `em_erl/skel.py` from the pinned tree with one documented change (a `progress` keyword) and a provenance header |
 
 ### Verified state as of 2026-09-09
 
 Checked directly, not inferred:
 
-| Question | `vendor/sam2` |
-|---|---|
-| `LICENSE`/`COPYING` present? | **Yes** — Apache-2.0 |
-| Upstream commit pinned? | **Yes** — commit above |
-| Tracked in git? | Yes — 25 files |
-| Source code or weights only? | **Source** (21 `.py`) + `.pt` checkpoint |
-| Copyright headers present? | **Yes** — `Copyright (c) Meta Platforms, Inc. and affiliates.` |
+| Question | `vendor/sam2` | `backend/annotation/third_party/em_erl_skel.py` |
+|---|---|---|
+| `LICENSE`/`COPYING` present? | **Yes** — Apache-2.0 | **Yes** — MIT (`LICENSE.em_erl`) |
+| Upstream commit pinned? | **Yes** — commit above | **Yes** — commit above |
+| Tracked in git? | Yes — 25 files | Yes — 3 files (module, licence, `__init__.py`) |
+| Source code or weights only? | **Source** (21 `.py`) + `.pt` checkpoint | **Source** (1 `.py`) |
+| Copyright headers present? | **Yes** — `Copyright (c) Meta Platforms, Inc. and affiliates.` | Upstream file has none; the vendored copy adds a provenance header carrying `Copyright (c) 2024 Pytorch Connectomics` from the upstream LICENSE |
 
 The SAM2 source/config files matched every corresponding file at the pinned
 official commit, and the checkpoint downloaded from the official URL matched
 `2647878d…`. The upstream Apache-2.0 text is carried in-tree beside it.
+
+Checked 2026-10-01: the em_erl file matches `em_erl/skel.py` at the pinned
+commit except for the provenance header and one documented change (a
+`progress` keyword passed through to kimimaro), verified with `diff` against
+the upstream file. The upstream MIT text is carried beside it as
+`LICENSE.em_erl`.
 
 **Removed 2026-09-09:** EfficientSAM (`vendor/efficient_sam/`, two ONNX weight
 files under Apache-2.0) was vendored as the interactive segmenter and is no
@@ -121,6 +128,15 @@ The inventory is not uniformly permissive. In particular it records psycopg
 runtime wheels (NVIDIA proprietary terms), and the notices embedded in the
 SciPy binary wheel (including GCC Runtime Library Exception and libquadmath).
 Those original notices must remain available with any redistributed runtime.
+
+**Added 2026-10-01 — licensing event, pending owner review:** `kimimaro`
+(GPL-3.0-or-later) for TEASAR skeletonization in
+`backend/annotation/measurements.py`, with its dependencies `dijkstra3d`
+(GPL-3.0-or-later) and `connected-components-3d`, `edt`, `fill-voids`,
+`xs3d` (LGPL-3.0-or-later) and `fastremap` (LGPL-3.0). Its other new
+transitive dependencies are BSD or MIT. kimimaro is imported lazily, only
+when a measurement runs. Licences read from installed package metadata;
+not legal advice.
 
 **Not currently a dependency:** the `webknossos` PyPI package (AGPL-3.0).
 Adding it is permitted under D3 but is a licensing event — record it here first.
