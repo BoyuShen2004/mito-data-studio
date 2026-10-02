@@ -163,9 +163,25 @@ describe("AnnotateToolChrome — Interpolate", () => {
     expect(slot?.previousElementSibling).toBe(screen.getByRole("button", { name: "New" }));
   });
 
-  it("does not show Saved in the tool strip", () => {
-    renderChrome({ status: "saved" });
-    expect(screen.queryByText("Saved")).toBeNull();
+  it("keeps the saved working-draft state explicit", () => {
+    renderChrome({ status: "saved", dirty: false });
+    expect(screen.getByRole("status").textContent).toBe("Saved");
+  });
+
+  it.each([
+    ["idle", false, "No edits"],
+    ["saved", true, "Unsaved"],
+    ["saving", true, "Saving…"],
+    ["error", true, "Save failed"],
+  ] as const)("reports %s with dirty=%s as %s", (status, dirty, label) => {
+    renderChrome({ status, dirty });
+    expect(screen.getByRole("status").textContent).toBe(label);
+  });
+
+  it("exposes the active tool independently of its color", () => {
+    renderChrome({ paintTool: "brush" });
+    expect(screen.getByRole("button", { name: "Brush" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Select" }).getAttribute("aria-pressed")).toBe("false");
   });
 });
 
@@ -269,7 +285,7 @@ describe("AnnotateToolChrome — Reset labels", () => {
     expect(strip.contains(deleteLayer)).toBe(true);
     expect(context.contains(reset)).toBe(true);
     expect(strip.contains(reset)).toBe(false);
-    expect(strip.lastElementChild).toBe(deleteLayer);
+    expect(strip.lastElementChild?.lastElementChild).toBe(deleteLayer);
     expect(context.lastElementChild).toBe(reset);
 
     // "slice" is not this viewer's word for the z index any more.
@@ -290,7 +306,7 @@ describe("AnnotateToolChrome — Reset labels", () => {
     }
   });
 
-  it("reserves one width for both, and adds no height to either row", () => {
+  it("reserves one width for both within fixed rows with comfortable targets", () => {
     // jsdom computes no geometry, so the rules that line the two buttons up
     // are asserted against the stylesheet — same approach as `topbarLayout`.
     const deleteLayer = renderChrome().container.querySelector(".tool-strip .tool-tail-btn")!;
@@ -313,9 +329,9 @@ describe("AnnotateToolChrome — Reset labels", () => {
     expect(tail).toMatch(/flex:\s*0 0 auto/);
     // The trailing spacer is what holds it against the right edge.
     expect(rule(".tool-context .spacer")).toMatch(/flex:\s*1/);
-    // Both rows retain fixed, slightly denser heights; Reset adds no row.
-    expect(rule(".tool-strip")).toMatch(/height:\s*1\.9rem/);
-    expect(rule(".tool-context")).toMatch(/height:\s*1\.52rem/);
+    // Both rows remain fixed-height with room for 32px targets; Reset adds no row.
+    expect(rule(".tool-strip")).toMatch(/height:\s*36px/);
+    expect(rule(".tool-context")).toMatch(/height:\s*36px/);
     // And no wrapper column was introduced to hold the pair.
     expect(css).not.toContain(".tool-strip-stack");
   });

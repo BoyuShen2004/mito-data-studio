@@ -107,7 +107,7 @@ test("integrated organization, team, assignment, review, and region workflows", 
   await expect(assignedRow).toBeVisible();
   await assignedRow.getByRole("button", { name: "Annotate" }).click();
   await expect(annotatorPage).toHaveURL(new RegExp(`/editor/tasks/${assignedTaskId}$`));
-  await expect(annotatorPage.getByRole("heading", { name: `Annotate · Task #${assignedTaskId}` }))
+  await expect(annotatorPage.locator(".viewer-identity").getByText(`Task #${assignedTaskId}`, { exact: true }))
     .toBeVisible();
   const overlay = annotatorPage.locator(".canvas-stage > canvas").first();
   await expect(overlay).toBeVisible({ timeout: 120_000 });

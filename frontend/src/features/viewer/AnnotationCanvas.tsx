@@ -2556,8 +2556,8 @@ export default function AnnotationCanvas({
 
           nextIdRef.current = Math.max(nextIdRef.current, nextId);
           const remaining = syncDirtyFromPending();
-          // Idle when clean — no ephemeral "Saved" tip in the tool strip.
-          setStatus(remaining > 0 ? "dirty" : "idle");
+          // Display a confirmed working-draft save independently of task review state.
+          setStatus(remaining > 0 ? "dirty" : "saved");
           refreshInstances();
           setLabelsSummaryToken((v) => v + 1);
           // Only pinned ids are requested by Labels3DPanel. An empty pin set
@@ -6737,10 +6737,17 @@ export default function AnnotationCanvas({
         {/* 2D canvas — layout-size zoom; status lives outside the scrollport. */}
         <div className="card canvas-panel">
           <div className="row spread labels-3d-header">
-            <h3 style={{ margin: 0 }}>Canvas</h3>
-            <span className="muted labels-3d-status">
-              {!editable || swapped ? "View only" : `${instances.length} label(s) on slice`}
-            </span>
+            <div className="canvas-context" aria-label="Scientific context">
+              <h3>{axisShortLabel(axis).toUpperCase()} {index + 1}/{axisLen}</h3>
+              <span className="canvas-context-label">Label <strong>{activeId > 0 ? `#${activeId}` : "—"}</strong></span>
+              <span className="viewer-mode">{!editable || swapped ? "Read-only" : "Editable"}</span>
+              {editable && !swapped && (
+                <span className="canvas-active-tool">
+                  {trackPromptTool ? `Track · ${trackPromptTool.replace(/_/g, " ")}`
+                    : CONTEXT_MENU_TOOLS.find(([tool]) => tool === paintTool)?.[1]}
+                </span>
+              )}
+            </div>
             <button
               type="button"
               className="secondary labels-3d-swap"
@@ -6996,7 +7003,7 @@ export default function AnnotationCanvas({
       </div>
 
       <div className="canvas-controls">
-        <div className="row canvas-toolrow" style={{ flexWrap: "wrap" }}>
+        <div className="row canvas-toolrow canvas-navigation" role="group" aria-label="Slice navigation and zoom">
           <button
             type="button"
             className="secondary"
@@ -7057,6 +7064,7 @@ export default function AnnotationCanvas({
           </span>
           <button
             className="secondary"
+            aria-label="Zoom out"
             onClick={() => applyZoom(zoom / BUTTON_ZOOM_FACTOR)}
           >
             −
@@ -7072,6 +7080,7 @@ export default function AnnotationCanvas({
           />
           <button
             className="secondary"
+            aria-label="Zoom in"
             onClick={() => applyZoom(zoom * BUTTON_ZOOM_FACTOR)}
           >
             +

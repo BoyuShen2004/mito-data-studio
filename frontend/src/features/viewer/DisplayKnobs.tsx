@@ -36,7 +36,7 @@ export default function DisplayKnobs({
   trailing,
 }: Props) {
   return (
-    <div className="display-knobs">
+    <div className="display-knobs" role="group" aria-label="Image display">
       <label className="display-knob" title="Brightness (0–100%, 50% is normal)">
         <span className="display-knob-label">Brightness</span>
         <input

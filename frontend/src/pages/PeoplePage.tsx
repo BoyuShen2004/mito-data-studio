@@ -57,13 +57,13 @@ export default function PeoplePage() {
           <CollaborationManager />
           <PeopleSection
             title="Annotators"
-            hint="Everyone doing the work: current load, how often they have handed it over, and your last decision on it."
+            hint="Assignments, submission counts, and latest review decisions."
             people={d.annotators}
             statKeys={ANNOTATOR_STAT_KEYS}
           />
           <PeopleSection
             title="Customers (requesters)"
-            hint="Who asked for the work, and the projects they registered."
+            hint="Requesters and registered projects."
             people={d.requesters}
             statKeys={REQUESTER_STAT_KEYS}
           />

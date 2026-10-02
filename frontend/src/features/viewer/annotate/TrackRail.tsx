@@ -196,7 +196,7 @@ export default function TrackRail({
                 </div>
               );
             })}
-            {!prompts.length && <p className="muted track-queue-empty">No classes queued. Choose an active class, add it below, then select a seed tool and draw on the image.</p>}
+            {!prompts.length && <p className="muted track-queue-empty">No classes queued. Add a class, then draw a seed.</p>}
           </div>
           <button type="button" className="track-add-class" onClick={onQueueActive} disabled={reviewLocked} title="Mint a fresh class id (same as Select → New), set it Active, and add it to the Track queue">Add class {addClassId} to queue</button>
           {/* The range belongs to the selected class, so with nothing selected

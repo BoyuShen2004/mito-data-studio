@@ -187,146 +187,163 @@ export default function AnnotateToolChrome({
   onDeleteActive: () => void;
 }) {
   return (
-    <fieldset className="tool-fieldset" disabled={disabled}>
+    <fieldset className="tool-fieldset" disabled={disabled} aria-label="Annotation editing">
       {/* Mode-select row — fixed height so switching tools never jumps the canvas. */}
       <div className="row canvas-toolrow tool-strip">
-        <button
-          className={paintTool === "select" ? "" : "secondary"}
-          onClick={() => onPaintTool("select")}
-          title="Pick the instance under the cursor (V)"
-        >
-          Select
-        </button>
-        <button
-          className={paintTool === "brush" ? "" : "secondary"}
-          onClick={() => onPaintTool("brush")}
-          title="Paint the active instance (B)"
-        >
-          Brush
-        </button>
-        <button
-          className={paintTool === "eraser" ? "" : "secondary"}
-          onClick={() => onPaintTool("eraser")}
-          title="Erase (circular) (E)"
-        >
-          Erase
-        </button>
-        <button
-          className={paintTool === "box_eraser" ? "" : "secondary"}
-          onClick={() => onPaintTool("box_eraser")}
-          title="Drag a box to clear a region (R)"
-        >
-          Box Erase
-        </button>
-        <button
-          className={paintTool === "box_mask" ? "" : "secondary"}
-          onClick={() => onPaintTool("box_mask")}
-          title="Box Mask (M)"
-        >
-          Box Mask
-        </button>
-        <button
-          className={paintTool === "point_mask" ? "" : "secondary"}
-          onClick={() => onPaintTool("point_mask")}
-          title="Point Mask (P)"
-        >
-          Point Mask
-        </button>
-        <button
-          className={paintTool === "boundary" ? "" : "secondary"}
-          onClick={() => onPaintTool("boundary")}
-          title="Boundary (O)"
-        >
-          Boundary
-        </button>
-        <button
-          className={paintTool === "seeds" ? "" : "secondary"}
-          onClick={() => onPaintTool("seeds")}
-          title="Click seed points on one instance -> 3D watershed split (T)"
-        >
-          Seeds
-        </button>
-        {/* Hidden, not disabled, when the server flag is off — a dead button
-            is indistinguishable from a broken one. */}
-        {interpolationEnabled && (
+        <div className="tool-palette" role="group" aria-label="Editing tools">
           <button
-            className={paintTool === "interpolate" ? "" : "secondary"}
-            onClick={() => onPaintTool("interpolate")}
-            title="Fill the active label between two layers you have already painted (I)"
+            className={paintTool === "select" ? "" : "secondary"}
+            aria-pressed={paintTool === "select"}
+            onClick={() => onPaintTool("select")}
+            title="Pick the instance under the cursor (V)"
           >
-            Interpolate
+            Select
           </button>
-        )}
-        {floodFillEnabled && (
           <button
-            className={paintTool === "flood_fill" ? "" : "secondary"}
-            onClick={() => onPaintTool("flood_fill")}
-            title="Flood the connected region under the cursor (F)"
+            className={paintTool === "brush" ? "" : "secondary"}
+            aria-pressed={paintTool === "brush"}
+            onClick={() => onPaintTool("brush")}
+            title="Paint the active instance (B)"
           >
-            Flood fill
+            Brush
           </button>
-        )}
-        <button
-          className={paintTool === "split_3d" ? "" : "secondary"}
-          onClick={() => onPaintTool("split_3d")}
-          title="Split unconnected 3D components of a label (C)"
-        >
-          Split
-        </button>
-        <button
-          className={paintTool === "merge" ? "" : "secondary"}
-          onClick={() => onPaintTool("merge")}
-          title="Merge two labels into the smaller id (G)"
-        >
-          Merge
-        </button>
-        <button
-          className={paintTool === "delete" ? "" : "secondary"}
-          onClick={() => onPaintTool("delete")}
-          title="Delete every voxel of the selected label"
-        >
-          Delete
-        </button>
-        <span className="spacer" />
-        <span className="muted tool-strip-status">
-          {status === "saving" && "Saving…"}
-          {status === "dirty" && "Unsaved"}
-          {status === "error" && "Save failed"}
-          {status === "idle" && sliceLoading && "Loading…"}
-        </span>
-        <button
-          type="button"
-          className="share-hard-case-btn"
-          onClick={onShare}
-          disabled={sharing || !canShare}
-          title={
-            canShare
-              ? "Record the Active label as a hard case for this project. Everyone on the project can view it; you and managers can annotate or take it down. A copyable public link is offered afterwards."
-              : `Active id ${activeId} has no painted label yet — pick an existing label before recording a hard case.`
-          }
-        >
-          {sharing ? "Recording…" : "Record hard case"}
-        </button>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={!dirty || status === "saving"}
-          title="Write every edited layer to the on-disk working mask. Edits stay in memory until you click Save."
-        >
-          Save
-        </button>
-        <button className="secondary" onClick={onUndo} disabled={undoCount === 0}>
-          Undo
-        </button>
-        <button className="secondary" onClick={onRedo} disabled={redoCount === 0}>
-          Redo
-        </button>
-        {/* Last in the row. Its whole-task counterpart, Reset labels, is last
-            in the row *below* — see `.tool-tail-btn`, which reserves one width
-            for both so they line up as a column without either row growing. */}
-        <button className="secondary tool-tail-btn" onClick={onDeleteSlice} title="Clear every label from the layer on screen. Other layers are untouched.">
-          Delete layer
-        </button>
+          <button
+            className={paintTool === "eraser" ? "" : "secondary"}
+            aria-pressed={paintTool === "eraser"}
+            onClick={() => onPaintTool("eraser")}
+            title="Erase (circular) (E)"
+          >
+            Erase
+          </button>
+          <button
+            className={paintTool === "box_eraser" ? "" : "secondary"}
+            aria-pressed={paintTool === "box_eraser"}
+            onClick={() => onPaintTool("box_eraser")}
+            title="Drag a box to clear a region (R)"
+          >
+            Box Erase
+          </button>
+          <button
+            className={paintTool === "box_mask" ? "" : "secondary"}
+            aria-pressed={paintTool === "box_mask"}
+            onClick={() => onPaintTool("box_mask")}
+            title="Box Mask (M)"
+          >
+            Box Mask
+          </button>
+          <button
+            className={paintTool === "point_mask" ? "" : "secondary"}
+            aria-pressed={paintTool === "point_mask"}
+            onClick={() => onPaintTool("point_mask")}
+            title="Point Mask (P)"
+          >
+            Point Mask
+          </button>
+          <button
+            className={paintTool === "boundary" ? "" : "secondary"}
+            aria-pressed={paintTool === "boundary"}
+            onClick={() => onPaintTool("boundary")}
+            title="Boundary (O)"
+          >
+            Boundary
+          </button>
+          <button
+            className={paintTool === "seeds" ? "" : "secondary"}
+            aria-pressed={paintTool === "seeds"}
+            onClick={() => onPaintTool("seeds")}
+            title="Click seed points on one instance -> 3D watershed split (T)"
+          >
+            Seeds
+          </button>
+          {/* Hidden, not disabled, when the server flag is off — a dead button
+              is indistinguishable from a broken one. */}
+          {interpolationEnabled && (
+            <button
+              className={paintTool === "interpolate" ? "" : "secondary"}
+            aria-pressed={paintTool === "interpolate"}
+              onClick={() => onPaintTool("interpolate")}
+              title="Fill the active label between two layers you have already painted (I)"
+            >
+              Interpolate
+            </button>
+          )}
+          {floodFillEnabled && (
+            <button
+              className={paintTool === "flood_fill" ? "" : "secondary"}
+            aria-pressed={paintTool === "flood_fill"}
+              onClick={() => onPaintTool("flood_fill")}
+              title="Flood the connected region under the cursor (F)"
+            >
+              Flood fill
+            </button>
+          )}
+          <button
+            className={paintTool === "split_3d" ? "" : "secondary"}
+            aria-pressed={paintTool === "split_3d"}
+            onClick={() => onPaintTool("split_3d")}
+            title="Split unconnected 3D components of a label (C)"
+          >
+            Split
+          </button>
+          <button
+            className={paintTool === "merge" ? "" : "secondary"}
+            aria-pressed={paintTool === "merge"}
+            onClick={() => onPaintTool("merge")}
+            title="Merge two labels into the smaller id (G)"
+          >
+            Merge
+          </button>
+          <button
+            className={paintTool === "delete" ? "" : "secondary"}
+            aria-pressed={paintTool === "delete"}
+            onClick={() => onPaintTool("delete")}
+            title="Delete every voxel of the selected label"
+          >
+            Delete
+          </button>
+        </div>
+        <div className="tool-edit-actions" role="group" aria-label="Draft and history">
+          <span className="tool-strip-status" role="status" data-state={status}>
+            {status === "saving" ? "Saving…"
+              : status === "error" ? "Save failed"
+              : dirty ? "Unsaved"
+              : sliceLoading ? "Loading…"
+              : status === "saved" ? "Saved" : "No edits"}
+          </span>
+          <button
+            type="button"
+            className="share-hard-case-btn"
+            onClick={onShare}
+            disabled={sharing || !canShare}
+            title={
+              canShare
+                ? "Record the Active label as a hard case for this project. Everyone on the project can view it; you and managers can annotate or take it down. A copyable public link is offered afterwards."
+                : `Active id ${activeId} has no painted label yet — pick an existing label before recording a hard case.`
+            }
+          >
+            {sharing ? "Recording…" : "Record hard case"}
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!dirty || status === "saving"}
+            title="Write every edited layer to the on-disk working mask. Edits stay in memory until you click Save."
+          >
+            Save
+          </button>
+          <button className="secondary" onClick={onUndo} disabled={undoCount === 0}>
+            Undo
+          </button>
+          <button className="secondary" onClick={onRedo} disabled={redoCount === 0}>
+            Redo
+          </button>
+          {/* Last in the row. Its whole-task counterpart, Reset labels, is last
+              in the row *below* — see `.tool-tail-btn`, which reserves one width
+              for both so they line up as a column without either row growing. */}
+          <button className="secondary tool-tail-btn" onClick={onDeleteSlice} title="Clear every label from the layer on screen. Other layers are untouched.">
+            Delete layer
+          </button>
+        </div>
       </div>
 
       {/* Fixed-height context row — Active/New on the left (hidden for Split). */}

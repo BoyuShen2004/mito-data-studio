@@ -157,7 +157,7 @@ function taskRow(task: AnnotationTask, showProject: boolean): WorkRow {
     subtitle,
     chips: [
       ...(showProject && task.project_title ? [{ key: "project", label: task.project_title }] : []),
-      ...(task.annotation_locked ? [{ key: "locked", label: "🔒 closed" }] : []),
+      ...(task.annotation_locked ? [{ key: "locked", label: "Closed" }] : []),
     ],
     person: who,
     category: "",
@@ -461,12 +461,15 @@ export default function WorkList(props: Props) {
                     aria-label={`Select ${row.title}`}
                   />
                 )}
-                <span
-                  className={`work-state-dot work-state-${row.state}`}
-                  role="img"
-                  aria-label={`State: ${row.stateLabel}`}
-                  title={row.stateLabel}
-                />
+                <span className="work-row-state">
+                  <span
+                    className={`work-state-dot work-state-${row.state}`}
+                    role="img"
+                    aria-label={`State: ${row.stateLabel}`}
+                    title={row.stateLabel}
+                  />
+                  <span aria-hidden="true">{row.stateLabel}</span>
+                </span>
                 <div className="work-row-body">
                   <div className="work-row-title-line">
                     <Link to={row.href} className="work-row-title">{row.title}</Link>

@@ -73,6 +73,7 @@ const task = (overrides: Record<string, unknown> = {}) => ({
   project_title: "Project A",
   volume: 9,
   volume_name: "chunk-a",
+  dataset: "Serial EM",
   assigned_to: 12,
   z_start: 0,
   z_end: 8,
@@ -126,7 +127,7 @@ describe("collaboration workflow pages", () => {
     );
   });
 
-  it("orders the task identity, volume title, Submit, and Share controls", () => {
+  it("prioritizes volume and dataset identity before task state, Submit, and Share", () => {
     harness.asyncData = task();
 
     render(
@@ -137,8 +138,10 @@ describe("collaboration workflow pages", () => {
       </MemoryRouter>,
     );
 
-    const heading = screen.getByRole("heading", { name: "Annotate · Task #7" });
-    const volumeTitle = screen.getByText("Project A · chunk-a");
+    const heading = screen.getByRole("heading", { name: "chunk-a" });
+    const volumeTitle = screen.getByText("Serial EM");
+    expect(screen.getByText("Task #7")).toBeTruthy();
+    expect(screen.getByText("in progress")).toBeTruthy();
     const submit = screen.getByRole("button", { name: "Submit for review" });
     const share = screen.getByRole("button", { name: "Share" });
     const follows = (left: Element, right: Element) =>
@@ -338,6 +341,7 @@ describe("collaboration workflow pages", () => {
       z_end: 6,
       project_title: "Project A",
       volume_name: "chunk-a",
+  dataset: "Serial EM",
       created_by_username: "bob",
       created_at: "2026-07-30T12:00:00Z",
       url: "/share/hard-case/token",
@@ -383,6 +387,7 @@ describe("collaboration workflow pages", () => {
       z_end: 6,
       project_title: "Project A",
       volume_name: "chunk-a",
+  dataset: "Serial EM",
     };
 
     render(
@@ -423,6 +428,7 @@ describe("collaboration workflow pages", () => {
     reviews: [],
     project_title: "Project A",
     volume_name: "chunk-a",
+  dataset: "Serial EM",
     ...overrides,
   });
 

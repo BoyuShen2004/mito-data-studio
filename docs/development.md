@@ -206,6 +206,29 @@ for the audited production profile.
 For targeted work, both suites accept a test path or name. Run migrations and
 both builds before promoting development source into the production checkout.
 
+## Frontend visual checks
+
+The UI uses the scientific hierarchy volume/dataset → task → spatial position
+→ selected label → edit/save/review state. Keep shared tokens in
+`frontend/src/styles.css`, compact metadata sections, explicit text states,
+and comfortable controls (32 px minimum viewer button height). Viewer context
+uses existing header rows; tool changes must not resize the image viewport.
+Save reports working-draft persistence, separately from submission/review state.
+
+Run the browser layout and interaction checks with:
+
+```bash
+cd frontend
+npx playwright test --config playwright.scientific.config.ts
+```
+
+These tests run the actual app using the ordinary integrated development flags
+and isolated synthetic API responses; they do not connect to a database or
+validate backend processing. They cover desktop/laptop geometry, mobile login,
+zoom-equivalent reflow, explicit Save/Submit states, review, and public read-only
+viewing. Chromium uses the same `/snap/bin/chromium` executable as the existing
+browser suites. Screenshots are written to `/tmp/mito-scientific-playwright-results`.
+
 ## Data and Git safety
 
 Never commit `.env`, SQLite databases, `data/`, volume binaries, generated

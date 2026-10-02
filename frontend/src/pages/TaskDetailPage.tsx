@@ -186,7 +186,7 @@ function ViewAnnotate({ task, canAnnotate }: { task: AnnotationTask; canAnnotate
 
 function Timeline({ events }: { events: TimelineEvent[] }) {
   if (events.length === 0) {
-    return <p className="muted">Nothing has happened on this task yet.</p>;
+    return <p className="muted">No task events recorded.</p>;
   }
   return (
     <ol className="task-timeline">
@@ -240,8 +240,7 @@ function ActionBox({
     return (
       <div className="review-box review-box-idle">
         <p className="muted" style={{ margin: 0 }}>
-          Nothing is waiting on you here. A decision box appears the moment{" "}
-          {task.assigned_to_username || "the annotator"} submits.
+          No submission awaiting review.
         </p>
       </div>
     );
@@ -258,10 +257,10 @@ function ActionBox({
   }
   return (
     <div className="review-box">
-      <h3>Your turn</h3>
+      <h3>Annotation and submission</h3>
       <p className="muted">
         {task.can_annotate
-          ? "Paint in Annotate and Save as you go; Submit takes the snapshot a manager reviews."
+          ? "Edit the working draft in Annotate. Save edits before submitting a snapshot for review."
           : "Annotation is closed on this task."}
       </p>
       <div className="row">

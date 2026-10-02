@@ -65,7 +65,7 @@ export default function MetadataCard({
   const seen = new Set<string>();
 
   return (
-    <div className="card">
+    <div className="card scientific-metadata">
       <h3>{title}</h3>
       {entries.length === 0 ? (
         <p className="muted">No metadata recorded.</p>

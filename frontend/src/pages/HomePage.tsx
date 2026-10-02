@@ -115,7 +115,7 @@ export default function HomePage() {
       onFilterChange={setFilter}
       onChanged={cases.reload}
       label="Hard cases in your projects"
-      emptyText={<>Nothing flagged in your projects. Cases are raised from Annotate with “Record hard case”.</>}
+      emptyText={<>No hard cases recorded. Use “Record hard case” in the annotation workspace.</>}
     />
   );
 
@@ -138,27 +138,27 @@ export default function HomePage() {
 
   const managerTabs: Tab[] = [
     queue("review", "Awaiting review", awaitingReview, waiting.loading,
-      <>Nothing is waiting on you. Submissions appear here the moment an annotator hands one in.</>),
+      <>No submissions awaiting review.</>),
     {
       id: "approve",
       label: "Projects to approve",
       count: toApprove.length,
       render: () => projectList(toApprove, "Projects awaiting your approval",
-        <>Nothing is waiting for approval. A project lands here once its data is registered.</>),
+        <>No projects awaiting approval.</>),
     },
     queue("mine", "Assigned to me", myTasks.data ?? [], myTasks.loading,
-      <>Nothing is assigned to you.</>),
+      <>No assigned tasks.</>),
     casesTab("Open cases"),
     { id: "shares", label: "Shares", render: () => <PublicShareTree /> },
   ];
 
   const annotatorTabs: Tab[] = [
     queue("mine", "Assigned to me", myTasks.data ?? [], myTasks.loading,
-      <>Nothing is assigned to you yet. A manager pushes work here one volume at a time.</>),
+      <>No assigned tasks. Assignments are managed per volume.</>),
     queue("revision", "Needs revision", needsRevision, myTasks.loading,
-      <>Nothing has been handed back. A rejected or revised task appears here with the reviewer’s comment.</>),
+      <>No tasks requiring revision.</>),
     queue("done", "Done", completed.data ?? [], completed.loading,
-      <>Nothing handed in yet.</>),
+      <>No submitted tasks.</>),
     {
       id: "feedback",
       label: "Feedback",
@@ -207,10 +207,10 @@ export default function HomePage() {
           <h1>Home</h1>
           <p className="muted">
             {isManager
-              ? "What is waiting on you, across every project."
+              ? "Assignments, submissions, and project review."
               : isRequester
-                ? "The projects you registered, and where each one stands."
-                : "Your work, and what the team has flagged around it."}
+                ? "Registered projects and annotation progress."
+                : "Assigned volumes, review feedback, and hard cases."}
           </p>
         </div>
         {(isManager || isRequester) && (
@@ -233,7 +233,7 @@ export default function HomePage() {
       </section>
 
       <p className="muted home-hint">
-        Filters live in the address bar — narrow a list, then send the link.
+        The page URL includes the selected tab and filters.
       </p>
     </div>
   );
