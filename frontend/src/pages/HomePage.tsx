@@ -82,9 +82,11 @@ export default function HomePage() {
     loading: boolean,
     label: string,
     emptyText: ReactNode,
+    rowNavigation: "links" | "review-button" = "links",
   ) => (
     <WorkList
       kind="task"
+      rowNavigation={rowNavigation}
       rows={rows}
       loading={loading}
       filter={filter}
@@ -94,9 +96,15 @@ export default function HomePage() {
     />
   );
 
-  const projectList = (rows: Project[], label: string, emptyText: ReactNode) => (
+  const projectList = (
+    rows: Project[],
+    label: string,
+    emptyText: ReactNode,
+    rowNavigation: "links" | "review-button" = "links",
+  ) => (
     <WorkList
       kind="project"
+      rowNavigation={rowNavigation}
       rows={rows}
       loading={projects.loading}
       filter={filter}
@@ -127,7 +135,8 @@ export default function HomePage() {
     rows: AnnotationTask[],
     loading: boolean,
     empty: ReactNode,
-  ): Tab => ({ id, label, count: rows.length, render: () => taskList(rows, loading, label, empty) });
+    rowNavigation: "links" | "review-button" = "links",
+  ): Tab => ({ id, label, count: rows.length, render: () => taskList(rows, loading, label, empty, rowNavigation) });
 
   const casesTab = (label: string): Tab => ({
     id: "cases",
@@ -138,13 +147,13 @@ export default function HomePage() {
 
   const managerTabs: Tab[] = [
     queue("review", "Awaiting review", awaitingReview, waiting.loading,
-      <>No submissions awaiting review.</>),
+      <>No submissions awaiting review.</>, "review-button"),
     {
       id: "approve",
       label: "Projects to approve",
       count: toApprove.length,
       render: () => projectList(toApprove, "Projects awaiting your approval",
-        <>No projects awaiting approval.</>),
+        <>No projects awaiting approval.</>, "review-button"),
     },
     queue("mine", "Assigned to me", myTasks.data ?? [], myTasks.loading,
       <>No assigned tasks.</>),

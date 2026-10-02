@@ -3415,7 +3415,7 @@ never colour alone. */
   color: var(--text);
   font-weight: 600;
 }
-.work-row-title:hover {
+a.work-row-title:hover {
   color: var(--accent);
 }
 .work-row-subtitle {

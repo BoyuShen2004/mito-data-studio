@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "./HomePage";
@@ -123,6 +123,12 @@ describe("HomePage", () => {
 
     expect(await screen.findByText("volume-a z1–4")).toBeTruthy();
     expect(screen.getByText("#30")).toBeTruthy();
+    const row = within(screen.getByText("#30").closest("li")!);
+    expect(row.getAllByRole("button")).toHaveLength(1);
+    expect(row.getByRole("button", { name: "Review" })).toBeTruthy();
+    expect(row.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/tasks/30");
+    expect(row.queryByRole("link", { name: "volume-a z1–4" })).toBeNull();
+    expect(row.queryByRole("link", { name: "#30" })).toBeNull();
     // The address is the task's, never the submission's.
     expect(screen.queryByText("#9")).toBeNull();
     expect(screen.getByRole("tab", { name: /Awaiting review\s*1/ })).toBeTruthy();
@@ -139,9 +145,26 @@ describe("HomePage", () => {
 
   it("links an approval row to the project it opens", async () => {
     open("?tab=approve");
-    expect((await screen.findByRole("link", { name: "Mito project" })).getAttribute("href"))
-      .toBe("/projects/1");
+    await screen.findByText("Mito project");
+    const row = within(screen.getByText("Mito project").closest("li")!);
+    expect(row.getAllByRole("button")).toHaveLength(1);
+    expect(row.getByRole("button", { name: "Review" })).toBeTruthy();
+    expect(row.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/projects/1");
+    expect(row.queryByRole("link", { name: "Mito project" })).toBeNull();
+    expect(row.queryByRole("link", { name: "#1" })).toBeNull();
     expect(screen.getByText("awaiting approval")).toBeTruthy();
+  });
+
+  it("keeps direct actions and linked titles for the manager's own assignments", async () => {
+    harness.listMyTasks.mockResolvedValue([task(1, "Assigned volume")]);
+    open("?tab=mine");
+    const title = await screen.findByRole("link", { name: "Assigned volume z1–4" });
+    expect(title.getAttribute("href")).toBe("/tasks/1");
+    const row = within(title.closest("li")!);
+    expect(row.getByRole("link", { name: "#1" }).getAttribute("href")).toBe("/tasks/1");
+    expect(row.getByRole("link", { name: "View" }).getAttribute("href")).toBe("/viewer/tasks/1");
+    expect(row.getByRole("link", { name: "Annotate" }).getAttribute("href")).toBe("/editor/tasks/1");
+    expect(row.queryByRole("button", { name: "Review" })).toBeNull();
   });
 
   it("gives an annotator their own queues and keeps Annotate on the row", async () => {
@@ -155,6 +178,9 @@ describe("HomePage", () => {
       "Assigned to me1", "Needs revision0", "Done1", "Feedback0", "Cases in my projects0",
     ]);
     expect(screen.getByRole("button", { name: "Annotate" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Assigned volume z1–4" }).getAttribute("href")).toBe("/tasks/1");
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
     expect(screen.queryByText("Finished volume z1–4")).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: /Done/ }));
