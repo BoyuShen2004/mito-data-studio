@@ -17,6 +17,7 @@ function releaseLabel(release: string): string {
 }
 
 export default function LoginPage() {
+  const showDevelopmentAccounts = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === "true";
   const { login, user } = useAuth();
   const navigate = useNavigate();
   const [portal, setPortal] = useState<LoginPortal>("annotator");
@@ -26,7 +27,9 @@ export default function LoginPage() {
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [mockAccounts, setMockAccounts] = useState<MockAccount[]>([]);
   const [release, setRelease] = useState<string | null>(null);
-  useEffect(() => { fetchMockAccounts().then(setMockAccounts); }, []);
+  useEffect(() => {
+    if (showDevelopmentAccounts) fetchMockAccounts().then(setMockAccounts);
+  }, [showDevelopmentAccounts]);
   useEffect(() => { getDeploymentRelease().then(setRelease); }, []);
 
   // Product invariant: account chips only fill the ordinary login form. They
@@ -180,7 +183,7 @@ export default function LoginPage() {
             annotator or a requester.
           </div>
 
-          {mockAccounts.length > 0 && (
+          {showDevelopmentAccounts && mockAccounts.length > 0 && (
             <div className="dev-accounts">
               <div className="dev-accounts-title">Development accounts</div>
               <div className="dev-accounts-list">

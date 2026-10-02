@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "./LoginPage";
 
 const harness = vi.hoisted(() => ({
@@ -27,7 +27,10 @@ vi.mock("../api/deployment", () => ({
 }));
 
 describe("development account login helper", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   beforeEach(() => {
+    vi.stubEnv("VITE_SHOW_DEMO_ACCOUNTS", "true");
     harness.login.mockReset();
     harness.user = null;
     harness.fetchAccounts.mockReset().mockResolvedValue([
@@ -42,6 +45,16 @@ describe("development account login helper", () => {
     });
     harness.clearDevelopmentData.mockReset().mockResolvedValue({ after: {} });
     vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+
+  it.each(["false", undefined])("hides demo UI and never fetches credentials when the build flag is %s", async (flag) => {
+    vi.stubEnv("VITE_SHOW_DEMO_ACCOUNTS", flag);
+    render(<MemoryRouter><LoginPage /></MemoryRouter>);
+    await screen.findByLabelText("Release version");
+    expect(screen.queryByText("Development accounts")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear all existing files" })).toBeNull();
+    expect(harness.fetchAccounts).not.toHaveBeenCalled();
+    expect(harness.getResetStatus).not.toHaveBeenCalled();
   });
 
   it("opens on the annotator portal by default", async () => {

@@ -46,9 +46,10 @@ die()   { printf '%s\n' "${RED}error:${RESET} $*" >&2; exit 1; }
 # --- optional: git hygiene -------------------------------------------------
 if [[ "${1:-}" == "--check-git" || "${1:-}" == "check-git" ]]; then
   cd "$(git rev-parse --show-toplevel)"
-  FORBIDDEN='(^|/)data/|\.sqlite3(-journal)?$|(^|/)\.env$|\.(tif|tiff|npy|nii)(\.gz)?$'
+  FORBIDDEN='(^|/)(data|mito_data_root|var|media|uploads|logs|run|mock-data|test-output|test-results|playwright-report|seed-dumps)/|(^|/)fixtures/(mock-data|generated)/|\.(sqlite3?|db)(-.*)?$|(^|/)\.env($|\.)|\.(tif|tiff|npy|npz|nii|h5|hdf5|sql|dump)(\.gz)?$|\.(zarr|n5)/|\.(log|pid)$|(^|/)\.preview-manager\.json$|seed-dump.*\.json(\.gz)?$'
   offenders="$( { git ls-files; git diff --cached --name-only; } \
-      | sort -u | grep -E "$FORBIDDEN" || true )"
+      | sort -u | grep -E "$FORBIDDEN" \
+      | grep -Ev '(^|/)\.env(\.docker(\.dev)?)?\.example$|^backend/annotation/(interpolation|tools)/golden/[^/]+\.npz$' || true )"
   if [[ -n "$offenders" ]]; then
     echo "ERROR: runtime data / DB / secrets must not be committed or pushed:" >&2
     echo "$offenders" | sed 's/^/  /' >&2

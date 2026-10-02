@@ -156,7 +156,7 @@ from django.conf import settings;print({n:getattr(settings,n) for n in dir(setti
 ```
 
 The browser half has the same rule and lives in `frontend/package.json`: `npm
-run dev` and `npm run build:production` set an identical `VITE_*` set, so the
+run dev` and `npm run build:production` set identical integrated feature flags, so the
 dev server exercises the chunk pull queue and the chunk renderer that
 production ships. Change one, change the other.
 
@@ -220,3 +220,19 @@ git status --short
 Production promotion is development → production. Production-only fixes should
 first be ported back and tested here. The host-specific procedure is in
 [host deployment guide](deployment.md).
+
+## Public DEV versus production login
+
+DEV uses `VITE_SHOW_DEMO_ACCOUNTS=true`; production and `build:no-demo` explicitly
+set it false while preserving the integrated chunk/rendering feature flags.
+The LoginPage source remains tracked. Production builds do not fetch mock
+credentials or render the development clear action.
+
+Public DEV runtime/fixtures belong in the isolated preview `var/data`, outside
+canonical source. Credentials stay in mode-0600 `.env.dev-public` and `run/`.
+Use `seed_dev --safe-mock-login` with an explicit allowlist and a private env
+password; this seeds application identities without granting Django admin.
+Never use production for seeding or reset tests. Generated mock fixtures and
+seed exports belong under ignored `fixtures/mock-data/`, `fixtures/generated/`,
+or `seed-dumps/`, not beside product source. Run `make check-git` before any
+commit; existing reviewed algorithm golden fixtures remain product tests.

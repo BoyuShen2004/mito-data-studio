@@ -74,3 +74,37 @@ htmlcov/
 .vscode/
 *.swp
 *~
+
+# Disposable runtime, uploads, mock fixtures and generated seed exports.
+# Keep LoginPage and fixture-generator source tracked; outputs belong here.
+/var/
+logs/
+run/
+uploads/
+fixtures/mock-data/
+fixtures/generated/
+mock-data/
+test-output/
+test-results/
+playwright-report/
+seed-dumps/
+*.sqlite
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+*.sql
+*.sql.gz
+*.dump
+*.dump.gz
+*.h5
+*.hdf5
+*.npz
+*.zarr/
+*.n5/
+.preview-manager.json
+*seed-dump*.json
+*seed-dump*.json.gz
+# Existing reviewed algorithm golden fixtures are intentional product tests.
+!backend/annotation/interpolation/golden/*.npz
+!backend/annotation/tools/golden/*.npz
