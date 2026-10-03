@@ -14,7 +14,7 @@
 | [ops/](../../ops/) | Docker、staging、production 和发布工具 | 由维护者部署时使用 |
 | [vendor/](../../vendor/) | 可选模型资源及第三方资产 | 使用 AI 功能或核对归属 |
 | [manage.py](../../manage.py)、[Makefile](../../Makefile) | 命令入口和常用命令集合 | 环境配置完成后使用 |
-| [environment.yml](../../environment.yml)、[requirements-release.txt](../../requirements-release.txt) | 开发环境 / 带哈希的发布依赖锁 | 不把已有开发环境当作固定发布环境 |
+| [environment.yml](../../environment.yml)、[requirements/release.txt](../../requirements/release.txt) | 开发环境 / 带哈希的发布依赖锁 | 不把已有开发环境当作固定发布环境 |
 | [frontend/package.json](../../frontend/package.json)、[frontend/package-lock.json](../../frontend/package-lock.json) | 前端命令 / 依赖锁 | 查 npm 命令和精确依赖 |
 
 本地还可能看到 `var/`、`data/`、`logs/`、`venv/`、`node_modules/`、`dist/`：它们通常是运行数据、环境或构建产物，不是需要学习或搬动的源代码。
@@ -25,6 +25,8 @@
 前端是浏览器中的 React/TypeScript 界面；后端是服务器上的 Django/Python 程序。
 API 把它们连接起来。数据库记录用户、任务和文件位置，显微图像及标注数组保存在文件存储中。
 修改页面文字通常只涉及前端；修改谁能保存、保存到哪里或如何计算，则需要理解后端约束。
+
+根目录文件的用途与本次迁移路径见[根目录文件说明](root-files.md)。
 
 ## 前端怎么读
 

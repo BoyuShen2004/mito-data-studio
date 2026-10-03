@@ -19,7 +19,7 @@ and PostgreSQL; Python, Node, and conda are not required on the host.
 ```bash
 git clone https://github.com/BoyuShen2004/mito-data-studio.git
 cd mito-data-studio
-cp .env.docker.example .env.docker
+cp config/env/docker.env.example .env.docker
 ops/docker/detect-hardware.sh --apply .env.docker
 ```
 
@@ -93,12 +93,17 @@ backend/      Django project and domain apps
 frontend/     React/Vite application and browser tests
 docs/         onboarding, user, engineering, operations, release, and research docs
 documentation/  compatibility links to docs/ (no separate maintained content)
+config/env/   environment templates (real .env files stay local)
+requirements/ locked Python release dependencies and their input manifest
 scripts/dev/  local setup and live-reload entry points
 ops/          container, staging, production, and release assets
 vendor/       optional SAM2 assets managed with Git LFS
 manage.py     repository-wide Django command entry point
 Makefile      common setup, run, check, test, and build commands
 ```
+
+See the [root-file guide](docs/engineering/root-files.md) for why the remaining
+configuration files are separate.
 
 For contribution checks and test commands, start with
 [Development](docs/development.md) and [Product invariants](docs/product-invariants.md).

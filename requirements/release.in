@@ -1,6 +1,6 @@
 # Python 3.11 release environment. This is the venv-compatible counterpart to
 # environment.yml; compile it with the command at the top of
-# requirements-release.txt and install only into an isolated release venv.
+# requirements/release.txt and install only into an isolated release venv.
 #
 # PyTorch is pinned to the CUDA 12.4 build used by the validated development
 # environment. CPU-only operators may deliberately compile a separate lock,

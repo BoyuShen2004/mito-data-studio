@@ -271,8 +271,8 @@ if [[ "$sam_sz" -lt 1000000 ]]; then
 fi
 # --- 3. Local configuration (.env) -----------------------------------------
 if [[ ! -f "$REPO_ROOT/.env" ]]; then
-  cp "$REPO_ROOT/.env.example" "$REPO_ROOT/.env"
-  ok ".env created from .env.example — review MITO_DATA_ROOT before registering real data"
+  cp "$REPO_ROOT/config/env/host.env.example" "$REPO_ROOT/.env"
+  ok ".env created from config/env/host.env.example — review MITO_DATA_ROOT before registering real data"
 fi
 
 # An .env written before the in-app viewer existed can still say `placeholder`

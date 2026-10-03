@@ -44,7 +44,7 @@ Optional, and only for the AI-assisted tools:
 git clone https://github.com/BoyuShen2004/mito-data-studio.git
 cd mito-data-studio
 
-cp .env.docker.example .env.docker
+cp config/env/docker.env.example .env.docker
 ops/docker/detect-hardware.sh --apply .env.docker
 # Now edit secrets/hosts in .env.docker — see "Required settings" below.
 
@@ -192,7 +192,7 @@ container start the entrypoint runs the probe and exports any **unset** sizing
 variables. Explicit values in the env file always win.
 
 Development stack defaults enable this and deliberately leave probe-managed
-settings commented out (`.env.docker.dev.example`). Production deployments
+settings commented out (`config/env/docker-dev.env.example`). Production deployments
 should run `--apply` once, review the output, then set
 MITO_HARDWARE_AUTO_TUNE=0 when values are stable.
 

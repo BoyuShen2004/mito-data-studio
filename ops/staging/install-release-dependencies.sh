@@ -11,11 +11,11 @@ python_bin=${PYTHON_311:-/home/weidf/.local/share/uv/python/cpython-3.11-linux-x
 # from the PyTorch index. uv's default first-index policy cannot resolve common
 # transitive packages once it sees their older PyTorch-index mirror. Considering
 # both declared indexes is safe here because every accepted artifact is pinned
-# by a cryptographic hash in requirements-release.txt.
+# by a cryptographic hash in requirements/release.txt.
 "$uv_bin" pip sync \
   --python "$checkout/venv/bin/python" \
   --index-strategy unsafe-best-match \
-  "$checkout/requirements-release.txt"
+  "$checkout/requirements/release.txt"
 
 "$checkout/venv/bin/python" -c \
   'import django, numpy, torch; print(f"Python release environment OK: Django {django.get_version()}, NumPy {numpy.__version__}, Torch {torch.__version__}")'

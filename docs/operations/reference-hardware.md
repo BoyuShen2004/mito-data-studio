@@ -28,7 +28,7 @@ snapshot must not be used as an idle-baseline measurement.
 
 ## Software environment distinction
 
-The reproducible release environment is defined by `requirements-release.txt`,
+The reproducible release environment is defined by `requirements/release.txt`,
 `frontend/package-lock.json`, `environment.yml`, and the Docker build profiles.
 The interactive conda environment on the reference host can differ: at capture
 time it did not expose h5py or nibabel, whereas the release lock specifies

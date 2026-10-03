@@ -3,14 +3,15 @@
 Third-party software distributed with, vendored into, or reused by
 mito-data-studio, with its original licence.
 
-**Status of this file:** authoritative and current as of 2026-09-09.
-Every entry must be added *before* the corresponding code is committed.
+This file records components currently included or used by the project.
+Add an entry before committing copied, ported, or vendored code. Dated audit
+results below describe those checks, not a fresh audit of every dependency.
 The concise companion register is
 [`docs/attribution.md`](docs/attribution.md).
 
-The project root `LICENSE` grants no permission for first-party code. Third-party
-components remain governed by the licenses recorded here and shipped beside
-vendored material.
+The project remains under license review; see [LICENSE](LICENSE) for its
+current distribution policy. Third-party components retain their own licenses
+and rights. This file does not grant an exception to those terms.
 
 ---
 
@@ -21,9 +22,10 @@ vendored material.
 | SAM 2 | `vendor/sam2/` | facebookresearch/sam2 (`2b90b9f5ceec907a1c18123530e92e794ad901a4`) | Apache-2.0 (`vendor/sam2/LICENSE`) | 22 source/config files matching the pinned tree + official SAM 2.1 checkpoint |
 | em_erl skeleton helpers | `backend/annotation/third_party/em_erl_skel.py` | PytorchConnectomics/em_erl (`b1504f2c3edbece34efc417c395432692d54e14d`) | MIT (`backend/annotation/third_party/LICENSE.em_erl`) | `em_erl/skel.py` from the pinned tree with one documented change (a `progress` keyword) and a provenance header |
 
-### Verified state as of 2026-09-09
+### Recorded verification
 
-Checked directly, not inferred:
+SAM 2 was checked on 2026-09-09; the em_erl comparison was recorded on
+2026-10-01. The following records are retained as provenance evidence:
 
 | Question | `vendor/sam2` | `backend/annotation/third_party/em_erl_skel.py` |
 |---|---|---|
@@ -43,85 +45,17 @@ commit except for the provenance header and one documented change (a
 the upstream file. The upstream MIT text is carried beside it as
 `LICENSE.em_erl`.
 
-**Removed 2026-09-09:** EfficientSAM (`vendor/efficient_sam/`, two ONNX weight
-files under Apache-2.0) was vendored as the interactive segmenter and is no
-longer distributed or used — SAM 2 answers those prompts now. Nothing in the
-tree links against it. This note stays so the removal is legible to anyone
-auditing an older tag, where the component and its licence are still present
-and still governed by the entry above as it read then.
-
 ---
 
-## 2. WEBKNOSSOS
+## 2. Python and JavaScript dependencies
 
-WEBKNOSSOS is used as an **architecture and behavioural reference**. Behaviour
-is reproduced from documentation and observed algorithms; describing what a
-system does carries no licence obligation.
-
-| Component | Upstream | Licence |
-|---|---|---|
-| WEBKNOSSOS main application | github.com/scalableminds/webknossos | **AGPL-3.0** |
-| WEBKNOSSOS datastore / tracingstore | same repo | **AGPL-3.0** |
-| `webknossos` Python package | github.com/scalableminds/webknossos-libs | **AGPL-3.0** |
-| `cluster_tools` | same repo | **MIT** |
-
-### Copied or derived WEBKNOSSOS source
-
-**None.** No WEBKNOSSOS source has been copied, ported, or adapted into this
-repository as of 2026-08-01.
-
-A read-only reference clone is kept **outside** this repository at
-`/home/weidf/shenb/external-research/webknossos` (commit `a24aecc6f`). It is
-never vendored, never committed, and nothing is copied from it without an entry
-in this file first.
-
-### If that changes
-
-Per decision **D3**, direct reuse is permitted where it delivers substantial
-engineering benefit *and* provenance is documented. Before any such code is
-committed, all of the following must already be true:
-
-1. An entry exists in this file **and** in `docs/attribution.md`, naming
-   the upstream path and commit.
-2. Original copyright headers are preserved **verbatim** — never removed,
-   never altered.
-3. The file is **not** relabelled under any other licence. AGPL code is
-   labelled AGPL.
-4. The code lives under a clearly marked, isolated path (proposed:
-   `third_party/webknossos/`), never interleaved into mito modules.
-5. The relicensing consequence below has been put to the repository owner and
-   accepted.
-
-### Relicensing exposure
-
-AGPL-3.0 is a strong copyleft licence with a network clause (§13). Copying
-AGPL-covered source into a network-served application generally obliges the
-**combined work** to be offered under AGPL-compatible terms, and requires that
-users interacting with it over a network be offered the Corresponding Source.
-
-Practically, for this repository:
-
-- Copying WEBKNOSSOS source into the served product is a **repository-wide**
-  licensing event, not a per-file one.
-- Running an unmodified AGPL component as a **separate process** behind an HTTP
-  boundary is a materially different (and narrower) exposure than linking or
-  copying its source into mito modules.
-- Importing the `webknossos` **Python package** into mito's own process is
-  closer to the former than the latter.
-
-This is an engineering summary, not legal advice. The repository owner should
-obtain their own review before distribution or public deployment.
-
----
-
-## 3. Python and JavaScript dependencies
-
-Ordinary dependencies declared in `requirements-release.txt` and
+Ordinary dependencies declared in `requirements/release.txt` and
 `frontend/package-lock.json` retain their own licences. Run
 `ops/release/audit_dependency_licenses.py` from the release environment after
-`npm ci` to reproduce the machine-readable inventory. The v1.1.0 audit covered
+`npm ci` to reproduce the machine-readable inventory. The historical v1.1.0 audit covered
 55 Python distributions and 181 JavaScript packages and found no package with
-missing licence metadata or licence file.
+missing licence metadata or licence file. Regenerate the inventory for a new
+release; those counts do not describe the current dependency set.
 
 The inventory is not uniformly permissive. In particular it records psycopg
 (LGPL-3.0-only), tqdm (MPL-2.0 and MIT), caniuse-lite (CC-BY-4.0), NVIDIA CUDA
@@ -129,14 +63,26 @@ runtime wheels (NVIDIA proprietary terms), and the notices embedded in the
 SciPy binary wheel (including GCC Runtime Library Exception and libquadmath).
 Those original notices must remain available with any redistributed runtime.
 
-**Added 2026-10-01 — licensing event, pending owner review:** `kimimaro`
+### Measurement dependencies — pending license review
+
+Recorded 2026-10-01: `kimimaro`
 (GPL-3.0-or-later) for TEASAR skeletonization in
 `backend/annotation/measurements.py`, with its dependencies `dijkstra3d`
 (GPL-3.0-or-later) and `connected-components-3d`, `edt`, `fill-voids`,
 `xs3d` (LGPL-3.0-or-later) and `fastremap` (LGPL-3.0). Its other new
 transitive dependencies are BSD or MIT. kimimaro is imported lazily, only
-when a measurement runs. Licences read from installed package metadata;
-not legal advice.
+when a measurement runs; lazy importing does not resolve the licensing
+requirements of distributing the integrated software. Licenses were read from
+installed package metadata; this record is not a legal compliance finding.
 
-**Not currently a dependency:** the `webknossos` PyPI package (AGPL-3.0).
-Adding it is permitted under D3 but is a licensing event — record it here first.
+## 3. Ported code with unresolved provenance review
+
+Several modules in `backend/annotation/cellable_port/` were ported from the
+Cellable desktop annotator. Their source notes identify the originating
+functions, but the upstream license and redistribution terms remain to be
+verified. See [the attribution register](docs/attribution.md#cellable-provenance).
+
+Before an external release, resolve these terms and the measurement dependency
+review, preserve applicable copyright/license notices, and regenerate the
+release dependency inventory. Recording a component here is not permission to
+redistribute it.

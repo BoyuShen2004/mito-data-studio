@@ -3,7 +3,7 @@ NPM ?= npm
 COMPOSE ?= docker compose
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev db-up db-down docker-dev-up docker-dev-down docker-detect migrate check test test-backend test-frontend build check-git
+.PHONY: help setup dev db-up db-down docker-dev-up docker-dev-down docker-detect migrate check test test-backend test-frontend build build-production check-docs check-git
 
 help: ## Show the available development commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -24,7 +24,7 @@ docker-detect: ## Print hardware-based gunicorn/Track tuning recommendations.
 	bash ops/docker/detect-hardware.sh
 
 docker-dev-up: ## Start the full development stack in Docker (app + postgres).
-	@test -f .env.docker.dev || (echo "Copy .env.docker.dev.example to .env.docker.dev first." >&2; exit 1)
+	@test -f .env.docker.dev || (echo "Copy config/env/docker-dev.env.example to .env.docker.dev first." >&2; exit 1)
 	$(COMPOSE) -f docker-compose.dev-stack.yml --env-file .env.docker.dev up -d --build
 
 docker-dev-down: ## Stop the Docker development stack.
@@ -40,14 +40,19 @@ check: ## Run Django system checks and frontend type checking.
 test: test-backend test-frontend ## Run backend and frontend tests.
 
 test-backend: ## Run the Django test suite.
-	$(PYTHON) manage.py test
+	cd backend && $(PYTHON) manage.py test
 
 test-frontend: ## Run the frontend unit tests once.
 	$(NPM) test --prefix frontend -- --run
 
-build: ## Build the frontend production bundle.
+build: ## Build the frontend development bundle (includes development accounts).
 	$(NPM) run build --prefix frontend
+
+build-production: ## Build the production frontend without development accounts.
+	$(NPM) run build:production --prefix frontend
+
+check-docs: ## Check local documentation links and anchors.
+	$(PYTHON) scripts/docs/check_links.py
 
 check-git: ## Reject tracked or staged runtime data and secrets.
 	scripts/dev/setup.sh --check-git
-

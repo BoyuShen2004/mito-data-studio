@@ -28,7 +28,7 @@ count aggressively on one GPU: each worker can load another model copy.
 ```bash
 git clone https://github.com/BoyuShen2004/mito-data-studio.git
 cd mito-data-studio
-cp .env.docker.dev.example .env.docker.dev
+cp config/env/docker-dev.env.example .env.docker.dev
 ```
 
 Set at least these values in `.env.docker.dev`:
@@ -123,7 +123,7 @@ Goal: prepare and validate the hardware-adaptive Docker development stack.
 2. Inspect git status first. Preserve all existing user changes and secrets.
 3. Check Docker Compose, Git LFS, NVIDIA Container Toolkit, visible GPUs, model
    files, host RAM, and available disk space. Use read-only checks first.
-4. If .env.docker.dev is absent, copy .env.docker.dev.example. Never invent,
+4. If .env.docker.dev is absent, copy config/env/docker-dev.env.example. Never invent,
    print, or commit secrets. Stop and request the required secret values if
    they are unavailable.
 5. Run ops/docker/detect-hardware.sh in report mode, then use --apply on

@@ -1,15 +1,11 @@
 # Django — the live DB holds users (incl. mock/seed accounts), projects,
 # datasets, volumes, tasks. Never push it.
-db.sqlite3
-db.sqlite3-journal
 *.sqlite3
-*.sqlite3-journal
 media/
 staticfiles/
 
 # Live annotation data (MITO_DATA_ROOT). Prefer a path OUTSIDE this repo.
 mito_data_root/
-/data/
 data/
 
 # Runtime volume binaries if someone copies them into the tree by mistake.
@@ -34,8 +30,6 @@ build/
 
 # Node / frontend
 node_modules/
-frontend/dist/
-frontend/node_modules/
 frontend/.vite/
 dist/
 
@@ -48,8 +42,8 @@ htmlcov/
 .coverage
 *.log
 *.pid
-/run/
 /venv/
+/.venv/
 
 # Timestamped editor/tool backups (foo.py.backup.20260727-084845). Local
 # safety nets, not history — git already is the history. Ignored rather than
@@ -59,11 +53,7 @@ htmlcov/
 # Environment / secrets
 .env
 .env.*
-!.env.example
-# The container deployment's env template. `.env.docker` itself (the real one,
-# with the secret key and database password) stays ignored by `.env.*` above.
-!.env.docker.example
-!.env.docker.dev.example
+# Checked-in templates live in config/env/; real .env files remain ignored.
 *.pem
 
 # Per-machine agent/tool overrides

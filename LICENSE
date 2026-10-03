@@ -1,11 +1,41 @@
 Mito Data Studio — No License Granted
 
-Unless a file or directory contains a separate license notice, no permission is
-granted to copy, modify, distribute, sublicense, or create derivative works from
-the Mito Data Studio source code or documentation.
+PROJECT STATUS — LICENSE REVIEW IN PROGRESS
+
+Mito Data Studio is under active development and license review. The current
+project policy is to continue authorized internal development and hosted
+research use while pausing external distribution of the integrated software,
+including source releases, installation packages, and container images.
+The project is not currently offered under an open-source license.
+
+This status statement is not a general grant of permission for internal,
+academic, research, or other use. Any separate authorization must come from
+the relevant rights holders and remains subject to applicable third-party
+licenses. Access to a hosted instance does not itself grant a license to
+copy, modify, or redistribute the software.
+
+FIRST-PARTY CODE AND DOCUMENTATION
+
+Except where a separate license or authorization applies, no permission is
+granted by this notice to copy, modify, distribute, sublicense, or create
+derivative works from first-party Mito Data Studio code or documentation.
+
+THIRD-PARTY COMPONENTS AND UNRESOLVED REVIEW
 
 Third-party components retain their own licenses. See THIRD_PARTY_NOTICES.md and
-the license files shipped beside vendored components.
+docs/attribution.md, together with the license files accompanying vendored
+components and installed dependencies.
+
+The measurement implementation currently uses kimimaro 5.8.5, licensed under
+GPL-3.0-or-later, and includes other GPL/LGPL dependencies. The licensing
+requirements for distribution of the integrated software remain under review.
+The upstream licensing and redistribution terms of the Cellable-derived
+modules also require verification before an external release is approved.
+
+This notice is not a GPL/LGPL exception, a finding of license compatibility,
+or a certification of compliance. It does not override applicable third-party
+terms or remove obligations arising from any past or future distribution.
 
 This notice does not limit rights granted directly by an applicable third-party
-license and does not claim ownership of third-party material.
+license, previously granted rights, rights under applicable platform terms,
+or rights provided by law. It does not claim ownership of third-party material.

@@ -4,7 +4,7 @@
 # Same image as production (`Dockerfile`), but dev-friendly defaults:
 #   DEBUG on, mock login optional, legacy upgrade profile, hardware auto-tune.
 #
-#   cp .env.docker.dev.example .env.docker.dev
+#   cp config/env/docker-dev.env.example .env.docker.dev
 #   ops/docker/detect-hardware.sh --apply .env.docker.dev   # optional
 #   docker compose -f docker-compose.dev-stack.yml --env-file .env.docker.dev up -d --build
 #

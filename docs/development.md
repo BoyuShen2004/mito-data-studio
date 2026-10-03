@@ -30,7 +30,7 @@ It is not the full application stack in `docker-compose.yml`.
 If you prefer a containerized dev instance instead of conda + `make dev`:
 
 ```bash
-cp .env.docker.dev.example .env.docker.dev
+cp config/env/docker-dev.env.example .env.docker.dev
 # edit DJANGO_SECRET_KEY and MITO_DB_PASSWORD
 ops/docker/detect-hardware.sh --apply .env.docker.dev   # optional hardware tuning
 git lfs pull                                            # if using SAM2 / ai-gpu
@@ -113,12 +113,12 @@ production path for development.
 
 ## Configuration
 
-The root `.env` is copied from `.env.example`. Important settings include:
+The root `.env` is copied from `config/env/host.env.example`. Important settings include:
 
 - `MITO_DATA_ROOT`: image, mask, working-label, submission, and pyramid storage.
 - `DJANGO_DEBUG`, `DJANGO_SECRET_KEY`, and `DJANGO_ALLOWED_HOSTS`.
 - `DJANGO_CORS_ORIGINS`: browser origins allowed to call Django.
-- AI/tracking provider and model settings documented in `.env.example`.
+- AI/tracking provider and model settings documented in `config/env/host.env.example`.
 
 Source images and region masks are immutable inputs. Annotation writes go to an
 application-owned working mask; approval creates the official checkpoint.

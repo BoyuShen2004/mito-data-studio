@@ -12,7 +12,7 @@ code. Preserve upstream copyright and license notices.
 | em_erl skeleton helpers | PytorchConnectomics/em_erl `b1504f2c3edbece34efc417c395432692d54e14d` | MIT | `backend/annotation/third_party/em_erl_skel.py` | `em_erl/skel.py` with one documented change (`progress` keyword); MIT text in `LICENSE.em_erl` |
 
 EfficientSAM was vendored here until 2026-09-09 and has been removed along with
-its weights; see `THIRD_PARTY_NOTICES.md` for the full record.
+its weights; its historical notices remain available in Git history.
 
 ## Cellable provenance
 

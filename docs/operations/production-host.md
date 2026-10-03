@@ -71,7 +71,7 @@ If Python dependencies or migrations changed:
 
 ```bash
 cd /home/weidf/shenb/mito-data-studio-production-v1.1.5
-venv/bin/pip install -r requirements-release.txt
+venv/bin/pip install -r requirements/release.txt
 venv/bin/python manage.py migrate --noinput
 venv/bin/python manage.py collectstatic --noinput
 ```

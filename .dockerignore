@@ -3,14 +3,12 @@
 # Two rules of thumb behind the exclusions:
 #   1. Never ship secrets or live state — `.env`, databases, logs, the data root.
 #   2. Never ship anything the build regenerates — node_modules, dist, venvs.
-# Everything the image needs is `backend/`, `frontend/` sources and the two
+# Everything the image needs is `backend/`, `frontend/` sources and the three
 # dependency manifests under `ops/docker/`.
 
 # --- Secrets & live state (must never enter an image layer) ----------------
 .env
 .env.*
-!.env.example
-!.env.docker.example
 *.pem
 db.sqlite3
 db.sqlite3-journal
@@ -79,6 +77,7 @@ htmlcov/
 *~
 *.backup.[0-9]*
 docs/
+documentation/
 progress/
 frontend/e2e/
 frontend/phase14-harness.html

@@ -36,7 +36,7 @@ release candidate in the locked release environment.
 The development environment had the optional readers and model runtime the
 backend tests import (`h5py` 3.16.0, `nibabel` 5.4.2, PyTorch 2.5.1 with CUDA
 available), so no test module was skipped for a missing package. It is not the
-release lock: `requirements-release.txt` pins `nibabel` 5.3.2.
+release lock: `requirements/release.txt` pins `nibabel` 5.3.2.
 
 The single backend error was
 `WorkingLabelRecoveryTests.test_open_writable_views_legacy_nifti_axes_without_rewriting`,
@@ -58,7 +58,7 @@ checklist.
 
 ## Required release rerun
 
-1. Create a clean environment from `requirements-release.txt` (or the matching
+1. Create a clean environment from `requirements/release.txt` (or the matching
    Docker profile) and `frontend/package-lock.json`.
 2. Run Django system checks and the backend suite from `backend/`, confirming
    the reported test count is non-zero.

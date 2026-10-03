@@ -38,7 +38,7 @@ docs/
 
 ## 专题参考
 
-- 工程：[架构](engineering/architecture.md)、[数据与存储](engineering/data-and-storage.md)、[AI 与算法](engineering/ai-and-algorithms.md)、[测量实现](engineering/measurements.md)、[审计与改进建议](engineering/software-audit.md)。
+- 工程：[根目录文件说明](engineering/root-files.md)、[架构](engineering/architecture.md)、[数据与存储](engineering/data-and-storage.md)、[AI 与算法](engineering/ai-and-algorithms.md)、[测量实现](engineering/measurements.md)、[审计与改进建议](engineering/software-audit.md)。
 - 发布：[带日期的验证历史](release/validation-history.md)、[第三方归属](attribution.md)。
 
 ## 维护文档

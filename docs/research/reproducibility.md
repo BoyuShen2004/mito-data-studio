@@ -33,12 +33,12 @@ API querysets, and the label-artifact file mode have changed since.
 
 | Artifact | Purpose |
 | --- | --- |
-| `requirements-release.txt` | Locked Python release dependencies and hashes |
+| `requirements/release.txt` | Locked Python release dependencies and hashes |
 | `frontend/package-lock.json` | Locked JavaScript dependency graph |
 | `environment.yml` | Conda development/AI environment |
 | `ops/docker/requirements-*.txt` | Core, AI-CPU, and AI-GPU image profiles |
 | `Dockerfile` and Compose files | Container build and runtime topology |
-| `.env.docker*.example` | Documented configuration surface without secrets |
+| `config/env/*.env.example` | Documented configuration surface without secrets |
 | `THIRD_PARTY_NOTICES.md` | Vendored component revisions, licenses, and hashes |
 
 ## Experiment archive checklist

@@ -7,6 +7,11 @@ follows semantic versioning for tagged releases.
 
 ### Changed
 
+- Grouped environment templates under `config/env/` and release dependencies
+  under `requirements/`, updating setup and deployment references. Actual env
+  files and dependency versions are unchanged. Makefile now runs backend tests
+  from their discovery directory and names the production build explicitly.
+
 - Consolidated maintained documentation under `docs/`, with Chinese onboarding,
   a glossary, code-reading guides, a Measurements user guide, and a local-link
   checker. Old document paths remain as forwarding pages; runtime paths and

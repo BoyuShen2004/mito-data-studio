@@ -1,6 +1,6 @@
 # Mito Data Studio — one-command deployment.
 #
-#   cp .env.docker.example .env.docker
+#   cp config/env/docker.env.example .env.docker
 #   # edit .env.docker: set DJANGO_SECRET_KEY, MITO_DB_PASSWORD, DJANGO_ALLOWED_HOSTS
 #   docker compose --env-file .env.docker up -d --build
 #
@@ -34,7 +34,7 @@ x-app-base: &app-base
   env_file:
     # Override only for validation (for example, point at the checked-in
     # template during `docker compose config`). Real deployments use the
-    # ignored `.env.docker` file created from `.env.docker.example`.
+    # ignored `.env.docker` file created from `config/env/docker.env.example`.
     - ${MITO_CONTAINER_ENV_FILE:-.env.docker}
   environment:
     # Set here rather than in the env file: these address other containers on
