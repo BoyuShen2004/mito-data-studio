@@ -40,3 +40,11 @@ export function measurementCSV(volume: number, job: MeasurementJob): string {
     result.dust_size_voxels, row.label_id, row.voxel_count, row.volume_um3, row.skeleton_length_um,
   ].join(","))].join("\n") + "\n";
 }
+
+
+export interface MeasurementSpacing {
+  voxel_size_um_zyx: [number | null, number | null, number | null];
+  origins: Array<"registered" | "source_file" | "unknown">;
+}
+export const getMeasurementSpacing = (volume: number) =>
+  api.get<MeasurementSpacing>(`/volumes/${volume}/measurement-spacing/`);

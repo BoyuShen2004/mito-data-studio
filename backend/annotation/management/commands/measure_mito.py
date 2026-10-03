@@ -16,6 +16,7 @@ import io
 from django.core.management.base import BaseCommand, CommandError
 
 from annotation.label_paths import working_label_rel_path
+from annotation.measurement_spacing import measurement_spacing
 from annotation.measurements import MeasurementError, measure_label_volume
 from annotation.visualization.slice_io import resolve_path
 from volumes.models import Volume
@@ -46,7 +47,8 @@ class Command(BaseCommand):
         except Volume.DoesNotExist:
             raise CommandError(f"No volume with id {opts['volume']}.")
 
-        voxel_size = (volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x)
+        voxel_size = tuple(value * 1000 if value is not None else None
+                           for value in measurement_spacing(volume)["voxel_size_um_zyx"])
         if any(v is None for v in voxel_size):
             raise CommandError(
                 f"Volume {volume.pk} has no voxel size set: (z, y, x) = {voxel_size}. "

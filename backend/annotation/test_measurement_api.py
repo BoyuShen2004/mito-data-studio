@@ -37,7 +37,7 @@ class MeasurementAPITests(TestCase):
         self.volume = Volume.objects.create(
             project=project, name="Tube", image_path="image.tif", label_path="labels.tif",
             label_type=LabelType.PARTIAL, shape_z=20, shape_y=20, shape_x=120,
-            voxel_size_z=30, voxel_size_y=16, voxel_size_x=16,
+            voxel_size_z=0.030, voxel_size_y=0.016, voxel_size_x=0.016,
         )
         labels = np.zeros((20, 20, 120), dtype=np.uint16)
         labels[7:13, 7:13, 10:110] = 5
@@ -109,7 +109,7 @@ class MeasurementAPITests(TestCase):
 
     def test_changed_input_before_run_fails_without_computing(self):
         job = self.queue()
-        Volume.objects.filter(pk=self.volume.pk).update(voxel_size_x=32)
+        Volume.objects.filter(pk=self.volume.pk).update(voxel_size_x=0.032)
         with patch("annotation.measurement_jobs.measure_label_volume") as measure:
             outcome = run_measurement(job)
         self.assertEqual(outcome.status, "failed")
@@ -131,7 +131,7 @@ class MeasurementAPITests(TestCase):
     def test_old_results_remain_explicitly_historical(self):
         self.queue()
         run_dispatch_once(max_new=1, job_types=("measure_mito",))
-        Volume.objects.filter(pk=self.volume.pk).update(voxel_size_x=32)
+        Volume.objects.filter(pk=self.volume.pk).update(voxel_size_x=0.032)
         data = self.client.get(self.url).data["job"]
         self.assertFalse(data["is_current"])
         self.assertEqual(data["result"]["voxel_size_nm_zyx"], [30, 16, 16])
@@ -151,8 +151,22 @@ class MeasurementAPITests(TestCase):
         Volume.objects.filter(pk=self.volume.pk).update(voxel_size_z=None, voxel_size_y=None, voxel_size_x=None)
         before = (self.root / "labels.tif").read_bytes()
         response = self.client.patch(f"/api/volumes/{self.volume.pk}/", {
-            "voxel_size_z": 30, "voxel_size_y": 16, "voxel_size_x": 16,
+            "voxel_size_z": 0.030, "voxel_size_y": 0.016, "voxel_size_x": 0.016,
         }, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         self.queue()
         self.assertEqual(before, (self.root / "labels.tif").read_bytes())
+
+    def test_auto_spacing_endpoint_and_run_are_read_only_for_volume(self):
+        Volume.objects.filter(pk=self.volume.pk).update(voxel_size_z=None, voxel_size_y=None, voxel_size_x=None)
+        tifffile.imwrite(self.root / 'image.tif', np.zeros((20, 20, 120), dtype=np.uint8),
+                         imagej=True, resolution=(1 / 16, 1 / 16), metadata={'axes': 'ZYX', 'unit': 'nm', 'spacing': 30})
+        response = self.client.get(f'/api/volumes/{self.volume.pk}/measurement-spacing/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['voxel_size_um_zyx'], [0.03, 0.016, 0.016])
+        job = self.queue()
+        self.assertEqual(job.config['input']['voxel_size_nm_zyx'], [30, 16, 16])
+        self.volume.refresh_from_db()
+        self.assertIsNone(self.volume.voxel_size_z)
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get(f'/api/volumes/{self.volume.pk}/measurement-spacing/').status_code, 403)

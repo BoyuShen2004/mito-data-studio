@@ -1,7 +1,12 @@
 # Mitochondria measurements
 
-Open **Project → Measurements**, select a volume, and enter its actual Z/Y/X
-voxel size in nm if missing. **Save voxel size** explicitly updates only that
+Open **Project → Measurements**, select a volume, and physical spacing is read automatically: registered values take priority,
+then missing axes are read from the raw image header. TIFF/OME/ImageJ, NIfTI
+with declared spatial units, and HDF5 `element_size_um` are supported by the
+existing application readers. Unitless pixel ratios are not physical spacing.
+If metadata is unavailable or incomplete, enter the actual missing Z/Y/X values
+in nm. Detection does not write metadata, and complete detected spacing can be
+used immediately. **Save voxel size** explicitly updates only that
 volume's metadata; it does not run measurements or modify labels. Unsaved
 spacing blocks measurement until saved. Volume detail pages link here.
 
@@ -12,7 +17,9 @@ its latest result for each source and export CSV. Public shares do not expose
 measurement endpoints. Merely opening the page does not start computation.
 
 Each nonzero label ID produces a voxel count, volume in µm³, and TEASAR skeleton
-cable length in µm. Voxel spacing comes from the volume's existing nanometre
+cable length in µm. The volume/header storage contract is µm; the UI and skeleton engine use nm.
+The measurement boundary converts µm to nm exactly once. Voxel spacing comes from
+registered values or supported source-file
 metadata in **Z, Y, X** order; missing, nonpositive or nonfinite spacing blocks
 a run. Cable length is the sum of skeleton edge lengths, not end-to-end extent.
 The method excludes connected components smaller than 100 voxels from the

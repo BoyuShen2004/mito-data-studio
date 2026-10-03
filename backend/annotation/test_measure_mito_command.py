@@ -34,7 +34,7 @@ class MeasureMitoCommandTests(TestCase):
             project=project, name="v", image_path="image.tif",
             label_path="labels.tif", label_type=LabelType.PARTIAL,
             shape_z=20, shape_y=20, shape_x=120,
-            voxel_size_z=30, voxel_size_y=16, voxel_size_x=16,
+            voxel_size_z=0.030, voxel_size_y=0.016, voxel_size_x=0.016,
         )
 
     def run_command(self, *args):

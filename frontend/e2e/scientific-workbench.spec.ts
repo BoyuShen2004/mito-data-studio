@@ -167,6 +167,10 @@ test("volume measurements queue explicitly and show source, units and CSV export
     }
     await route.fulfill({ json: { job } });
   });
+  await page.route("**/api/volumes/9/measurement-spacing/", route => route.fulfill({ json: {
+    voxel_size_um_zyx: Object.keys(spacing).length ? [spacing.voxel_size_z, spacing.voxel_size_y, spacing.voxel_size_x] : [null, null, null],
+    origins: Object.keys(spacing).length ? ["registered", "registered", "registered"] : ["unknown", "unknown", "unknown"],
+  } }));
   let spacing: Record<string, number> = {};
   await page.route("**/api/projects/3/volumes/", route => route.fulfill({ json: [{ ...visualVolume, ...spacing }] }));
   await page.route("**/api/volumes/9/", async route => {
@@ -193,4 +197,23 @@ test("volume measurements queue explicitly and show source, units and CSV export
   await section.getByRole("button", { name: "Export CSV" }).click();
   expect((await download).suggestedFilename()).toBe("mitochondria-volume-9-official-run-100.csv");
   await page.screenshot({ path: info.outputPath("measurements.png"), fullPage: true });
+});
+
+test("source spacing auto-fills nanometres without saving volume metadata", async ({ page }) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  const writes: string[] = [];
+  page.on("request", request => {
+    if (["POST", "PATCH", "PUT"].includes(request.method())) writes.push(request.url());
+  });
+  await page.route("**/api/volumes/9/measurement-spacing/", route => route.fulfill({ json: {
+    voxel_size_um_zyx: [0.03, 0.016, 0.016], origins: ["source_file", "source_file", "source_file"],
+  } }));
+  await page.route("**/api/volumes/9/measurements/**", route => route.fulfill({ json: { job: null } }));
+  await page.goto("/projects/3?tab=measurements&volume=9");
+  await expect(page.getByLabel("Z (nm)", { exact: true })).toHaveValue("30");
+  await expect(page.getByLabel("Y (nm)", { exact: true })).toHaveValue("16");
+  await expect(page.getByRole("button", { name: "Run measurements", exact: true })).toBeEnabled();
+  await expect(page.getByText(/Physical spacing read from source file metadata/)).toBeVisible();
+  expect(writes).toEqual([]);
 });

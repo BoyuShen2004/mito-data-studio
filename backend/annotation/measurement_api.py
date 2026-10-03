@@ -84,3 +84,12 @@ class VolumeMeasurementsView(APIView):
                 config={"source": source, "input": input_spec},
             )
         return Response({"job": job_payload(job)}, status=202)
+
+
+class VolumeMeasurementSpacingView(VolumeMeasurementsView):
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request, pk):
+        from annotation.measurement_spacing import measurement_spacing
+
+        return Response(measurement_spacing(self.volume(request, pk)))

@@ -11,7 +11,7 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from rest_framework.routers import DefaultRouter
 
-from annotation.measurement_api import VolumeMeasurementsView
+from annotation.measurement_api import VolumeMeasurementsView, VolumeMeasurementSpacingView
 from .views import index, spa_index
 from accounts.api import (
     AnnotatorListView,
@@ -222,6 +222,7 @@ urlpatterns = [
         ProjectVolumesView.as_view(),
         name="api-project-volumes",
     ),
+    path("api/volumes/<int:pk>/measurement-spacing/", VolumeMeasurementSpacingView.as_view(), name="api-volume-measurement-spacing"),
     path("api/volumes/<int:pk>/measurements/", VolumeMeasurementsView.as_view(), name="api-volume-measurements"),
     path("api/volumes/<int:pk>/", VolumeDetailView.as_view(), name="api-volume-detail"),
     path(

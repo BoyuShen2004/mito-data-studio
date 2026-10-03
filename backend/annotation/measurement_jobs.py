@@ -8,6 +8,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from annotation.label_paths import working_label_rel_path
+from annotation.measurement_spacing import measurement_spacing
 from annotation.measurements import DUST_SIZE, MeasurementError, measure_label_volume, validate_voxel_size
 from annotation.visualization.slice_io import resolve_path
 from core.choices import ProcessingJobStatus
@@ -20,7 +21,8 @@ logger = logging.getLogger(__name__)
 def measurement_input(volume, source):
     if source not in ("official", "working"):
         raise MeasurementError("Choose official or working labels.")
-    spacing = validate_voxel_size((volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x))
+    spacing_um = measurement_spacing(volume)["voxel_size_um_zyx"]
+    spacing = validate_voxel_size([value * 1000 if value is not None else None for value in spacing_um])
     if source == "official" and not volume.has_label:
         raise MeasurementError("No official label is registered for this volume.")
     path = resolve_path(working_label_rel_path(volume) if source == "working" else volume.label_location)
