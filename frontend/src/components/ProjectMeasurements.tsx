@@ -24,7 +24,7 @@ export default function ProjectMeasurements({ volumes, loading, error, canRun, o
       ) : <>
         <label className="field">
           <span>Volume</span>
-          <select value={selected.id} onChange={event => setParams({ tab: "measurements", volume: event.target.value })}>
+          <select aria-label="Volume" value={selected.id} onChange={event => setParams({ tab: "measurements", volume: event.target.value })}>
             {volumes.map(volume => <option key={volume.id} value={volume.id}>
               {volume.dataset_name ? `${volume.dataset_name} / ` : ""}{volume.name} · #{volume.id}
             </option>)}

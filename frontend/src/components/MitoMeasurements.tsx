@@ -16,7 +16,7 @@ export default function MitoMeasurements({ volume, canRun, runBlocked = false }:
       </div>
       <label className="row">
         Label source
-        <select value={source} onChange={event => setSource(event.target.value as MeasurementSource)}>
+        <select aria-label="Label source" value={source} onChange={event => setSource(event.target.value as MeasurementSource)}>
           <option value="official">Official label</option>
           <option value="working">Saved working draft</option>
         </select>
