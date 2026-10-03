@@ -6,10 +6,12 @@ Thank you for improving Mito Data Studio. Before starting, read the
 
 ## Development workflow
 
-1. Create a focused branch from the current development branch.
+1. Create a focused branch from `main`.
 2. Start PostgreSQL with `make db-up` and prepare the checkout with `make setup`.
 3. Make a small, reviewable change with tests and user-facing documentation.
-4. Run `make check`, `make test`, `make build`, and `make check-git`.
+4. Run checks appropriate to the change: `make check`, frontend tests, backend
+   tests from `backend/` (verify nonzero discovery), `npm run build:production --prefix frontend`, and `make check-git`. Documentation-only changes need
+   `python scripts/docs/check_links.py` and `git diff --check`.
 5. Submit a pull request describing behavior changes, migrations, operational
    impact, and the commands used for verification.
 
@@ -21,8 +23,9 @@ mixing formatting-only work with behavioral changes.
 
 - Django apps and tests live under `backend/`; use the root `manage.py`.
 - React code and tests live under `frontend/`.
-- Established operational guides and product invariants live under `docs/`;
-  release- and publication-facing material lives under `documentation/`.
+- All maintained documentation lives under `docs/`; old `documentation/`
+  paths are forwarding pages. Start with the [documentation index](docs/index.md)
+  and [first contribution guide](docs/getting-started/first-contribution.md).
 - Reusable developer automation lives under `scripts/`; host-specific assets
   live under `ops/`.
 - Update `CHANGELOG.md` for changes visible to users or operators.

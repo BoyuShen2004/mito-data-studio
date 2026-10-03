@@ -1,8 +1,10 @@
 # Mito Data Studio user guide
 
-This guide describes the current development version of Mito Data Studio.
+This guide describes the current main-branch behavior of Mito Data Studio.
 Controls are permission-aware: a requester, manager, annotator, and public-link
 visitor can open the same data but see different actions.
+
+New to the lab? Start with the [Chinese onboarding guide](getting-started/README.md) and [glossary](getting-started/glossary.md).
 
 ## Choose a module
 
@@ -16,6 +18,7 @@ visitor can open the same data but see different actions.
 | [6. Region-only, assisted masks, and SAM2 Track](user-guide/06-assisted-and-track.md) | Protect content outside an ROI and review AI-assisted proposals safely |
 | [7. Save, submit, review, and feedback](user-guide/07-submit-and-review.md) | Understand drafts and snapshots, both submission channels, decisions, and label comments |
 | [8. Hard cases, sharing, time, profile, and safety](user-guide/08-collaboration-and-safety.md) | Collaborate, publish revocable read-only links, interpret time, and recover safely |
+| [9. Measurements](user-guide/09-measurements.md) | Select a volume and label source, confirm physical spacing, run measurements and export results |
 
 ## Recommended end-to-end path
 

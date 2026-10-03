@@ -5,6 +5,12 @@ assigning mitochondria annotation work, editing instance labels, and reviewing
 results. It provides requester, manager, and annotator workflows in one Django
 and React application.
 
+## 新组员从这里开始
+
+- **先学使用**：[入门路线](docs/getting-started/README.md) → [术语表](docs/getting-started/glossary.md) → [使用手册](docs/user-guide.md)。
+- **准备开发**：[代码地图](docs/engineering/code-map.md) → [Measurements 功能追踪](docs/engineering/feature-walkthrough.md) → [第一次贡献](docs/getting-started/first-contribution.md)。
+- **查完整文档**：[统一文档入口](docs/index.md)。使用已有实验室服务的组员不需要执行下面的部署命令。
+
 ## Quick start with Docker
 
 Docker Compose is the primary path for a fresh clone. It runs the application
@@ -34,7 +40,7 @@ docker compose --env-file .env.docker exec app \
 
 The default image supports viewing, annotation, review, sharing, and export.
 AI-assisted masks and SAM2 tracking are optional profiles; see
-[Docker deployment](docs/docker.md#build-profiles).
+[Docker deployment](docs/operations/docker.md#build-profiles).
 
 ## Prerequisites
 
@@ -50,37 +56,23 @@ host conda checkout. Do not run them as if they were the same deployment.
 
 ## Documentation
 
-Two places, by what you are doing:
+All maintained documentation lives under [`docs/`](docs/index.md):
 
-**Using, developing, or running the product — [`docs/`](docs/index.md)**
+| Topic | Entry point |
+| --- | --- |
+| Onboarding and terminology | [Getting started](docs/getting-started/README.md) |
+| Operating the software | [User guide](docs/user-guide.md), including [Measurements](docs/user-guide/09-measurements.md) |
+| Code and system design | [Code map](docs/engineering/code-map.md), [architecture](docs/engineering/architecture.md) |
+| Local development | [Development](docs/development.md), [product invariants](docs/product-invariants.md) |
+| Installation and operations | [Operations](docs/operations/README.md) |
+| Releases and research | [Release checklist](docs/release/checklist.md), [research documents](docs/research/README.md) |
 
-- [User guide](docs/user-guide.md) — linked, module-by-module instructions for
-  requester, manager, annotator, viewing, editing, tracking, review, and sharing
-- [Development](docs/development.md) — host setup, daily run, accounts, tests, and
-  data safety
-- [Docker deployment](docs/docker.md) — portable setup, persistence, GPU, backup,
-  and troubleshooting
-- [Hardware-adaptive development deployment](docs/hardware-adaptive-deployment.md)
-  — executable instructions for human operators and LLM coding agents
-- [This-host deployment](docs/deployment.md) — maintainer-specific systemd runbook
-- [Product invariants](docs/product-invariants.md) — behaviors contributors
-  must preserve
+Old `documentation/` links remain as forwarding pages. Add new material to
+`docs/`, not to a second documentation tree.
 
-**Architecture, AI models, release readiness, and manuscript material —
-[`documentation/`](documentation/README.md)**
-
-- [Architecture](documentation/technical/ARCHITECTURE.md),
-  [data and storage contract](documentation/technical/DATA_AND_STORAGE.md), and
-  [AI models and algorithms](documentation/technical/AI_AND_ALGORITHMS.md)
-- [Release checklist](documentation/release/RELEASE_CHECKLIST.md) and
-  [validation status](documentation/release/VALIDATION_STATUS.md)
-- [Methods](documentation/paper/METHODS.md),
-  [claims matrix](documentation/paper/CLAIMS_MATRIX.md), and
-  [reproducibility record](documentation/paper/REPRODUCIBILITY.md)
-
-Project files: [contributing](CONTRIBUTING.md), [security policy](SECURITY.md),
-[changelog](CHANGELOG.md), [third-party notices](THIRD_PARTY_NOTICES.md), and
-[attribution register](docs/attribution.md).
+Project policies remain at the root: [contributing](CONTRIBUTING.md),
+[security](SECURITY.md), [changelog](CHANGELOG.md), [license](LICENSE), and
+[third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Roles at a glance
 
@@ -99,8 +91,8 @@ fills the login form but never signs in automatically.
 ```text
 backend/      Django project and domain apps
 frontend/     React/Vite application and browser tests
-docs/         user, developer, and deployment documentation
-documentation/  architecture, AI, release, and manuscript documentation
+docs/         onboarding, user, engineering, operations, release, and research docs
+documentation/  compatibility links to docs/ (no separate maintained content)
 scripts/dev/  local setup and live-reload entry points
 ops/          container, staging, production, and release assets
 vendor/       optional SAM2 assets managed with Git LFS

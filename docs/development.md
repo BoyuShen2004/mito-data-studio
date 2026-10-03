@@ -1,7 +1,7 @@
 # Development
 
 This guide is for contributors running Django and Vite from the source tree.
-For a complete container deployment, use [Docker deployment](docker.md). Never point a
+For a complete container deployment, use [Docker deployment](operations/docker.md). Never point a
 development checkout at the production database or production data root.
 
 ## First setup
@@ -45,9 +45,9 @@ docker compose -f docker-compose.dev-stack.yml --env-file .env.docker.dev \
   --profile gpu up -d --build app-gpu
 ```
 
-See [Hardware-adaptive development deployment](hardware-adaptive-deployment.md)
+See [Hardware-adaptive development deployment](operations/hardware-adaptive.md)
 for a complete human/LLM-agent procedure, or
-[Docker deployment](docker.md#hardware-auto-tuning) for the sizing variables.
+[Docker deployment](operations/docker.md#hardware-auto-tuning) for the sizing variables.
 Stop with `make docker-dev-down`.
 
 `scripts/dev/setup.sh` creates `.env` only when it is missing, checks the environment,
@@ -78,8 +78,8 @@ python manage.py runserver
 npm run dev --prefix frontend
 ```
 
-The pyramid dispatcher is a separate process when queued pyramid jobs need to
-be consumed:
+The processing dispatcher is a separate process for queued pyramid and
+measurement jobs:
 
 ```bash
 python manage.py run_processing_dispatcher
@@ -162,8 +162,10 @@ production ships. Change one, change the other.
 
 ## Tests
 
+From the repository root, with an isolated development database and data root:
+
 ```bash
-python manage.py test
+(cd backend && python manage.py test --noinput)
 npm test --prefix frontend -- --run
 npm run typecheck --prefix frontend
 npm run build --prefix frontend
@@ -242,7 +244,7 @@ git status --short
 
 Production promotion is development → production. Production-only fixes should
 first be ported back and tested here. The host-specific procedure is in
-[host deployment guide](deployment.md).
+[host deployment guide](operations/production-host.md).
 
 ## Public DEV versus production login
 

@@ -7,6 +7,11 @@ follows semantic versioning for tagged releases.
 
 ### Changed
 
+- Consolidated maintained documentation under `docs/`, with Chinese onboarding,
+  a glossary, code-reading guides, a Measurements user guide, and a local-link
+  checker. Old document paths remain as forwarding pages; runtime paths and
+  application behavior are unchanged.
+
 - **NIfTI uses the same `(Z,Y,X)` on-disk axis order as HDF5 and TIFF.** The
   reader no longer treats nibabel arrays as medical `(X,Y,Z)` and transposes
   them. Pixdim is read as `(Z,Y,X)` to match HDF5 `element_size_um`. Legacy
