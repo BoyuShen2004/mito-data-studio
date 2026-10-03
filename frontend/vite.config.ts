@@ -10,7 +10,16 @@ const host = process.env.VITE_HOST || "127.0.0.1";
 const port = Number(process.env.VITE_PORT || "5173");
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "development-tab-title",
+      transformIndexHtml: (html) =>
+        process.env.VITE_SHOW_DEMO_ACCOUNTS === "true"
+          ? html.replace("<title>Mito Data Studio</title>", "<title>Mito Data Studio — Dev</title>")
+          : html,
+    },
+  ],
   build: {
     // Route modules are content-hashed and lazy-loaded. Keep the previous
     // generation so an already-open tab can still fetch its old chunk after a
