@@ -99,7 +99,7 @@ export default function ReviewBox({
         {s.source !== "inapp" && s.label_file ? ` · ${s.label_file}` : ""}
       </p>
       <p className="muted">
-        QC <StatusBadge value={s.qc_status} /> · {report.file_size ?? 0} bytes · {report.extension || "?"}
+        QC <StatusBadge value={s.qc_status} /> · {report.file_size ?? "—"} bytes · {report.extension || "?"}
         {s.notes ? ` · notes: ${s.notes}` : ""}
       </p>
       {Boolean(report.errors?.length || report.warnings?.length) && (
@@ -154,12 +154,11 @@ export default function ReviewBox({
           Allow further annotation after approval
           <span className="muted" style={{ display: "block", fontSize: "0.78rem" }}>
             {allowFurther
-              ? "The annotator keeps Annotate + Submit; a new submission starts another review round."
-              : "Approving closes the task: no more painting or submitting until you reopen it."}
+              ? "Further annotation and submission remain available."
+              : "Closes annotation and submission until reopened."}
           </span>
           <span className="muted" style={{ display: "block", fontSize: "0.78rem" }}>
-            Approval installs this snapshot as a new official checkpoint and starts a fresh
-            per-label verification lifecycle for any later round.
+            Approval updates the official label; later rounds start with fresh label verification.
           </span>
         </span>
       </label>
@@ -180,8 +179,7 @@ export default function ReviewBox({
         </button>
       </div>
       <p className="muted" style={{ marginBottom: 0 }}>
-        Reject and Request revision both hand the task back: the annotator keeps proofreading and
-        can submit again. Nothing is merged into the official mask unless you approve.
+        Reject and Request revision return the task for editing. Only approval updates the official label.
       </p>
     </div>
   );

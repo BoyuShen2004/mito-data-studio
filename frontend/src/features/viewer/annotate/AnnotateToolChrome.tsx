@@ -317,7 +317,7 @@ export default function AnnotateToolChrome({
             disabled={sharing || !canShare}
             title={
               canShare
-                ? "Record the Active label as a hard case for this project. Everyone on the project can view it; you and managers can annotate or take it down. A copyable public link is offered afterwards."
+                ? "Record this label as a project hard case. You and managers can edit or take it down."
                 : `Active id ${activeId} has no painted label yet — pick an existing label before recording a hard case.`
             }
           >
@@ -327,7 +327,7 @@ export default function AnnotateToolChrome({
             type="button"
             onClick={onSave}
             disabled={!dirty || status === "saving"}
-            title="Write every edited layer to the on-disk working mask. Edits stay in memory until you click Save."
+            title="Save all edited layers to the working draft."
           >
             Save
           </button>
@@ -366,7 +366,7 @@ export default function AnnotateToolChrome({
               style={{ width: 56 }}
               title="Active label id"
             />
-            <button className="secondary" onClick={onNewInstance} title="Select the smallest label id nothing uses yet — counting unsaved paint and Track-only parents, so it fills holes left by Merge/Delete instead of always counting up (keeps current tool)">
+            <button className="secondary" onClick={onNewInstance} title="Select the smallest unused label ID, including unsaved edits and Track parents. Keeps the current tool.">
               New
             </button>
           </>

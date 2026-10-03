@@ -27,10 +27,10 @@ describe("MitoMeasurements", () => {
   it("does not start computing on mount and explicitly queues the selected source", async () => {
     vi.mocked(runMeasurements).mockResolvedValue({ job: { ...done, status: "queued", result: null } });
     render(<MitoMeasurements volume={volume} canRun />);
-    await screen.findByText(/No measurements have been run/);
+    await screen.findByText(/No runs for this label source/);
     expect(runMeasurements).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "working" } });
-    await screen.findByText(/No measurements have been run/);
+    await screen.findByText(/No runs for this label source/);
     expect(screen.getByText(/unsaved canvas edits are excluded/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Run measurements" }));
     await waitFor(() => expect(runMeasurements).toHaveBeenCalledWith(3, "working"));
@@ -43,22 +43,22 @@ describe("MitoMeasurements", () => {
     expect(screen.getByText("Volume (µm³)")).toBeTruthy();
     expect(screen.getByText("Skeleton cable length (µm)")).toBeTruthy();
     expect(screen.getByText("0.027648")).toBeTruthy();
-    expect(screen.getByText(/Historical result/)).toBeTruthy();
-    expect(screen.getByText(/zero cable length/)).toBeTruthy();
+    expect(screen.getByText(/Outdated result/)).toBeTruthy();
+    expect(screen.getByText(/Zero length may indicate filtering/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Export CSV" })).toBeTruthy();
   });
 
   it("keeps unknown voxel spacing unknown and disables running", async () => {
     render(<MitoMeasurements volume={{ ...volume, voxel_size_y: null }} canRun />);
-    await screen.findByText(/No measurements have been run/);
-    expect(screen.getByText(/Enter and save all three positive voxel sizes/)).toBeTruthy();
+    await screen.findByText(/No runs for this label source/);
+    expect(screen.getByText(/Voxel size required/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Run measurements" }) as HTMLButtonElement).disabled).toBe(true);
     expect(runMeasurements).not.toHaveBeenCalled();
   });
 
   it("prevents running without an official label", async () => {
     render(<MitoMeasurements volume={{ ...volume, has_label: false }} canRun />);
-    await screen.findByText(/No measurements have been run/);
+    await screen.findByText(/No runs for this label source/);
     expect((screen.getByRole("button", { name: "Run measurements" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("No official label is registered.")).toBeTruthy();
   });

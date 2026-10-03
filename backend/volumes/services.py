@@ -1328,13 +1328,13 @@ def _try_autodetect_shape(volume: Volume) -> bool:
         voxel = inspect_volume_voxel_size(candidate)
         if voxel is not None:
             z, y, x = voxel
-            if z is not None:
+            if volume.voxel_size_z is None and z is not None:
                 volume.voxel_size_z = z
                 changed.append("voxel_size_z")
-            if y is not None:
+            if volume.voxel_size_y is None and y is not None:
                 volume.voxel_size_y = y
                 changed.append("voxel_size_y")
-            if x is not None:
+            if volume.voxel_size_x is None and x is not None:
                 volume.voxel_size_x = x
                 changed.append("voxel_size_x")
 

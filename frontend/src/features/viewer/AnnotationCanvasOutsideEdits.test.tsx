@@ -173,13 +173,8 @@ function mount() {
   };
 }
 
-/** The tool strip's Save button — named by its title, since other chrome also
- * carries a button whose accessible name starts with "Save". */
 function clickSave() {
-  const save = document.querySelector(
-    'button[title^="Write every edited layer"]',
-  ) as HTMLButtonElement;
-  save.click();
+  screen.getByRole("button", { name: "Save" }).click();
 }
 
 /** The plane `putLabelIds` was last asked to write, decoded back to ids. */

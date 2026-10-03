@@ -18,7 +18,6 @@ export default function ProjectMeasurements({ volumes, loading, error, canRun, o
     <section aria-label="Project measurements">
       <div className="section-heading">
         <h2>Measurements</h2>
-        <p className="muted">Select a volume to configure, run and export its measurements. Runs and results stay separate for each volume and label source.</p>
       </div>
       {loading ? <p>Loading volumes…</p> : error ? <p className="error" role="alert">{error}</p> : !selected ? (
         <p>No volumes registered in this project.</p>
@@ -54,7 +53,7 @@ function VolumeMeasurements({ volume, canRun, onSaved }: { volume: Volume; canRu
       setSpacing(result.voxel_size_um_zyx.map(value => value == null ? "" : String(value * 1000)));
       setOrigins(result.origins);
     }).catch(() => {
-      if (alive) setError("Could not read source metadata. Enter verified spacing manually, or reopen this tab to retry.");
+      if (alive) setError("Metadata unavailable. Enter spacing manually or reopen this tab to retry.");
     }).finally(() => { if (alive) setDetecting(false); });
     return () => { alive = false; };
   }, [volume]);
@@ -76,11 +75,10 @@ function VolumeMeasurements({ volume, canRun, onSaved }: { volume: Volume; canRu
   return <>
     <section className="section-block" aria-label="Measurement voxel size">
       <h3>Voxel size (nm)</h3>
-      <p className="muted">Use the acquisition's actual Z, Y and X spacing. Unknown values are left blank; physical volume and length cannot be calculated without them.</p>
       {detecting ? <p role="status">Reading physical voxel size…</p> : <p role="status">
-        {origins.includes("source_file") ? "Physical spacing read from source file metadata; no metadata was changed." :
-          origins.includes("unknown") ? "Physical spacing is missing or has no supported unit. Enter the missing values manually." :
-          origins.length ? "Using registered physical voxel size." : "Automatic detection unavailable."}
+        {origins.includes("source_file") ? "Spacing from source metadata." :
+          origins.includes("unknown") ? "Missing physical spacing. Enter the missing values in nm." :
+          origins.length ? "Registered spacing." : "Automatic detection unavailable."}
         {origins.map((origin, index) => ` ${["Z", "Y", "X"][index]}: ${origin.replace("_", " ")}.`).join("")}
       </p>}
       {canRun ? <>
@@ -94,7 +92,7 @@ function VolumeMeasurements({ volume, canRun, onSaved }: { volume: Volume; canRu
             {busy ? "Saving voxel size…" : "Save voxel size"}
           </button>
         </div>
-        {dirty && <p role="status">Unsaved voxel size. Save these metadata values before running measurements; annotation pixels are not changed.</p>}
+        {dirty && <p role="status">Unsaved voxel size. Save before measuring.</p>}
         {saved && <p role="status">Voxel size saved.</p>}
       </> : <p>Z: {previous[0] || "Unknown"} · Y: {previous[1] || "Unknown"} · X: {previous[2] || "Unknown"} nm</p>}
       {error && <p role="alert" className="error">{error}</p>}

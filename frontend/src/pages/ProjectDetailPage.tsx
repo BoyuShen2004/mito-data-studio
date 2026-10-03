@@ -128,7 +128,7 @@ export default function ProjectDetailPage() {
 
         {active === "data" && <>
           <div className="row spread section-heading">
-            <div><h2>Data</h2><p className="muted">Datasets and the volumes registered into them.</p></div>
+            <div><h2>Data</h2></div>
             {/* Only the roles `/register-data` actually admits; anyone else
                 would be bounced straight back home by the route guard. */}
             {canEditProject && (
@@ -137,7 +137,7 @@ export default function ProjectDetailPage() {
           </div>
           <DatasetsCard datasets={project.datasets ?? []} volumes={volumes.data ?? []} projectId={projectId} onChanged={reloadAll} />
           {(volumes.data ?? []).some((volume) => !volume.dataset) && <section className="section-block">
-            <div className="section-heading"><h2>Ungrouped volumes</h2><p className="muted">Volumes registered before dataset grouping was available.</p></div>
+            <div className="section-heading"><h2>Ungrouped volumes</h2></div>
             <VolumeList volumes={volumes} />
           </section>}
         </>}
@@ -216,11 +216,8 @@ function ProjectMembers({ projectId }: { projectId: number }) {
     <section className="section-block">
       <div className="section-heading"><h2>Access members</h2></div>
       <p className="muted">
-        Members can view the project and Hard Cases without being assigned a
-        task. Adding an annotator here also adds them to this project&rsquo;s
-        working team so they can be assigned work. Removing Access removes
-        browse-only membership; remove them from the working team in People to
-        remove assignment eligibility.
+        Adding an annotator grants project access and working-team eligibility.
+        Removing access does not remove team membership; manage that in People.
       </p>
       <div className="row">
         <select value={selected} onChange={(e) => setSelected(e.target.value)}>
@@ -266,7 +263,7 @@ function ProjectMembers({ projectId }: { projectId: number }) {
 
 function WorkloadTable({ workload }: { workload: WorkloadRow[] | undefined }) {
   return <section className="section-block">
-    <div className="section-heading"><h2>Annotator workload</h2><p className="muted">Assigned work on this project, grouped by person.</p></div>
+    <div className="section-heading"><h2>Annotator workload</h2></div>
     {!workload || workload.length === 0 ? <div className="empty-state">No assigned work yet.</div> : (
       <div className="table-wrap"><table>
         <thead><tr><th>Annotator</th><th>Active</th><th>Submitted</th><th>Approved</th><th>Total</th></tr></thead>
@@ -312,7 +309,7 @@ function ProjectHardCases({ cases }: { cases: AsyncState<HardCase[]> }) {
 
   return (
     <section className="section-block">
-      <div className="section-heading"><h2>Cases</h2><p className="muted">Labels the team flagged as hard, and what was decided about them.</p></div>
+      <div className="section-heading"><h2>Cases</h2></div>
       {cases.error ? (
         <div className="error">{cases.error}</div>
       ) : (
@@ -326,7 +323,7 @@ function ProjectHardCases({ cases }: { cases: AsyncState<HardCase[]> }) {
           onChanged={cases.reload}
           label="Hard cases on this project"
           emptyText={
-            <>Nobody has flagged a hard case on this project yet. They are raised from the Annotate toolbar with “Record hard case”.</>
+            <>No hard cases recorded.</>
           }
         />
       )}
@@ -379,7 +376,7 @@ function ProjectTasks({
               {assigning.length > 0
                 ? `${assigning.length} selected task${assigning.length === 1 ? "" : "s"}.`
                 : "Every task on this project."}{" "}
-              Push one assignee per volume and set priority, difficulty, deadline, or instructions.
+              One assignee per volume.
             </p>
           </div>
           <button type="button" className="secondary" onClick={() => setAssigning(null)}>

@@ -38,11 +38,6 @@ export default function PeoplePage() {
         </span>
       </div>
 
-      <p className="muted">
-        People is the home for project rosters and teams. Adding an annotator
-        through a project&rsquo;s Access page or its working team now grants both
-        browse access and assignment eligibility.
-      </p>
 
       <ProfileCard
         me={d.me}

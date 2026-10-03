@@ -432,6 +432,12 @@ describe("collaboration workflow pages", () => {
     ...overrides,
   });
 
+  it.each([undefined, 0])("keeps unknown QC size distinct from zero (%s)", (size) => {
+    harness.asyncData = submission({ qc_report: size === undefined ? {} : { file_size: size } });
+    render(<MemoryRouter><ReviewBox submissionId={5} onDecided={harness.reload} /></MemoryRouter>);
+    expect(screen.getByText(size === undefined ? /— bytes/ : /0 bytes/)).toBeTruthy();
+  });
+
   it("sends the approve-time keep-open decision explicitly", async () => {
     harness.asyncData = submission();
 

@@ -17,6 +17,8 @@ export function useAsync<T>(
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const memoFn = useCallback(fn, deps);
 
@@ -35,5 +37,5 @@ export function useAsync<T>(
     };
   }, [memoFn, tick]);
 
-  return { data, loading, error, reload: () => setTick((t) => t + 1) };
+  return { data, loading, error, reload };
 }

@@ -41,11 +41,10 @@ export default function CollaborationManager() {
     <div className="card">
       <h3>Teams &amp; assignment eligibility</h3>
       <p className="muted">
-        A team is just a name and its annotators. {currentProject
-          ? `A new team here becomes the working team for ${currentProject.title}; its annotators also appear in that project’s Access list.`
-          : "Choose it as a project’s working team when its members should receive that project’s volumes; they also receive project browse access."}
-        {" "}Removing someone from a working team removes assignment eligibility,
-        but any explicit browse access remains until it is removed on the project.
+        {currentProject
+          ? `New teams grant browse access and assignment eligibility for ${currentProject.title}.`
+          : "Working-team members can browse the project and receive assignments."}
+        {" "}Removing a team member ends assignment eligibility; explicit project access remains.
       </p>
       <TeamEditor
         annotators={annotators}

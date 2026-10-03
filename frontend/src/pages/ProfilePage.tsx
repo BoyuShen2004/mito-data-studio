@@ -119,9 +119,7 @@ export default function ProfilePage() {
         {canCustomize ? (
           <>
             <p className="muted">
-              Hold <kbd>{modifier}</kbd> and press the letter to switch tool while
-              annotating. One letter per tool; leave a box empty for no shortcut.
-              Saved to your account, so it follows you between browsers.
+              <kbd>{modifier}</kbd> + letter switches tools. Leave blank to disable a shortcut.
             </p>
             <div className="profile-shortcut-grid" aria-label="Annotate shortcut bindings">
               {SHORTCUT_LAYOUT.map((tool, cell) => {
@@ -165,8 +163,7 @@ export default function ProfilePage() {
           </>
         ) : (
           <p className="muted">
-            {roleLabel(user.role)} accounts do not annotate, so there are no tool
-            shortcuts to set.
+            {roleLabel(user.role)} accounts have no annotation shortcuts.
           </p>
         )}
       </section>

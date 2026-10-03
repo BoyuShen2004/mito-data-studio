@@ -63,6 +63,30 @@ class VoxelAutodetectTests(TestCase):
         self.assertAlmostEqual(vol.voxel_size_y, 0.25, places=5)
         self.assertAlmostEqual(vol.voxel_size_x, 0.5, places=5)
 
+    def test_autodetection_preserves_registered_spacing_on_each_axis(self):
+        from volumes.services import _try_autodetect_shape
+
+        volume = register_volume(
+            project=create_project(title="Partial spacing"),
+            name="partial", image_path="partial.tiff", autodetect_shape=False,
+        )
+        volume.shape_z, volume.shape_y, volume.shape_x = 8, 16, 32
+        for missing_axis in "zyx":
+            with self.subTest(missing_axis=missing_axis):
+                for axis in "zyx":
+                    setattr(volume, f"voxel_size_{axis}", None if axis == missing_axis else 0.7)
+                volume.save()
+                with patch("volumes.services.volume_image_file", return_value="partial.tiff"), \
+                     patch("volumes.services.inspect_volume_voxel_size", return_value=(0.2, 0.25, 0.5)), \
+                     patch("volumes.services.inspect_volume_dtype", return_value=None):
+                    self.assertTrue(_try_autodetect_shape(volume))
+                volume.refresh_from_db()
+                for axis, detected in zip("zyx", (0.2, 0.25, 0.5)):
+                    self.assertAlmostEqual(
+                        getattr(volume, f"voxel_size_{axis}"),
+                        detected if axis == missing_axis else 0.7,
+                    )
+
     def test_inspect_volume_voxel_size_reads_ome_physical_sizes(self):
         import numpy as np
         import tifffile

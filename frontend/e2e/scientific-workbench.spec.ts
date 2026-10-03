@@ -186,7 +186,7 @@ test("volume measurements queue explicitly and show source, units and CSV export
   await page.getByRole("button", { name: "Save voxel size" }).click();
   await expect(page.getByRole("button", { name: "Run measurements" })).toBeEnabled();
   const section = page.getByRole("region", { name: "Mitochondria measurements" });
-  await expect(section.getByText(/No measurements have been run/)).toBeVisible();
+  await expect(section.getByText(/No runs for this label source/)).toBeVisible();
   expect(requests).toEqual([]);
   await section.getByRole("button", { name: "Run measurements" }).click();
   await expect(section.getByRole("table")).toBeVisible();
@@ -214,6 +214,6 @@ test("source spacing auto-fills nanometres without saving volume metadata", asyn
   await expect(page.getByLabel("Z (nm)", { exact: true })).toHaveValue("30");
   await expect(page.getByLabel("Y (nm)", { exact: true })).toHaveValue("16");
   await expect(page.getByRole("button", { name: "Run measurements", exact: true })).toBeEnabled();
-  await expect(page.getByText(/Physical spacing read from source file metadata/)).toBeVisible();
+  await expect(page.getByText(/Spacing from source metadata/)).toBeVisible();
   expect(writes).toEqual([]);
 });

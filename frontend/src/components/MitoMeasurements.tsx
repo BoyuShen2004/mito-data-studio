@@ -12,7 +12,7 @@ export default function MitoMeasurements({ volume, canRun, runBlocked = false }:
     <section className="section-block" aria-label="Mitochondria measurements">
       <div className="section-heading">
         <h2>Mitochondria measurements</h2>
-        <p className="muted">Per-label volume and TEASAR skeleton cable length. Whole volume; no task-range or ROI clipping.</p>
+        <p className="muted">Whole volume; no task-range or ROI clipping.</p>
       </div>
       <label className="row">
         Label source
@@ -87,32 +87,32 @@ function MeasurementRun({ volume, source, canRun, runBlocked }: { volume: Volume
     <>
       <p className="muted">
         {source === "working"
-          ? "Uses the saved draft only; unsaved canvas edits are excluded. This does not save or submit annotations."
-          : "Uses the registered official label, not the working draft or a submission snapshot."}
+          ? "Saved draft; unsaved canvas edits are excluded."
+          : "Official label; excludes drafts and submission snapshots."}
       </p>
-      {!validSpacing && <p role="status">Enter and save all three positive voxel sizes (nm) above before measuring.</p>}
+      {!validSpacing && <p role="status">Voxel size required: Z, Y, X (nm).</p>}
       {unavailable && <p role="status">No official label is registered.</p>}
       <div className="row">
         {canRun ? (
           <button type="button" disabled={loading || busy || running || runBlocked || !validSpacing || unavailable} onClick={() => void run()}>
             {busy ? "Queueing…" : running ? "Measurement in progress…" : "Run measurements"}
           </button>
-        ) : <span className="muted">A manager can run measurements; existing results are available below.</span>}
+        ) : <span className="muted">Only managers can start a run.</span>}
         <button type="button" className="secondary" disabled={busy} onClick={() => setRefresh(value => value + 1)}>Refresh results</button>
         {result && <button type="button" className="secondary" onClick={download}>Export CSV</button>}
       </div>
       {error && <p className="error" role="alert">{error}</p>}
       {loading ? <p role="status">Loading measurements…</p> : job ? (
         <p role="status">Run #{job.id} · {job.status}{job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ""}</p>
-      ) : !error ? <p className="muted">No measurements have been run for this label source.</p> : null}
+      ) : !error ? <p className="muted">No runs for this label source.</p> : null}
       {job?.error && <p className="error" role="alert">{job.error}</p>}
       {result && (
         <>
-          {!job.is_current && <p role="status">Historical result: labels or voxel size have changed since this run. Run again for current measurements.</p>}
+          {!job.is_current && <p role="status">Outdated result: labels or voxel size changed. Run again to update.</p>}
           <p className="muted">
             {result.method} · Voxel size (Z, Y, X): {result.voxel_size_nm_zyx.join(", ")} nm · {rows.length} labels.
-            {" "}Components smaller than {result.dust_size_voxels} voxels are excluded from skeletonization, but included in volume.
-            {" "}A zero cable length can mean no skeleton survived this threshold; it does not mean zero volume.
+            {" "}Components below {result.dust_size_voxels} voxels count toward volume, but not skeleton length.
+            {" "}Zero length may indicate filtering, not zero volume.
           </p>
           {rows.length === 0 ? <p>No nonzero labels were found.</p> : (
             <>

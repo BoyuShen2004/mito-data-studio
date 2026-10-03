@@ -123,7 +123,7 @@ export default function HomePage() {
       onFilterChange={setFilter}
       onChanged={cases.reload}
       label="Hard cases in your projects"
-      emptyText={<>No hard cases recorded. Use “Record hard case” in the annotation workspace.</>}
+      emptyText={<>No hard cases recorded.</>}
     />
   );
 
@@ -214,13 +214,6 @@ export default function HomePage() {
       <header className="page-header row spread">
         <div>
           <h1>Home</h1>
-          <p className="muted">
-            {isManager
-              ? "Assignments, submissions, and project review."
-              : isRequester
-                ? "Registered projects and annotation progress."
-                : "Assigned volumes, review feedback, and hard cases."}
-          </p>
         </div>
         {(isManager || isRequester) && (
           <div className="row page-actions">
@@ -240,10 +233,6 @@ export default function HomePage() {
       <section className="workspace-panel" role="tabpanel">
         {active.render()}
       </section>
-
-      <p className="muted home-hint">
-        The page URL includes the selected tab and filters.
-      </p>
     </div>
   );
 }

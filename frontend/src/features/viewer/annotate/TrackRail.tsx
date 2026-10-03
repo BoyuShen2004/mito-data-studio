@@ -145,7 +145,7 @@ export default function TrackRail({
       </div>
       <fieldset className="track-rail-shell" disabled={blocked}>
         <div className="track-rail-body">
-        <p>{axisIsZ ? "Create tracking prompts here. They never change annotation labels until propagation succeeds." : "Switch to axial (z) view to use Track."}</p>
+        <p>{axisIsZ ? "Prompts affect labels only after successful propagation." : "Switch to axial (z) view to use Track."}</p>
 
         <section className="track-prompt-tools" aria-label="Track seed tools">
           <strong>Seed tools</strong>
@@ -157,7 +157,7 @@ export default function TrackRail({
             ))}
           </div>
           <div className="track-prompt-edit-controls">
-            <button type="button" className="secondary" disabled={!promptEditing || savingProgress} title="Keep committed prompts in the Track queue, pause editing, and resume later by selecting a seed tool." onClick={onSaveProgress}>{savingProgress ? "Saving…" : "Save progress"}</button>
+            <button type="button" className="secondary" disabled={!promptEditing || savingProgress} title="Pause with queued prompts retained. Select a seed tool to resume." onClick={onSaveProgress}>{savingProgress ? "Saving…" : "Save progress"}</button>
             {!promptEditing && progressSaved && <span className="muted track-progress-saved" role="status">Progress saved — select a tool to resume.</span>}
             <label className={`track-size-control${promptTool === "brush" || promptTool === "erase" ? "" : " inactive"}`}>
               {promptTool === "erase" ? "Eraser" : "Brush"} size

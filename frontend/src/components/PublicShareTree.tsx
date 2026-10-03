@@ -147,7 +147,7 @@ export default function PublicShareTree() {
   if (remote.loading && !data) return <div className="card muted">Loading share hierarchy…</div>;
   return <div className="card">
     <h3>Live public shares</h3>
-    <p className="muted">Expand projects and datasets to manage view-only links. Stop revokes only that row’s direct link; child links remain live.</p>
+    <p className="muted">Stop revokes this link only; child links remain active.</p>
     {(data?.projects ?? []).map(project => {
       const pkey = `p${project.id}`;
       const expanded = openProjects.has(project.id);

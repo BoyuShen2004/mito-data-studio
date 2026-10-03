@@ -122,7 +122,7 @@ describe("TrackRail", () => {
       status: "ready",
     }], "box");
     const save = screen.getByRole("button", { name: "Save progress" });
-    expect(save.getAttribute("title")).toContain("resume later");
+    expect(save.getAttribute("title")).toContain("Select a seed tool to resume");
     fireEvent.click(save);
     expect(onSaveProgress).toHaveBeenCalledOnce();
     expect(onPromptTool).not.toHaveBeenCalledWith(null);

@@ -56,10 +56,7 @@ export default function VolumeDetailPage() {
     if (!building) return;
     const timer = window.setInterval(vol.reload, 3000);
     return () => window.clearInterval(timer);
-    // Reload is intentionally scoped to the state transition; useAsync's
-    // reload function has a new identity on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [building]);
+  }, [building, vol.reload]);
 
   const buildPyramid = async (layer: "image" | "region") => {
     setPyramidBusy(layer);

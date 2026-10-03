@@ -476,7 +476,6 @@ export default function RegisterDataPage() {
         </span>
       </div>
 
-      <p className="muted">Ingest data paths and set imaging metadata and label Type here. Create a team and pick its annotators in People.</p>
 
 
       {lastResult && lastResult.length > 0 && (
@@ -503,11 +502,6 @@ export default function RegisterDataPage() {
               )}
             </div>
           </div>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            {lastResult.map((d) => `${d.dataset} (${d.count})`).join(", ")}. A
-            project can hold many datasets — queue more directories below, or open
-            the project when you are done.
-          </p>
           {lastResult.some((result) => result.createdTasks !== undefined) ? (
             <p className="muted">
               {lastResult.reduce((sum, result) => sum + (result.createdTasks ?? 0), 0)} task(s)
@@ -561,10 +555,6 @@ export default function RegisterDataPage() {
               </tbody>
             </table>
           </div>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            Configure another directory below and add it, or register the queue
-            now.
-          </p>
         </div>
       )}
 
@@ -572,8 +562,7 @@ export default function RegisterDataPage() {
         <div className="card">
           <h3>Create a project first</h3>
           <p className="muted">
-            Data belongs to a project, and you do not have one yet. Projects
-            describe the work — what is annotated, by when.
+            Create a project before registering data.
           </p>
           <Link to="/projects/new">
             <button type="button">+ New project</button>

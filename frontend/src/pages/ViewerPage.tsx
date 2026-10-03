@@ -261,7 +261,7 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
             ) : editable && locked ? (
               <span
                 className="muted editor-lock-note"
-                title="A manager approved this task and closed it for further annotation. Ask them to reopen it if you need to keep working."
+                title="Approved and closed. A manager must reopen it before editing."
               >
                 Approved — closed for further annotation
               </span>

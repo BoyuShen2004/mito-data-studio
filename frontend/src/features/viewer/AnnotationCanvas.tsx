@@ -6453,10 +6453,8 @@ export default function AnnotationCanvas({
               <>
                 <h3>Share this label with everyone on this project?</h3>
                 <p className="muted" style={{ fontSize: "0.82rem" }}>
-                  Label <strong>#{activeId}</strong> will appear in the
-                  project&rsquo;s Hard Cases for its manager, its requester, and
-                  every annotator working on it. You and managers can annotate
-                  it or take it down later; everyone else sees it View-only.
+                  Label <strong>#{activeId}</strong> will be visible to project members.
+                  You and managers can edit or take it down; others have read-only access.
                 </p>
                 <fieldset className="hard-case-category-picker">
                   <legend>What kind of problem?</legend>
@@ -6508,9 +6506,8 @@ export default function AnnotationCanvas({
                 <p className="muted" style={{ fontSize: "0.82rem" }}>
                   Label <strong>#{shareCase?.label_id}</strong> is now on{" "}
                   <strong>{shareCase?.project_title || "this project"}</strong>
-                  &rsquo;s Hard Cases. Optionally copy the public link below to
-                  paste outside the app &mdash; anyone with it can view the case
-                  read-only, <strong>no account needed</strong>.
+                  &rsquo;s Hard Cases. The public link grants read-only access,{" "}
+                  <strong>no account needed</strong>.
                 </p>
                 <div className="share-modal-url">
                   <input

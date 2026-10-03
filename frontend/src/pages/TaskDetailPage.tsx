@@ -144,8 +144,7 @@ export default function TaskDetailPage() {
             <div className="section-heading">
               <h2>Labels</h2>
               <p className="muted">
-                The annotation canvas. View is read-only; Annotate paints the working draft and
-                Save writes it — Submit, separately, takes the snapshot a manager reviews.
+                View is read-only. Save updates the draft; Submit creates a review snapshot.
               </p>
             </div>
             <div className="row task-primary-actions">
