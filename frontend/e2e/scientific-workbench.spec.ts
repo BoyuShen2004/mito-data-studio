@@ -142,3 +142,42 @@ test("public viewer remains read-only without application navigation", async ({ 
   await expect(page.getByRole("button", { name: "Submit for review", exact: true })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("public-viewer.png") });
 });
+
+test("volume measurements queue explicitly and show source, units and CSV export", async ({ page }, info) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  const requests: string[] = [];
+  await page.route("**/api/volumes/9/", route => route.fulfill({ json: {
+    ...visualVolume, voxel_size_z: 30, voxel_size_y: 16, voxel_size_x: 16,
+    image_path: "image.tif", label_path: "labels.tif", region_mask_path: "",
+  } }));
+  let job: unknown = null;
+  await page.route("**/api/volumes/9/measurements/**", async route => {
+    if (route.request().method() === "POST") {
+      requests.push(route.request().postDataJSON().source);
+      job = {
+        id: 100, source: "official", status: "succeeded", created_at: "2026-10-02T00:00:00Z",
+        finished_at: "2026-10-02T00:01:00Z", is_current: true, error: "",
+        result: {
+          source: "official", measured_at: "2026-10-02T00:01:00Z", voxel_size_nm_zyx: [30, 16, 16],
+          dust_size_voxels: 100, method: "TEASAR (kimimaro)", scope: "Whole volume",
+          rows: [{ label_id: 5, voxel_count: 3600, volume_um3: 0.027648, skeleton_length_um: 1.6 }],
+        },
+      };
+    }
+    await route.fulfill({ json: { job } });
+  });
+  await page.goto("/volumes/9");
+  const section = page.getByRole("region", { name: "Mitochondria measurements" });
+  await expect(section.getByText(/No measurements have been run/)).toBeVisible();
+  expect(requests).toEqual([]);
+  await section.getByRole("button", { name: "Run measurements" }).click();
+  await expect(section.getByRole("table")).toBeVisible();
+  await expect(section).toContainText("Volume (µm³)");
+  await expect(section).toContainText("Skeleton cable length (µm)");
+  expect(requests).toEqual(["official"]);
+  const download = page.waitForEvent("download");
+  await section.getByRole("button", { name: "Export CSV" }).click();
+  expect((await download).suggestedFilename()).toBe("mitochondria-volume-9-official-run-100.csv");
+  await page.screenshot({ path: info.outputPath("measurements.png"), fullPage: true });
+});

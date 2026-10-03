@@ -3877,3 +3877,6 @@ input[type="checkbox"], input[type="radio"] {
 @media (min-width: 901px) {
   .task-conversation { grid-template-columns: minmax(0, 1fr) 21rem; }
 }
+
+.measurement-table { overflow-x: auto; }
+.measurement-table td { font-variant-numeric: tabular-nums; }

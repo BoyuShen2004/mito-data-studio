@@ -102,8 +102,13 @@ def dispatch_job(job: ProcessingJob) -> ProcessingJob:
             return job
         job.refresh_from_db()
         return job
-    backend = get_processing_backend(job.backend)
-    result = backend.submit(job)
+    if job.job_type == ProcessingJobType.MEASURE_MITO and job.backend == "local":
+        from annotation.measurement_jobs import run_measurement
+
+        result = run_measurement(job)
+    else:
+        backend = get_processing_backend(job.backend)
+        result = backend.submit(job)
     _apply_result(job, result, started=True)
     _maybe_finish(job)
     return job

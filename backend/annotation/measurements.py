@@ -55,7 +55,7 @@ def skeleton_length_nm(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
     return float(rows[0, 1])
 
 
-def measure_label_volume(path, voxel_size_zyx, *, dust_size: int = DUST_SIZE) -> list[MitoMeasurement]:
+def measure_label_volume(path, voxel_size_zyx, *, dust_size: int = DUST_SIZE, max_crop_voxels: int | None = None) -> list[MitoMeasurement]:
     """Measure every nonzero instance in the label volume at ``path``."""
     path = Path(path)
     if not path.exists():
@@ -74,6 +74,10 @@ def measure_label_volume(path, voxel_size_zyx, *, dust_size: int = DUST_SIZE) ->
             continue
         count = int(entry["voxel_count"])
         z1, z2, y1, y2, x1, x2 = summary["bboxes"][lid]
+        bounds = [(max(0, a - CROP_PAD), min(n, b + CROP_PAD))
+                  for a, b, n in ((z1, z2, nz), (y1, y2, ny), (x1, x2, nx))]
+        if max_crop_voxels is not None and math.prod(b - a for a, b in bounds) > max_crop_voxels:
+            raise MeasurementError(f"Label {lid} exceeds the web measurement limit of {max_crop_voxels:,} crop voxels. Use the offline measure_mito command for this volume.")
         crop = np.asarray(
             volume[
                 max(0, z1 - CROP_PAD) : min(nz, z2 + CROP_PAD),

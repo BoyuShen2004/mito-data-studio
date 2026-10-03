@@ -271,6 +271,7 @@ class ProcessingJobType(models.TextChoices):
     CONVERT_VISUALIZATION = "convert_visualization", "Convert for visualization"
     GENERATE_MESH = "generate_mesh", "Generate mesh"
     BUILD_PYRAMID = "build_pyramid", "Build pyramid"
+    MEASURE_MITO = "measure_mito", "Measure mitochondria"
     PUBLISH = "publish", "Publish"
 
 
