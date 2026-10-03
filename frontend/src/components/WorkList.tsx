@@ -157,7 +157,7 @@ function taskRow(task: AnnotationTask, showProject: boolean): WorkRow {
     subtitle,
     chips: [
       ...(showProject && task.project_title ? [{ key: "project", label: task.project_title }] : []),
-      ...(task.annotation_locked ? [{ key: "locked", label: "🔒 closed" }] : []),
+      ...(task.annotation_locked ? [{ key: "locked", label: "Closed" }] : []),
     ],
     person: who,
     category: "",
@@ -261,6 +261,7 @@ function distinct(rows: WorkRow[], pick: (row: WorkRow) => string): string[] {
 }
 
 type Props = {
+  rowNavigation?: "links" | "review-button";
   filter?: WorkFilter;
   onFilterChange?: (filter: WorkFilter) => void;
   emptyText?: ReactNode;
@@ -286,6 +287,7 @@ type Props = {
 export default function WorkList(props: Props) {
   const {
     kind,
+    rowNavigation = "links",
     filter = {},
     onFilterChange,
     emptyText = "Nothing here.",
@@ -461,15 +463,22 @@ export default function WorkList(props: Props) {
                     aria-label={`Select ${row.title}`}
                   />
                 )}
-                <span
-                  className={`work-state-dot work-state-${row.state}`}
-                  role="img"
-                  aria-label={`State: ${row.stateLabel}`}
-                  title={row.stateLabel}
-                />
+                <span className="work-row-state">
+                  <span
+                    className={`work-state-dot work-state-${row.state}`}
+                    role="img"
+                    aria-label={`State: ${row.stateLabel}`}
+                    title={row.stateLabel}
+                  />
+                  <span aria-hidden="true">{row.stateLabel}</span>
+                </span>
                 <div className="work-row-body">
                   <div className="work-row-title-line">
-                    <Link to={row.href} className="work-row-title">{row.title}</Link>
+                    {rowNavigation === "review-button" ? (
+                      <span className="work-row-title">{row.title}</span>
+                    ) : (
+                      <Link to={row.href} className="work-row-title">{row.title}</Link>
+                    )}
                     {row.chips.map((chip) => (
                       <span key={chip.key} className={`work-chip${chip.className ? ` ${chip.className}` : ""}`}>
                         {chip.label}
@@ -479,7 +488,11 @@ export default function WorkList(props: Props) {
                   <div className="work-row-subtitle muted" title={row.subtitle}>{row.subtitle}</div>
                 </div>
                 <div className="work-row-side">
-                  <Link to={row.href} className="work-row-number">#{row.id}</Link>
+                  {rowNavigation === "review-button" ? (
+                    <span className="work-row-number">#{row.id}</span>
+                  ) : (
+                    <Link to={row.href} className="work-row-number">#{row.id}</Link>
+                  )}
                   {row.person && (
                     <span className="work-row-person" title={`${personLabel}: ${row.person}`}>
                       {row.person}
@@ -487,13 +500,16 @@ export default function WorkList(props: Props) {
                   )}
                 </div>
                 <div className="work-row-actions">
-                  {kind === "task" && (
+                  {rowNavigation === "review-button" && kind !== "case" &&
+                  !(kind === "task" && (row.item as AnnotationTask).assignment_withdrawn) ? (
+                    <Link to={row.href}><button type="button">Review</button></Link>
+                  ) : kind === "task" ? (
                     <TaskRowActions
                       task={row.item as AnnotationTask}
                       isManager={isManager}
                       userId={user?.id}
                     />
-                  )}
+                  ) : null}
                   {kind === "case" && (
                     <CaseRowActions
                       hardCase={row.item as HardCase}
@@ -556,8 +572,8 @@ function FilterSelect({
   );
 }
 
-/** View / Annotate stay on the row: they are this application's primary verbs
- * and a list that hides them behind a hop is a list nobody works from. */
+/** View / Annotate stay on ordinary task rows. Review queues open the item
+ * first so the reviewer chooses View / Annotate on the detail page. */
 function TaskRowActions({
   task,
   isManager,

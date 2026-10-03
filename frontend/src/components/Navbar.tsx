@@ -26,7 +26,7 @@ export default function Navbar() {
 
   return (
     <nav className="navbar">
-      <span className="brand">🧬 Mito Data Studio</span>
+      <span className="brand">Mito Data Studio</span>
       {/* Four entries, and every one of them is a place. `Register Data` is an
           action, so it lives on the pages that own it (Home, the Projects
           list, and a project's Data tab). Hard Cases is not here either: a

@@ -11,6 +11,7 @@ import { useAnnotationTimer } from "../features/viewer/useAnnotationTimer";
 import AnnotationCanvas, {
   type AxisControls,
 } from "../features/viewer/AnnotationCanvas";
+import ViewerIdentity from "../components/ViewerIdentity";
 import AxisSelect from "../features/viewer/AxisSelect";
 import SliceViewer from "../features/viewer/SliceViewer";
 import ShareControl from "../components/ShareControl";
@@ -67,10 +68,7 @@ export function VolumeViewerPage() {
         topbar={
           <>
             <div className="editor-left-slot">
-              <h1>View · {vol.data.name}</h1>
-              <span className="muted editor-topbar-meta" style={{ fontSize: "0.78rem" }}>
-                {vol.data.dataset_name || "Volume"} · Task #{task.id}
-              </span>
+              <ViewerIdentity volume={vol.data.name} dataset={vol.data.dataset_name} taskId={task.id} status={task.status} />
               <div className="editor-share-slot">
                 <ShareControl
                   scope="volume"
@@ -114,7 +112,8 @@ export function VolumeViewerPage() {
 
   return (
     <ViewerShell topbar={<>
-      <h1>View · {vol.data.name}</h1>
+      <ViewerIdentity volume={vol.data.name} dataset={vol.data.dataset_name} />
+      <span className="viewer-mode">Read-only</span>
       <span className="spacer"/>
       <ShareControl
         scope="volume"
@@ -135,7 +134,7 @@ export function VolumeViewerPage() {
  * Topbar layout — three reserved slots, sized up front (see `.editor-topbar`
  * in styles.css):
  *
- *   [ Annotate|View · Task #N · project · volume · Submit · Share ]
+ *   [ volume / dataset · Task #N · review state · Submit · Share ]
  *   [ Region only · Overwrite ]
  *   [ Axis · View only|Annotate ]
  *
@@ -235,12 +234,12 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
       topbar={
         <>
           <div className="editor-left-slot">
-            <h1>
-              {editable ? "Annotate" : "View"} · Task #{task.id}
-            </h1>
-            <span className="muted editor-topbar-meta" style={{ fontSize: "0.78rem" }}>
-              {task.project_title} · {task.volume_name}
-            </span>
+            <ViewerIdentity
+              volume={task.volume_name}
+              dataset={task.dataset}
+              taskId={task.id}
+              status={task.status}
+            />
             {editable && task.can_submit ? (
               <button
                 type="button"
@@ -249,8 +248,8 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
                 disabled={submitting}
                 title={
                   task.submission_count > 0
-                    ? "Hand the current state to a manager again — this replaces your previous submission. Save your layer edits first: unsaved paint is not on disk."
-                    : "Hand this task to a manager for review. Save your layer edits first — unsaved paint is not on disk."
+                    ? "Submit a new review snapshot. Save all edits first; unsaved changes are not included."
+                    : "Submit the saved working draft for review. Unsaved changes are not included."
                 }
               >
                 {submitting
@@ -264,7 +263,7 @@ export function TaskViewerPage({ editable = false }: { editable?: boolean }) {
                 className="muted editor-lock-note"
                 title="A manager approved this task and closed it for further annotation. Ask them to reopen it if you need to keep working."
               >
-                🔒 Approved — closed for further annotation
+                Approved — closed for further annotation
               </span>
             ) : null}
             <div className="editor-share-slot">

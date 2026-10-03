@@ -156,7 +156,7 @@ from django.conf import settings;print({n:getattr(settings,n) for n in dir(setti
 ```
 
 The browser half has the same rule and lives in `frontend/package.json`: `npm
-run dev` and `npm run build:production` set an identical `VITE_*` set, so the
+run dev` and `npm run build:production` set identical integrated feature flags, so the
 dev server exercises the chunk pull queue and the chunk renderer that
 production ships. Change one, change the other.
 
@@ -206,6 +206,29 @@ for the audited production profile.
 For targeted work, both suites accept a test path or name. Run migrations and
 both builds before promoting development source into the production checkout.
 
+## Frontend visual checks
+
+The UI uses the scientific hierarchy volume/dataset → task → spatial position
+→ selected label → edit/save/review state. Keep shared tokens in
+`frontend/src/styles.css`, compact metadata sections, explicit text states,
+and comfortable controls (32 px minimum viewer button height). Viewer context
+uses existing header rows; tool changes must not resize the image viewport.
+Save reports working-draft persistence, separately from submission/review state.
+
+Run the browser layout and interaction checks with:
+
+```bash
+cd frontend
+npx playwright test --config playwright.scientific.config.ts
+```
+
+These tests run the actual app using the ordinary integrated development flags
+and isolated synthetic API responses; they do not connect to a database or
+validate backend processing. They cover desktop/laptop geometry, mobile login,
+zoom-equivalent reflow, explicit Save/Submit states, review, and public read-only
+viewing. Chromium uses the same `/snap/bin/chromium` executable as the existing
+browser suites. Screenshots are written to `/tmp/mito-scientific-playwright-results`.
+
 ## Data and Git safety
 
 Never commit `.env`, SQLite databases, `data/`, volume binaries, generated
@@ -220,3 +243,19 @@ git status --short
 Production promotion is development → production. Production-only fixes should
 first be ported back and tested here. The host-specific procedure is in
 [host deployment guide](deployment.md).
+
+## Public DEV versus production login
+
+DEV uses `VITE_SHOW_DEMO_ACCOUNTS=true`; production and `build:no-demo` explicitly
+set it false while preserving the integrated chunk/rendering feature flags.
+The LoginPage source remains tracked. Production builds do not fetch mock
+credentials or render the development clear action.
+
+Public DEV runtime/fixtures belong in the isolated preview `var/data`, outside
+canonical source. Credentials stay in mode-0600 `.env.dev-public` and `run/`.
+Use `seed_dev --safe-mock-login` with an explicit allowlist and a private env
+password; this seeds application identities without granting Django admin.
+Never use production for seeding or reset tests. Generated mock fixtures and
+seed exports belong under ignored `fixtures/mock-data/`, `fixtures/generated/`,
+or `seed-dumps/`, not beside product source. Run `make check-git` before any
+commit; existing reviewed algorithm golden fixtures remain product tests.

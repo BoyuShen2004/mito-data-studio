@@ -305,3 +305,40 @@ describe("WorkList task actions", () => {
     expect(screen.queryByRole("button", { name: "View" })).toBeNull();
   });
 });
+
+describe("WorkList review navigation", () => {
+  it("opens a task only through its Review button", () => {
+    render(<Harness kind="task" rows={[task({})]} rowNavigation="review-button" />);
+    const row = within(screen.getByText("cortex_01 z1–256").closest("li")!);
+    expect(row.getAllByRole("button")).toHaveLength(1);
+    expect(row.getByRole("button", { name: "Review" })).toBeTruthy();
+    expect(row.getAllByRole("link")).toHaveLength(1);
+    expect(row.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/tasks/42");
+    expect(row.queryByRole("link", { name: "cortex_01 z1–256" })).toBeNull();
+    expect(row.queryByRole("link", { name: "#42" })).toBeNull();
+    expect(row.queryByRole("button", { name: "View" })).toBeNull();
+    expect(row.queryByRole("button", { name: "Annotate" })).toBeNull();
+  });
+
+  it.each([false, true])("keeps withdrawal history without Review (transferred: %s)", (transferred) => {
+    render(<Harness kind="task" rows={[task({
+      assignment_withdrawn: true,
+      assignment_transferred: transferred,
+    })]} rowNavigation="review-button" />);
+    const row = within(screen.getByText("cortex_01 z1–256").closest("li")!);
+    expect(row.getByText(transferred ? "Transferred" : "Withdrawn", { selector: ".work-row-actions span" })).toBeTruthy();
+    expect(row.queryAllByRole("button")).toHaveLength(0);
+    expect(row.queryAllByRole("link")).toHaveLength(0);
+  });
+
+  it("opens a project only through its Review button", () => {
+    render(<Harness kind="project" rows={[project({})]} rowNavigation="review-button" />);
+    const row = within(screen.getByText("Cortex study").closest("li")!);
+    expect(row.getAllByRole("button")).toHaveLength(1);
+    expect(row.getByRole("button", { name: "Review" })).toBeTruthy();
+    expect(row.getAllByRole("link")).toHaveLength(1);
+    expect(row.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/projects/5");
+    expect(row.queryByRole("link", { name: "Cortex study" })).toBeNull();
+    expect(row.queryByRole("link", { name: "#5" })).toBeNull();
+  });
+});

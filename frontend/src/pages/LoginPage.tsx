@@ -17,6 +17,7 @@ function releaseLabel(release: string): string {
 }
 
 export default function LoginPage() {
+  const showDevelopmentAccounts = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === "true";
   const { login, user } = useAuth();
   const navigate = useNavigate();
   const [portal, setPortal] = useState<LoginPortal>("annotator");
@@ -26,7 +27,9 @@ export default function LoginPage() {
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [mockAccounts, setMockAccounts] = useState<MockAccount[]>([]);
   const [release, setRelease] = useState<string | null>(null);
-  useEffect(() => { fetchMockAccounts().then(setMockAccounts); }, []);
+  useEffect(() => {
+    if (showDevelopmentAccounts) fetchMockAccounts().then(setMockAccounts);
+  }, [showDevelopmentAccounts]);
   useEffect(() => { getDeploymentRelease().then(setRelease); }, []);
 
   // Product invariant: account chips only fill the ordinary login form. They
@@ -83,46 +86,14 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       {release && <span className="login-release" aria-label="Release version">{releaseLabel(release)}</span>}
-      <aside className="login-brand">
-        <div className="login-vspacer" aria-hidden="true" />
-        <div className="login-brand-inner">
-          <div className="brand-mark">🧬 Mito Data Studio</div>
-          <div className="brand-hero">
-            <h1>
-              EM annotation,
-              <br />
-              from volume to approval.
-            </h1>
-            <p>
-              Register EM volumes, assign each one to an annotator, and annotate
-              in the browser. Submit the latest work for review, collaborate on
-              hard cases, and track people and progress across each project.
-            </p>
-          </div>
-          <ul className="brand-features">
-            <li>
-              <span className="tick">✓</span> View &amp; Annotate with paint
-              and SAM2
-            </li>
-            <li>
-              <span className="tick">✓</span> Submit/review: latest wins;
-              approve to lock or continue
-            </li>
-            <li>
-              <span className="tick">✓</span> Project Hard Cases, People &amp;
-              live progress
-            </li>
-          </ul>
-        </div>
-        <div className="login-vspacer" aria-hidden="true" />
-      </aside>
-
       <main className="login-form-panel">
-        <div className="login-vspacer" aria-hidden="true" />
+        <header className="login-brand">
+          <h1>Mito Data Studio</h1>
+          <p>3-D microscopy annotation and review</p>
+        </header>
         <div className="login-card">
-          <div className="login-mobile-brand">🧬 Mito Data Studio</div>
-          <h2>Welcome back</h2>
-          <p className="subtitle">Sign in to your workspace</p>
+          <h2>Sign in</h2>
+          <p className="subtitle">Select your account portal.</p>
 
           <div className="tabs" role="tablist">
             <button
@@ -180,7 +151,7 @@ export default function LoginPage() {
             annotator or a requester.
           </div>
 
-          {mockAccounts.length > 0 && (
+          {showDevelopmentAccounts && mockAccounts.length > 0 && (
             <div className="dev-accounts">
               <div className="dev-accounts-title">Development accounts</div>
               <div className="dev-accounts-list">
@@ -219,7 +190,6 @@ export default function LoginPage() {
             </div>
           )}
         </div>
-        <div className="login-vspacer login-vspacer--after-card" />
       </main>
     </div>
   );

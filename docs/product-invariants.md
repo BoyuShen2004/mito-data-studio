@@ -6,7 +6,10 @@ without explicit user approval and updated regression tests.
 
 ## Development accounts on the login page
 
-- The **Development accounts** section appears directly below “Need an
+- The **Development accounts** section is gated by the frontend build flag
+  `VITE_SHOW_DEMO_ACCOUNTS=true` and the backend allowlist. DEV enables it;
+  production builds disable it and never fetch mock credentials. When enabled,
+  it appears directly below “Need an
   account? Create one as an annotator or a requester.”
 - It lists the seven server-allowlisted accounts in configured order.
 - Selecting an account fills username and password and selects the correct

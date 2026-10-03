@@ -186,14 +186,14 @@ describe("TaskDetailPage", () => {
       task({ status: "in_progress", review_history: [], submitted_at: null }),
     );
     open();
-    expect(await screen.findByText(/Nothing is waiting on you here/)).toBeTruthy();
+    expect(await screen.findByText(/No submission awaiting review/)).toBeTruthy();
     expect(screen.queryByText(/Review box/)).toBeNull();
   });
 
   it("gives the assignee their own action box, with Save and Submit kept distinct", async () => {
     open();
-    expect(await screen.findByRole("heading", { name: "Your turn" })).toBeTruthy();
-    expect(screen.getByText(/Save as you go; Submit takes the snapshot/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Annotation and submission" })).toBeTruthy();
+    expect(screen.getByText(/Save edits before submitting a snapshot for review/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /Submit a label file/ }).closest("a")?.getAttribute("href"))
       .toBe("/tasks/42/submit");
   });
@@ -202,7 +202,7 @@ describe("TaskDetailPage", () => {
     harness.userId = 99;
     open();
     expect(await screen.findByText(/This task is assigned to alice/)).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Your turn" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Annotation and submission" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Annotate" })).toBeNull();
   });
 
