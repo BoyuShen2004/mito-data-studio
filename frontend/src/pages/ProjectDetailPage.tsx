@@ -15,6 +15,7 @@ import { listProjectVolumes } from "../api/volumes";
 import { listHardCases } from "../api/hardCases";
 import { useAuth } from "../auth/AuthContext";
 import { useAsync, type AsyncState } from "../hooks/useAsync";
+import ProjectMeasurements from "../components/ProjectMeasurements";
 import ProjectSummaryCard from "../components/ProjectSummaryCard";
 import DatasetsCard from "../components/DatasetsCard";
 import DeleteButton from "../components/DeleteButton";
@@ -35,7 +36,7 @@ import { showError } from "../errorPopup";
 /** Nouns, not verbs — "Assign" was the odd one out and is now a bulk action
  * inside Tasks; "Activity" was a junk drawer and its two halves went to
  * Overview (workload) and Cases (hard cases). */
-type ProjectTab = "overview" | "data" | "tasks" | "cases" | "people" | "settings";
+type ProjectTab = "overview" | "data" | "tasks" | "cases" | "measurements" | "people" | "settings";
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
@@ -82,6 +83,7 @@ export default function ProjectDetailPage() {
     { id: "data", label: "Data", count: project.volume_count },
     { id: "tasks", label: "Tasks", count: project.task_count },
     { id: "cases", label: "Cases", count: hardCases.data?.filter((row) => row.status === "open").length },
+    { id: "measurements", label: "Measurements" },
     ...(isManager ? [{ id: "people" as const, label: "People" }] : []),
     ...(canEditProject ? [{ id: "settings" as const, label: "Settings" }] : []),
   ];
@@ -153,6 +155,11 @@ export default function ProjectDetailPage() {
         )}
 
         {active === "cases" && <ProjectHardCases cases={hardCases} />}
+
+        {active === "measurements" && <ProjectMeasurements
+          volumes={volumes.data ?? []} loading={volumes.loading} error={volumes.error}
+          canRun={isManager} onSaved={volumes.reload}
+        />}
 
         {active === "people" && isManager && <>
           <ProjectMembers projectId={projectId} />

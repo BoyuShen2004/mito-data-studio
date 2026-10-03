@@ -6,7 +6,7 @@ const active = (job: MeasurementJob | null) =>
   job != null && ["queued", "submitted", "running"].includes(job.status);
 const PAGE_SIZE = 50;
 
-export default function MitoMeasurements({ volume, canRun }: { volume: Volume; canRun: boolean }) {
+export default function MitoMeasurements({ volume, canRun, runBlocked = false }: { volume: Volume; canRun: boolean; runBlocked?: boolean }) {
   const [source, setSource] = useState<MeasurementSource>("official");
   return (
     <section className="section-block" aria-label="Mitochondria measurements">
@@ -21,12 +21,12 @@ export default function MitoMeasurements({ volume, canRun }: { volume: Volume; c
           <option value="working">Saved working draft</option>
         </select>
       </label>
-      <MeasurementRun key={`${volume.id}-${source}`} volume={volume} source={source} canRun={canRun} />
+      <MeasurementRun key={`${volume.id}-${source}`} volume={volume} source={source} canRun={canRun} runBlocked={runBlocked} />
     </section>
   );
 }
 
-function MeasurementRun({ volume, source, canRun }: { volume: Volume; source: MeasurementSource; canRun: boolean }) {
+function MeasurementRun({ volume, source, canRun, runBlocked }: { volume: Volume; source: MeasurementSource; canRun: boolean; runBlocked: boolean }) {
   const [job, setJob] = useState<MeasurementJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -90,11 +90,11 @@ function MeasurementRun({ volume, source, canRun }: { volume: Volume; source: Me
           ? "Uses the saved draft only; unsaved canvas edits are excluded. This does not save or submit annotations."
           : "Uses the registered official label, not the working draft or a submission snapshot."}
       </p>
-      {!validSpacing && <p role="status">Set all three positive voxel sizes (nm) in the volume metadata before measuring.</p>}
+      {!validSpacing && <p role="status">Enter and save all three positive voxel sizes (nm) above before measuring.</p>}
       {unavailable && <p role="status">No official label is registered.</p>}
       <div className="row">
         {canRun ? (
-          <button type="button" disabled={loading || busy || running || !validSpacing || unavailable} onClick={() => void run()}>
+          <button type="button" disabled={loading || busy || running || runBlocked || !validSpacing || unavailable} onClick={() => void run()}>
             {busy ? "Queueing…" : running ? "Measurement in progress…" : "Run measurements"}
           </button>
         ) : <span className="muted">A manager can run measurements; existing results are available below.</span>}
@@ -104,7 +104,7 @@ function MeasurementRun({ volume, source, canRun }: { volume: Volume; source: Me
       {error && <p className="error" role="alert">{error}</p>}
       {loading ? <p role="status">Loading measurements…</p> : job ? (
         <p role="status">Run #{job.id} · {job.status}{job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ""}</p>
-      ) : <p className="muted">No measurements have been run for this label source.</p>}
+      ) : !error ? <p className="muted">No measurements have been run for this label source.</p> : null}
       {job?.error && <p className="error" role="alert">{job.error}</p>}
       {result && (
         <>

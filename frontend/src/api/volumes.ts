@@ -14,6 +14,9 @@ export interface VolumeEdit {
   label_path?: string;
   label_type?: string;
   dataset?: number;
+  voxel_size_z?: number;
+  voxel_size_y?: number;
+  voxel_size_x?: number;
 }
 
 export const editVolume = (id: number, data: VolumeEdit) =>

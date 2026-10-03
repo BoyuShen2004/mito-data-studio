@@ -167,7 +167,20 @@ test("volume measurements queue explicitly and show source, units and CSV export
     }
     await route.fulfill({ json: { job } });
   });
-  await page.goto("/volumes/9");
+  let spacing: Record<string, number> = {};
+  await page.route("**/api/projects/3/volumes/", route => route.fulfill({ json: [{ ...visualVolume, ...spacing }] }));
+  await page.route("**/api/volumes/9/", async route => {
+    if (route.request().method() === "PATCH") spacing = route.request().postDataJSON();
+    await route.fulfill({ json: { ...visualVolume, ...spacing, image_path: "image.tif", label_path: "labels.tif", region_mask_path: "" } });
+  });
+  await page.goto("/projects/3?tab=measurements&volume=9");
+  await expect(page.getByRole("tab", { name: "Measurements" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("button", { name: "Run measurements" })).toBeDisabled();
+  for (const [axis, value] of [["Z", "30"], ["Y", "16"], ["X", "16"]]) {
+    await page.getByLabel(`${axis} (nm)`, { exact: true }).fill(value);
+  }
+  await page.getByRole("button", { name: "Save voxel size" }).click();
+  await expect(page.getByRole("button", { name: "Run measurements" })).toBeEnabled();
   const section = page.getByRole("region", { name: "Mitochondria measurements" });
   await expect(section.getByText(/No measurements have been run/)).toBeVisible();
   expect(requests).toEqual([]);

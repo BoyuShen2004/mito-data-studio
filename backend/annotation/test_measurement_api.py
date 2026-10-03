@@ -146,3 +146,13 @@ class MeasurementAPITests(TestCase):
         data = self.client.get(self.url).data["job"]
         self.assertIsNone(data["result"])
         self.assertIn("unavailable", data["error"])
+
+    def test_explicit_spacing_update_enables_measurement_without_label_writes(self):
+        Volume.objects.filter(pk=self.volume.pk).update(voxel_size_z=None, voxel_size_y=None, voxel_size_x=None)
+        before = (self.root / "labels.tif").read_bytes()
+        response = self.client.patch(f"/api/volumes/{self.volume.pk}/", {
+            "voxel_size_z": 30, "voxel_size_y": 16, "voxel_size_x": 16,
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.queue()
+        self.assertEqual(before, (self.root / "labels.tif").read_bytes())

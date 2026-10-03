@@ -1,6 +1,11 @@
 # Mitochondria measurements
 
-On a volume detail page, **Mitochondria measurements** offers two explicit
+Open **Project → Measurements**, select a volume, and enter its actual Z/Y/X
+voxel size in nm if missing. **Save voxel size** explicitly updates only that
+volume's metadata; it does not run measurements or modify labels. Unsaved
+spacing blocks measurement until saved. Volume detail pages link here.
+
+**Mitochondria measurements** offers two explicit
 sources: **Official label** (the registered label) and **Saved working draft**.
 Managers can queue a run. Users who already have access to the volume can read
 its latest result for each source and export CSV. Public shares do not expose

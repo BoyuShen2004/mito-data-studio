@@ -95,8 +95,15 @@ describe("ProjectDetailPage tabs", () => {
     open("");
     await screen.findByRole("tab", { name: "Overview" });
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "Overview", "Data2", "Tasks2", "Cases0", "People", "Settings",
+      "Overview", "Data2", "Tasks2", "Cases0", "Measurements", "People", "Settings",
     ]);
+  });
+
+  it("opens Measurements from the project tabs", async () => {
+    open("");
+    fireEvent.click(await screen.findByRole("tab", { name: "Measurements" }));
+    expect(await screen.findByText("No volumes registered in this project.")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Measurements" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("carries a breadcrumb up to the project list", async () => {

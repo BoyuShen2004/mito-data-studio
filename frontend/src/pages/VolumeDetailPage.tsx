@@ -8,7 +8,6 @@ import {
   volumeDependents,
 } from "../api/volumes";
 import { listProjectTasks } from "../api/tasks";
-import MitoMeasurements from "../components/MitoMeasurements";
 import Breadcrumb from "../components/Breadcrumb";
 import DeleteButton from "../components/DeleteButton";
 import StatusBadge from "../components/StatusBadge";
@@ -114,7 +113,7 @@ export default function VolumeDetailPage() {
       <div className="volume-body">
         <div className="volume-main">
           <MetadataDetailsCard volume={v} task={task} />
-          <MitoMeasurements key={v.id} volume={v} canRun={isManager} />
+          <p><Link to={`/projects/${v.project}?tab=measurements&volume=${v.id}`}>Open Measurements for this volume</Link></p>
           <StreamingStatusCard
             volume={v}
             isManager={isManager}

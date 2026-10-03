@@ -51,7 +51,7 @@ describe("MitoMeasurements", () => {
   it("keeps unknown voxel spacing unknown and disables running", async () => {
     render(<MitoMeasurements volume={{ ...volume, voxel_size_y: null }} canRun />);
     await screen.findByText(/No measurements have been run/);
-    expect(screen.getByText(/Set all three positive voxel sizes/)).toBeTruthy();
+    expect(screen.getByText(/Enter and save all three positive voxel sizes/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Run measurements" }) as HTMLButtonElement).disabled).toBe(true);
     expect(runMeasurements).not.toHaveBeenCalled();
   });
