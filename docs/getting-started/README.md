@@ -31,7 +31,9 @@ Mito Data Studio 把显微图像、线粒体标注、任务分配、审核和测
 ```
 
 - **Save** 保存草稿，不是提交审核。**Submit** 创建用于审核的快照。
-- **Approve** 才会把选定快照变成正式结果；被退回的任务可以继续修改并重新提交。
+- **Approve** 把选定快照变成正式结果；但撤回团队分配也会提升已保存草稿，正式标签不一定经过审核。
+- 编辑器每 30 秒及隐藏标签页时尝试自动保存；离开或 Submit 前仍需按 **Save** 并检查成功。
+  未确认的 Track preview 也可能被自动保存，见[已知限制](../user-guide/06-assisted-and-track.md#failure-and-safety-rules)。
 - AI proposal 是候选结果，需要检查。接受 proposal 和保存标注是不同操作。
 - Measurements 读取正式 label 或已保存草稿，测量本身不修改标注。
 - 公共分享只读。没有体素尺寸时不能猜测实际长度或体积。

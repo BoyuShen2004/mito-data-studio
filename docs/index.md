@@ -41,6 +41,11 @@ docs/
 - 工程：[根目录文件说明](engineering/root-files.md)、[架构](engineering/architecture.md)、[数据与存储](engineering/data-and-storage.md)、[AI 与算法](engineering/ai-and-algorithms.md)、[测量实现](engineering/measurements.md)、[审计与改进建议](engineering/software-audit.md)。
 - 发布：[带日期的验证历史](release/validation-history.md)、[第三方归属](attribution.md)。
 
+## 当前实现核对
+
+[Documentation audit](research/documentation-audit.md) 记录 main 的文档差异、代码/测试依据与验证范围，
+包括自动保存、Track preview、CUDA 要求及正式标签提升的例外。
+
 ## 维护文档
 
 新增操作说明放在 `user-guide/`；内部设计放在 `engineering/`；部署步骤放在 `operations/`。

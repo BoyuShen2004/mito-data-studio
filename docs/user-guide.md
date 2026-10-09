@@ -36,14 +36,18 @@ New to the lab? Start with the [Chinese onboarding guide](getting-started/README
 ## Core mental model
 
 - Registered images and region masks are immutable source data.
-- An editable label is a separate working copy. Browser changes remain pending
-  until **Save** succeeds.
+- A working label is separate from registered sources. Browser changes are pending
+  until a successful save. The editor also attempts autosave every 30 seconds and
+  when the tab is hidden; explicitly **Save** and check the result before Submit.
 - **Save** updates the working draft; **Submit for review** creates an immutable
   review snapshot. They are different operations.
 - Project access, team eligibility, and task assignment are three separate
   permissions. A person may have one without the others.
-- AI and whole-volume results are proposals. They require review and the normal
-  Save flow; the system does not silently persist them.
-- Public links are always read-only and can be revoked.
+- Inspect SAM2 proposals and whole-volume plans before accepting them. Accepted
+  edits enter the ordinary draft buffer. Track previews already enter that buffer
+  before Confirm; see the [persistence caveat](user-guide/06-assisted-and-track.md#failure-and-safety-rules).
+- Public links are read-only. Database-backed project/dataset/volume and hard-case
+  links are revocable; legacy signed task links have no per-link revocation or
+  age expiry. See [sharing](user-guide/08-collaboration-and-safety.md#public-sharing).
 
 For operators and developers, return to the [documentation index](index.md).

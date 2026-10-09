@@ -52,7 +52,10 @@ metadata on the volume page before analysis.
 
 Deleting a project, dataset, or volume later removes its dependent work and the
 files the application generated for it, including a deleted dataset's folder.
-Registered source files are never deleted.
+Current registered source paths are protected; earlier imported labels whose
+references were replaced by approval may lose that protection inside a deleted
+folder. Archive original inputs independently. App-generated approved labels
+may be removed, while generic processing-job history/output remains.
 
 ## 4. Build optional streaming derivatives
 
@@ -82,8 +85,10 @@ already recorded attribution and annotation time.
 5. Use Undo/Redo for pending edits.
 6. Press **Save** to write the current draft.
 
-Save is explicit. A preview, AI result, or propagation result is not durable
-until it passes through the normal confirmation and Save workflow.
+Use explicit Save to verify persistence. The editor also attempts autosave every
+30 seconds and on tab hiding; Verify flushes pending planes. Track previews enter
+the pending buffer before Confirm and are not excluded by autosave. See the
+[Track persistence caveat](06-assisted-and-track.md#failure-and-safety-rules).
 
 ### Manual and deterministic tools
 
@@ -91,8 +96,8 @@ until it passes through the normal confirmation and Save workflow.
 | --- | --- |
 | Brush | Paint the active instance ID |
 | Erase / box erase | Replace selected label pixels with background |
-| Merge | Replace one instance ID with another under the selected policy |
-| Split | Separate disconnected components into distinct IDs |
+| Merge | Merge two IDs across the volume, keeping the smaller ID |
+| Split | Separate 26-connected 3-D components; clear those below 100 voxels |
 | Flood fill | Fill a connected region from a seed |
 | Seeds | Split a bounded 3-D target by watershed from user-provided seeds |
 | Interpolate | Generate intermediate masks between two reviewed endpoint layers |
@@ -116,7 +121,8 @@ until it passes through the normal confirmation and Save workflow.
 5. Run **Propagate selected** or **Propagate all (N)**.
 6. Monitor the class count and elapsed timer while the request runs.
 7. Scrub the returned canvas preview.
-8. Choose **Confirm** to keep the compound pending edit or **Reject** to undo it.
+8. Choose **Confirm** to keep the already-staged preview and retire its queue
+   entries, or **Reject** to restore pre-propagation planes as pending edits.
 9. Press the editor's ordinary **Save** when satisfied.
 
 Disconnected seed components become automatically inferred branches. The
@@ -126,10 +132,13 @@ preview rather than a genealogy report.
 
 ## 7. Region-only work
 
-When a region mask exists, enable **Only inside region mask** to focus on label
-instances touching the ROI and protect outside content from ordinary edits.
-Use **Jump to region** to navigate to an occupied plane. The ROI is a read-only
-reference layer and never becomes an editable label.
+When a region mask exists, **Region only** displays whole instances touching the
+ROI anywhere in the volume and protects hidden instances. Outside empty-space
+paint may still be staged. Inside-only Save asks before discarding outside edits;
+switch the filter off to include that work under the chosen overwrite projection.
+See [Region only](06-assisted-and-track.md#region-only-mode) before confirming.
+**Jump to region** finds the nearest occupied plane in the current axis. The ROI
+is a read-only reference layer and never becomes an editable label.
 
 ## 8. Record and discuss hard cases
 

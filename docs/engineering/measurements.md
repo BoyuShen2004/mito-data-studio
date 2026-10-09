@@ -14,7 +14,8 @@ volume's metadata; it does not run measurements or modify labels. Unsaved
 spacing blocks measurement until saved. Volume detail pages link here.
 
 **Mitochondria measurements** offers two explicit
-sources: **Official label** (the registered label) and **Saved working draft**.
+sources: **Official label** (the current official reference, initially registered
+labels) and **Saved working draft**.
 Managers can queue a run. Users who already have access to the volume can read
 its latest result for each source and export CSV. Public shares do not expose
 measurement endpoints. Merely opening the page does not start computation.
@@ -54,6 +55,47 @@ Migration `processing.0003` only adds a job-type choice; no domain/data migratio
 is involved. Deploy the pinned Python requirements, apply that migration,
 and reload the web service and restart its processing dispatcher. No feature flags
 or annotation lifecycle settings change.
+
+## Export and provenance limits
+
+Browser CSV columns, in order, are:
+
+```text
+volume_id,run_id,source,measured_at,voxel_size_z_nm,voxel_size_y_nm,voxel_size_x_nm,dust_size_voxels,label_id,voxel_count,volume_um3,skeleton_length_um
+```
+
+Browser export uses unrounded numeric values from the result. The offline command
+exports only `label_id,voxel_count,volume_um3,skeleton_length_um`, with six
+significant digits for physical values. It runs synchronously without a
+ProcessingJob, web crop cap or before/after fingerprint check; keep inputs stable
+and archive spacing/source/command separately.
+
+Job config records source path, device/inode/size/mtime/ctime and effective spacing;
+result JSON records timestamp, source, spacing, dust threshold, method and scope.
+These are metadata fingerprints, not content hashes. CSV does not include the
+full TEASAR parameters, software/dependency version or review-approval evidence.
+The latest job per source is shown, so a failed newer run does not automatically
+fall back to an older successful run. Changed input during execution fails without
+publishing partial results; a completed stale result remains explicitly historical.
+
+The padded crop spans all components sharing an instance ID, even distant ones;
+the 8,000,000-voxel limit applies to its bounding-box volume, not foreground count.
+The full label scan and input reader can also consume memory: this cap is not a
+guarantee of total process memory. TEASAR uses the vendored helper's fixed parameters
+(`scale=1.5`, `const=500`, `max_paths=50`, branching/border fixes); retain exact
+`annotation/third_party/em_erl_skel.py` and kimimaro version for reproducibility.
+
+## Deployment prerequisites
+
+The web API pins measurement jobs to the local processing backend regardless of
+`MITO_PROCESSING_BACKEND`; SAM2/GPU and SLURM are not used for skeletonization.
+The dispatcher must run with kimimaro and dependencies installed. The release lock
+pins kimimaro 5.8.5 and the conda manifest includes it. Current Docker profile
+manifests omit it, and Compose does not start a dispatcher. Stock images therefore
+do not provide a working measurement runtime for nonempty labels. Use a separately
+validated release/conda measurement environment; do not treat HTTP queue success
+as proof that a container can compute results. This configuration gap is recorded
+in the [audit](../research/documentation-audit.md#ambiguities-and-suspected-implementation-bugs-no-runtime-changes).
 
 Validation uses synthetic labels and isolated test storage. Never run a production
 measurement as part of a development deployment smoke test.

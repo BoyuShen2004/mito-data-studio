@@ -6,5 +6,7 @@
 - [Claims matrix](claims-matrix.md)：区分代码支持的功能与尚未验证的科学主张。
 - [Reproducibility](reproducibility.md)：记录版本、环境、数据和复现条件。
 
+- [Documentation audit](documentation-audit.md)：当前 main 的实现/测试/文档核对、修正及待维护者决定的问题。
+
 能显示结果、自动化测试通过、真实数据上的测量准确性，分别需要不同证据。
 没有专门实验时，不应声称提高了生物学准确率或标注效率。发布要求见[发布检查](../release/checklist.md)。
