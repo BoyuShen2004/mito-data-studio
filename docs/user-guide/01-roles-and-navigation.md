@@ -133,8 +133,8 @@ annotator cannot find a task.
 - If redirected after opening a page, confirm the account role and project
   membership.
 - If **Annotate** is absent, confirm the task is open and assigned to the current
-  annotator. Managers may inspect more broadly, but inspection does not accrue
-  the annotator's time.
+  annotator. Managers can edit any unlocked task as well as inspect more broadly;
+  manager activity does not accrue the assigned annotator's time.
 - If the page seems stale after a role or access change, return to **Home** and
   reopen the project.
 - A list that looks empty may simply be filtered: the dropdowns and the

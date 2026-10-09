@@ -4,7 +4,9 @@
 
 Model output is assistive. SAM 2 creates proposals or pending plans that
 remain subject to human inspection, Confirm/Reject where applicable, and the
-editor's explicit Save. The software does not retrain the model and does not
+editor's save path, which includes best-effort autosave and Verify's flush. Track
+preview persistence has an unresolved autosave caveat described in the
+[audit](../research/documentation-audit.md#ambiguities-and-suspected-implementation-bugs-no-runtime-changes). The software does not retrain the model and does not
 represent its output as validated biological ground truth.
 
 ## Interactive segmentation
@@ -27,8 +29,8 @@ The application:
 
 Encoder features are cached twice: an in-process LRU per worker, and a shared
 float16 on-disk cache so a worker that has not seen a plane loads it instead of
-re-encoding. The model runs on CUDA when a GPU is available and on the CPU
-(slowly) otherwise; if SAM 2 or its weights cannot load, the tools report
+re-encoding. The application SAM2 provider requires CUDA (`Sam2TrackingProvider._load`);
+CPU fallback is disabled. If CUDA, SAM2 or its weights cannot load, the tools report
 themselves unavailable rather than substituting a weaker model.
 
 For a point prompt, SAM 2's candidate masks are first restricted to components
@@ -68,8 +70,9 @@ as an ordered frame sequence and supplies mask prompts on selected layers.
 For one queued class, the backend:
 
 1. validates an explicit inclusive z range;
-2. splits disconnected seed geometry into deterministic branches, discarding
-   components smaller than the configured minimum;
+2. splits disconnected seed geometry into deterministic branches and filters
+   small specks; if none meets the configured minimum, deliberately tiny prompts
+   are retained rather than silently erased;
 3. assigns temporary provider object IDs;
 4. clusters distant prompts into bounded xy windows;
 5. initializes a mutable SAM2 video-predictor session and propagates prompts in
@@ -102,9 +105,13 @@ repository: <https://github.com/facebookresearch/sam2>.
   new positive instance IDs.
 - **Watershed:** runs scikit-image watershed over a bounded 3-D crop using a
   distance-transform surface and user seeds.
-- **Interpolation:** computes intermediate masks between reviewed endpoint
-  layers with physical in-plane spacing when known.
-- **Flood fill:** fills a connected target region inside a bounded block.
+- **Interpolation:** the editor computes intermediate masks in a browser worker
+  from saved/pending endpoint planes in pixel coordinates. Separate backend
+  interpolation plan/apply APIs can use physical in-plane spacing; the editor
+  does not use them for this tool.
+- **Flood fill:** the editor fills a same-value component in browser memory,
+  with 4-connectivity in-plane or 6-connectivity across an axial depth block.
+  Separate backend plan/apply APIs also exist.
 - **Merge/delete:** plans label-ID replacements or clearing while protecting
   verified labels and respecting overwrite policy.
 - **3-D surfaces:** applies light Gaussian smoothing and scikit-image marching

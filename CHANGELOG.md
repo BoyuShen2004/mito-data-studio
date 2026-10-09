@@ -12,7 +12,7 @@ follows semantic versioning for tagged releases.
   files and dependency versions are unchanged. Makefile now runs backend tests
   from their discovery directory and names the production build explicitly.
 
-- Consolidated maintained documentation under `docs/`, with Chinese onboarding,
+- Consolidated maintained documentation under `docs/`, with English onboarding,
   a glossary, code-reading guides, a Measurements user guide, and a local-link
   checker. Old document paths remain as forwarding pages; runtime paths and
   application behavior are unchanged.

@@ -1,19 +1,24 @@
-# Python 发布依赖
+# Python release dependencies
 
-- `release.in`：维护者编辑的直接依赖与版本约束。
-- `release.txt`：生成的依赖锁，包含间接依赖和下载哈希；部署时使用。
+- `release.in`: direct dependencies and version constraints edited by maintainers.
+- `release.txt`: generated lock containing transitive dependencies and download
+  hashes, used for release installation.
 
-两者不是重复文件。依赖变更后，从仓库根目录运行 `release.txt` 顶部记录的编译命令，再审查差异。
-目录整理只更新路径，不升级或重新解析依赖。
+After dependency changes, run the compilation command recorded at the top of
+`release.txt` from the repository root, then review the diff. Moving these files
+did not upgrade or resolve dependencies again.
 
-在独立发布虚拟环境中安装：
+Install into an isolated release virtual environment:
 
 ```bash
 uv pip install --python /path/to/release/venv/bin/python \
   --index-strategy unsafe-best-match --require-hashes -r requirements/release.txt
 ```
 
-这里同时使用 PyPI 与 PyTorch 索引，版本和哈希由锁文件限定。
-`environment.yml` 另外描述 Conda 开发环境，包括 Python、Node 和 CUDA；
-`ops/docker/requirements-*.txt` 则用于 Docker 的 core/CPU/GPU 构建分层。
-它们不是上述发布锁的同义副本，不能直接合并。参见[开发环境](../docs/development.md)。
+The lock uses both PyPI and the PyTorch index, with versions and hashes fixed by
+the lock. `environment.yml` separately describes the Conda development
+environment, including Python, Node and CUDA. `ops/docker/requirements-*.txt`
+defines core/CPU/GPU container dependency layers; those manifests are not copies
+of the release lock and currently omit kimimaro. See
+[development](../docs/development.md) and
+[measurement prerequisites](../docs/engineering/measurements.md#deployment-prerequisites).

@@ -3,6 +3,29 @@
 This page preserves dated validation evidence, not a live build badge. It does
 not establish that every later commit is release-ready.
 
+## 2026-10-09 — documentation audit against main at `1c47b3b`
+
+The checkout branch `feature/measure-mito` matched freshly fetched `origin/main`
+at `1c47b3bce8e032957687aba9ec658e026eae1ac7`. Only documentation changed.
+The [audit report](../research/documentation-audit.md) records source/test
+references, corrections, exact backend selection and unresolved behavior.
+
+| Check | Result |
+| --- | --- |
+| Documentation links and heading anchors | Passed; final count recorded in audit report |
+| Git whitespace check | Passed |
+| Frontend Vitest suite | 89 files, 678 tests passed (9.71 s) |
+| TypeScript check and production frontend build | Passed |
+| Scientific-workbench Playwright suite | 9 tests passed (20.3 s), synthetic mocked API |
+| Targeted backend suite | 744 tests in 540.142 s, OK; 6 PostgreSQL concurrency tests skipped on SQLite |
+
+Backend checks used isolated SQLite/test storage and a temporary virtualenv
+layered over the development Conda environment, with kimimaro 5.8.5 installed.
+This was not a clean release-lock environment. No live GPU/SAM2, SLURM,
+production deployment, Docker profile or PostgreSQL concurrency validation was
+performed. Existing tests do not cover the unresolved Track/autosave interaction
+or approval-then-delete protection of historical source labels.
+
 ## 2026-10-02 — main at `2623d2e`
 
 The deployment validation recorded 678 frontend tests, 9 scientific-workbench

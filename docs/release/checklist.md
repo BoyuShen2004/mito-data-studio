@@ -38,6 +38,22 @@ as open source or granting reuse rights. Do not change that decision implicitly.
 - [ ] Publish known limitations and security/contact information.
 - [ ] Create an immutable signed tag and record container image digests.
 
+## Current implementation gaps to verify
+
+- Review unresolved Track-preview autosave persistence and working-team
+  withdrawal promotion before making data-state guarantees.
+- Confirm the dispatcher is supervised and accepts the intended job types.
+- Validate measurement dependencies: current Docker manifests omit kimimaro.
+- Do not treat ai-cpu as a supported SAM2 runtime; application SAM2 requires CUDA.
+- Match all nine backend features and frontend build declarations; portable
+  no-demo builds use the [aligned settings](../operations/docker.md#upgrade-profiles).
+- Retain/plan processing-job artifacts explicitly; domain deletion does not purge them.
+- Check historical imported-label protection after approval and dataset/project
+  deletion; current-path protection is not an archive of previous inputs.
+- Decide the legacy signed task-share policy: no per-link revocation or age expiry.
+
+Evidence and remaining test limits: [documentation audit](../research/documentation-audit.md).
+
 ## Required before a Scientific Reports submission
 
 - [ ] Freeze the exact software tag used for all reported results.

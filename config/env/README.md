@@ -1,15 +1,20 @@
-# 配置模板
+# Environment templates
 
-只保存示例配置。实际配置仍放在仓库根目录的 `.env`、`.env.docker` 或 `.env.docker.dev`，并由 Git 忽略。
-不要把真实密钥或生产配置放进此目录。
+This directory contains example configuration only. Active local files remain
+at the repository root as `.env`, `.env.docker` or `.env.docker.dev`, and Git
+ignores them. Do not put real secrets or production configuration here.
 
-从仓库根目录选择**一种**环境，只在目标文件不存在时复制：
+Choose one environment from the repository root, and copy its template only if
+the destination does not already exist:
 
-| 场景 | 模板 → 本地文件 | 对应入口 |
+| Environment | Template → local file | Entry point |
 | --- | --- | --- |
-| Conda + 本地 Django/Vite | `config/env/host.env.example` → `.env` | `make setup` / `make dev` |
-| Docker 完整部署 | `config/env/docker.env.example` → `.env.docker` | `docker compose --env-file .env.docker …` |
-| Docker 完整开发栈 | `config/env/docker-dev.env.example` → `.env.docker.dev` | `make docker-dev-up` |
+| Conda with local Django/Vite | `config/env/host.env.example` → `.env` | `make setup` / `make dev` |
+| Docker web/database deployment | `config/env/docker.env.example` → `.env.docker` | `docker compose --env-file .env.docker …` |
+| Docker development web/database stack | `config/env/docker-dev.env.example` → `.env.docker.dev` | `make docker-dev-up` |
 
-三份模板面向不同运行方式，不能合成同一套默认值。它们的字段和值未因目录整理改变。
-完整步骤见[开发文档](../../docs/development.md)和[Docker 文档](../../docs/operations/docker.md)。
+These templates target different runtime setups. Preserve their separate
+identities and defaults. Moving templates did not change their fields or values.
+See [development](../../docs/development.md) and
+[Docker deployment](../../docs/operations/docker.md) for configuration steps,
+aligned feature flags and separately started processing dispatchers.

@@ -121,7 +121,8 @@ The root `.env` is copied from `config/env/host.env.example`. Important settings
 - AI/tracking provider and model settings documented in `config/env/host.env.example`.
 
 Source images and region masks are immutable inputs. Annotation writes go to an
-application-owned working mask; approval creates the official checkpoint.
+application-owned working mask; approval installs the official label. Working-team
+withdrawal can also promote a saved draft without approval.
 
 ### Feature flags — development runs what production runs
 

@@ -1,10 +1,14 @@
-# 研究与论文材料
+# Research and manuscript materials
 
-这些文档用于描述方法和整理证据，不是初次使用软件的教程。
+These pages describe methods and organize evidence. For application tutorials,
+start with the [user guide](../user-guide.md).
 
-- [Methods](methods.md)：实现方法及仍需研究者填写的实验信息。
-- [Claims matrix](claims-matrix.md)：区分代码支持的功能与尚未验证的科学主张。
-- [Reproducibility](reproducibility.md)：记录版本、环境、数据和复现条件。
+- [Methods](methods.md): implementation methods and study-specific information researchers must supply.
+- [Claims matrix](claims-matrix.md): implemented capabilities versus scientific claims requiring further evidence.
+- [Reproducibility](reproducibility.md): version, environment, data and reproduction conditions.
+- [Documentation audit](documentation-audit.md): comparison of main, tests and documentation, corrections and unresolved maintainer decisions.
 
-能显示结果、自动化测试通过、真实数据上的测量准确性，分别需要不同证据。
-没有专门实验时，不应声称提高了生物学准确率或标注效率。发布要求见[发布检查](../release/checklist.md)。
+Displaying a result, passing automated tests and measuring real biological data
+accurately require different evidence. Claims of improved biological accuracy or
+annotation efficiency require dedicated experiments. See the
+[release checklist](../release/checklist.md) for publication requirements.

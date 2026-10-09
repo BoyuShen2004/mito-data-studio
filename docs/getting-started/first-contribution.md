@@ -1,13 +1,17 @@
-# 第一次贡献：从一个小改动开始
+# First contribution: start with a small change
 
-先读[代码地图](../engineering/code-map.md)和[产品约定](../product-invariants.md)。
-建议第一次修正文档或一个已有页面的显示问题，不从重写画布、账号权限或数据库迁移开始。
+Read the [code map](../engineering/code-map.md) and
+[product invariants](../product-invariants.md) first. A documentation correction
+or a display fix on an existing page is a suitable first contribution. Canvas
+rewrites, authorization changes and database migrations need broader context.
 
-## 准备独立开发环境
+## Prepare an isolated development environment
 
-1. 先确认自己操作的是个人开发 checkout，而不是实验室正在使用的 dev/production 部署目录。
-2. 按[开发环境指南](../development.md)安装依赖，使用独立数据库和 `MITO_DATA_ROOT`。不要复制生产 `.env`。
-3. 在干净工作区更新 main，再创建自己的分支，例如：
+1. Confirm you are in your own development checkout, rather than the lab's
+   running development or production deployment directory.
+2. Follow the [development guide](../development.md), using your own database
+   and `MITO_DATA_ROOT`. Do not copy the production `.env`.
+3. With a clean worktree, update main and create a branch, for example:
 
    ```bash
    git switch main
@@ -15,15 +19,19 @@
    git switch -c docs/explain-measurements
    ```
 
-   `git status` 若有未完成改动，先处理或保存自己的工作，不要用 reset 丢弃它。
+   If `git status` shows unfinished work, preserve or finish it before switching.
+   Do not discard it with reset.
 
-## 找文件 → 小改动 → 验证
+## Find the files, change a small scope, then verify
 
-- 文档改动：正文放在对应 `docs/` 子目录，从索引链接过去；不要修改旧迁移入口中的正文。
-- 页面改动：从路由找到 page，再找到 component。阅读相邻测试，保留按钮行为和数据状态的含义。
-- 后端改动：从 URL 找 API，再找 service 和测试。前端隐藏按钮不等于后端授权。
+- Documentation: put maintained content in the appropriate `docs/` directory
+  and link from the index. Keep compatibility pages as forwarding material.
+- Frontend: follow the route to a page, then its components. Read adjacent tests
+  and preserve button behavior and the meaning of application state.
+- Backend: follow the URL to the API, service and tests. Frontend visibility
+  does not substitute for backend authorization.
 
-在已经配置好的个人开发环境、仓库根目录运行：
+From the repository root in your configured development environment:
 
 ```bash
 python scripts/docs/check_links.py
@@ -31,7 +39,8 @@ npm run typecheck --prefix frontend
 npm test --prefix frontend
 ```
 
-后端示例使用临时 SQLite 和临时文件目录，避免连接共享数据库。先激活项目 Python 环境：
+This backend example uses temporary SQLite and file storage. Activate the project
+Python environment first:
 
 ```bash
 mito_test_dir=$(mktemp -d)
@@ -43,18 +52,26 @@ mito_test_dir=$(mktemp -d)
 )
 ```
 
-这只是一个模块的快速检查，不能替代完整后端测试，特别是 PostgreSQL 并发行为。
-完整测试应从 `backend/` 运行 `python manage.py test --noinput`，连接自己的测试环境，并检查发现的测试数量不为零。
-测量测试需要安装测量依赖；需要哪些检查由实际改动决定，文档改动不必运行 GPU 算法测试。
+This checks one module; it does not replace the backend suite or PostgreSQL
+concurrency tests. Run the full suite from `backend/` with
+`python manage.py test --noinput`, using your own test environment, and confirm
+that a nonzero number of tests was discovered. Measurement tests require the
+measurement dependencies. Choose checks appropriate to the change; translating
+documentation does not require live GPU inference tests.
 
-生产前端检查使用 `npm run build:production --prefix frontend`。
-`npm run build` / `make build` 会保留开发账号构建标志，不要把它们的产物直接当作生产包。
-浏览器回归入口是 `frontend/playwright.scientific.config.ts`；当前配置依赖此主机的 `/snap/bin/chromium`，换电脑需先配置可用浏览器。
+Check the production frontend with `npm run build:production --prefix frontend`.
+`npm run build` / `make build` retains the development-account build flag;
+use the explicit production build for deployment. Browser regressions use
+`frontend/playwright.scientific.config.ts`, whose current browser path is
+`/snap/bin/chromium`. Configure an available browser when using another host.
 
-## 交给同学审查
+## Prepare for review
 
-执行 `git diff --check` 和 `git diff`，确认没有夹带数据、密钥或不相关改动。
-PR 写清楚：原来的问题、改后的行为、实际运行的检查，以及没验证的部分。
-文档需要能让没有参与聊天的同学独立读懂；测试未运行时不要写“已通过”。
+Run `git diff --check` and inspect `git diff` for unrelated edits, data and secrets.
+Describe the original problem, resulting behavior, checks actually run and any
+unverified scope in the PR. Documentation should be understandable without the
+chat history. Never report tests as passed if they were not run.
 
-完整规则见 [CONTRIBUTING](../../CONTRIBUTING.md)。提交 PR 和部署服务是两件事，合并本身不会自动证明生产可安全更新。
+See [CONTRIBUTING](../../CONTRIBUTING.md) for the full workflow. Merging a PR and
+deploying a service are separate actions; merging alone does not establish that
+production can be updated safely.

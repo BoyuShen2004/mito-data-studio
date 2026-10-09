@@ -4,36 +4,58 @@
 
 ## Draft, pending edits, and Save
 
-The editable mask on disk is the working draft. New browser edits are pending
-in memory until **Save** succeeds. **Undo** and **Redo** operate on pending edit
-history. A revision-aware save will not silently clear a newer concurrent edit;
-if the save fails or a conflict appears, stop and resolve it before submitting.
+The editable mask on disk is the working label. New browser edits are pending
+until a save succeeds. The editor attempts autosave every 30 seconds and when
+the tab is hidden, except when Region only would discard recorded outside edits.
+This is best-effort: use **Save** and check the unsaved indicator before Submit
+or leaving. **Verify** also saves pending planes before verifying a label.
 
-**Delete layer** clears every label on the displayed plane only. **Reset labels**
-restores the entire task to its registered starting mask and is irreversible.
+**Undo** and **Redo** change browser edit history. If an edit was already saved,
+save the reversal to update disk. Save acknowledges only the revisions it sent;
+a newer edit remains pending. On a stale-save conflict the editor reloads the
+affected plane and retains non-overlapping pending changes. Overlapping changes
+must be inspected and reapplied; a verified-label conflict restores protected
+pixels while retaining unrelated edits. A multi-plane save can partially succeed
+before an error, so check remaining pending work before retrying.
+
+**Delete layer** asks for confirmation, then clears unprotected label pixels on
+the displayed plane only; verified and hidden protected IDs survive. **Reset labels**
+restores the entire task to its registered reset seed (updated by approval) and
+is irreversible.
 These controls have very different scope.
 
 ## Active label and overwrite policy
 
-Select an existing instance or choose **New** before adding pixels. The
-overwrite policy determines whether a tool can write only into background
-(`empty only`, the conservative default) or replace existing label voxels
-(`overwrite all`). Check it again before a fill, interpolation, or 3-D tool.
+Select an existing instance or choose **New** before adding pixels. **Empty voxels
+only** is the default for Interpolate, Flood fill and Track; **All voxels** permits
+replacement within their scope. Region only has a separate outside-edit
+overwrite control. These controls do not govern ordinary Brush or committed
+SAM2 masks: those can replace unverified, visible labels. Erase clears such
+pixels regardless of the active ID. Verified labels remain protected in either
+mode; Region only additionally protects hidden non-ROI instances.
 
 ## Tool reference
 
-| Tool | How to use it | Main caution |
+| Tool | Scope and action | Inspection / recovery |
 | --- | --- | --- |
-| Select | Click an instance to make its ID active | Confirm the color/ID before painting |
-| Brush | Paint the active ID with the selected circular/square footprint | Overwrite policy controls collisions |
-| Erase | Clear pixels with the eraser footprint | It writes background, not another label |
-| Box Erase | Drag a rectangle to clear an area | The whole rectangle is affected |
-| Flood fill | Click a connected region under the cursor | Verify connectivity and configured depth |
-| Merge | Choose two label IDs; the result uses the smaller ID | Affects every matching voxel in scope; inspect first |
-| Split | Split disconnected 3-D components of one label into new IDs | Intended for disconnected components, not arbitrary boundary drawing |
-| Seeds | Place seed points on one target, then run the bounded 3-D watershed split | Review seeds, target ID, ROI protection, and returned preview |
-| Interpolate | Paint reviewed masks on start/end layers, set both endpoints, then fill between them | Endpoints are one-based and must bound the intended object |
-| Delete | Remove every voxel belonging to the selected ID | Whole-label destructive action |
+| Select | Picks the ID under the cursor; changes selection only | Also available in read-only viewing |
+| Brush | Circular footprint on the displayed 2-D plane; writes active ID over unprotected pixels | Size is diameter in pixels; size 1 edits one pixel. Undo reverses the stroke |
+| Erase | Circular footprint on the displayed plane; writes zero | Active ID does not restrict erasing; inspect before saving |
+| Box Erase | Clears unprotected pixels in the dragged 2-D rectangle | Undo reverses; verified/hidden protected content survives |
+| Flood fill | Browser computation: 4-connected same-value region in 2-D, or 6-connected axial block with Depth (z) greater than 1 | Empty-only refuses a nonzero seed. Y/X views use depth 1; result enters pending edits |
+| Merge | Server returns changed planes for two IDs across the volume; smaller ID survives | Applied as a compound pending edit; inspect and Undo if wrong |
+| Split | Server returns a bounded 3-D, 26-connected split of the active ID | Components below 100 voxels are cleared; largest survivor keeps the ID, others receive fresh IDs. All-small targets may disappear; Undo reverses the pending result |
+| Seeds (Watershed) | User seeds split one target in a bounded 3-D neighborhood; server returns planes | Inspect the applied pending result and Undo; an oversized global crop may use the seeded neighborhood, while oversized seed spans fail |
+| Interpolate | Browser worker computes intermediate masks of the active ID between two nonadjacent endpoint layers in the selected axis | Uses saved plus pending endpoint geometry, in pixel coordinates; endpoints are unchanged. Applies one compound pending edit, then jumps to the middle layer |
+| Delete | Removes the active ID across the volume through a server plan | Requires confirmation; applied as pending planes, Undo reverses |
+| Undo / Redo | Reverses/reapplies browser strokes or compound tool edits | Does not revert saved disk bytes until the reversal is saved; Track prompt history is separate |
+
+Split/Watershed can preserve their planned changes outside the ROI even with
+Region only on; ordinary ROI saves clip outside edits. Merge/Delete and local
+fill/interpolation protect hidden and verified content. Backend plan responses
+do not write label files. In the editor, deterministic results are applied as
+pending edits for inspection and Undo, without a separate Confirm dialog.
+Persistence uses the save path, including autosave described above.
 
 Flood fill and Interpolate appear only when the deployment enables them. Point
 Mask, Box Mask, and Boundary are described in
@@ -61,6 +83,15 @@ modified shortcuts are the ones you can change in **Profile**; the defaults use
 the letters above, the **Delete** tool has none, and every assignment must be
 unique. Brush/eraser size and cursor footprint affect subsequent strokes, so
 check them after switching browsers or tools.
+
+## Verify is separate from approval
+
+**Verify** (`F`) first saves all pending planes, then persists per-label verification
+state. Verified IDs are protected from painting and tool replacement, including
+when **Hide Verified** hides them. **Unverify** removes that protection. A label
+must exist in the saved volume; an unused active ID cannot be verified. Verification
+is annotator metadata, not a submission or manager approval. Reset and approval
+re-seeding start a fresh verification lifecycle.
 
 ## Suggested editing loop
 

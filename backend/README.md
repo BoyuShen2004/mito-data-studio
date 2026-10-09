@@ -1,12 +1,17 @@
-# Backend 导读
+# Backend reading guide
 
-Django 负责权限、元数据、标注保存、审核和后台计算；体素文件存储与数据库分开。
+Django handles authorization, metadata, label persistence, review and processing.
+Voxel files are stored separately from database records.
 
-1. 从 [API 路由](config/urls.py) 找到你关注的请求。
-2. 进入对应 app 的 API、service、model 和相邻测试。
-3. 用 [Measurements 示例](../docs/engineering/feature-walkthrough.md) 实际追踪一次。
+1. Find the request in [API routes](config/urls.py).
+2. Follow its app's API, services, models and adjacent tests.
+3. Trace the [Measurements example](../docs/engineering/feature-walkthrough.md).
 
-完整的 [app 职责地图](../docs/engineering/code-map.md)、[数据契约](../docs/engineering/data-and-storage.md)和[开发命令](../docs/development.md)在统一文档树中。
+The maintained documentation contains the [app map](../docs/engineering/code-map.md),
+[data contract](../docs/engineering/data-and-storage.md) and
+[development commands](../docs/development.md).
 
-完整 Django 测试从本目录运行 `python manage.py test --noinput`，并检查测试数量不是零。
-先配置独立开发/测试数据库与数据目录，不能连接生产。迁移文件记录历史，不要为了整理文件而移动或重排它们。
+Run the full Django suite from this directory with
+`python manage.py test --noinput` and check that discovery finds a nonzero number
+of tests. Configure isolated development/test databases and data storage first.
+Migration files record history; do not move or reorder them to tidy the repository.

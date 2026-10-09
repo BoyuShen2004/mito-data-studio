@@ -152,7 +152,7 @@ batch across all GPUs.
 
 | Host | Expected behavior |
 | --- | --- |
-| CPU-only laptop/server | Core or AI-CPU image; Track can use the local provider, with a smaller slab/crop recommendation |
+| CPU-only laptop/server | Core image for ordinary annotation; explicit local Track is a CPU stand-in. AI-CPU does not enable application SAM2; use conservative slab/crop limits |
 | One NVIDIA GPU | SAM2 uses device 0; worker count and crop maximum are limited according to VRAM |
 | Two or more NVIDIA GPUs | SAM2 defaults to device 0 and serves both Track and the interactive mask tools; remaining GPUs are not automatically used for one Track batch |
 | Explicit env overrides | The probe reports recommendations but does not replace the operator's values |
