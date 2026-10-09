@@ -56,6 +56,16 @@ is involved. Deploy the pinned Python requirements, apply that migration,
 and reload the web service and restart its processing dispatcher. No feature flags
 or annotation lifecycle settings change.
 
+## Header detection caveat
+
+Header reads are cached by path and modification time (`core/utils.py`). Rapid
+in-place source rewrites that preserve that timestamp can return stale spacing,
+including unknown values from an earlier header. Keep registered sources stable;
+a maintainer can invalidate the process header cache or restart the process after
+an external replacement. See [audit B09](../research/documentation-audit.md#english-documentation-follow-up--2026-10-09)
+for the reproduced limitation and intermittent regression-test failure. This
+cache caveat does not supply missing physical calibration.
+
 ## Export and provenance limits
 
 Browser CSV columns, in order, are:

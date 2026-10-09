@@ -5,11 +5,11 @@ assigning mitochondria annotation work, editing instance labels, and reviewing
 results. It provides requester, manager, and annotator workflows in one Django
 and React application.
 
-## 新组员从这里开始
+## Start here as a new team member
 
-- **先学使用**：[入门路线](docs/getting-started/README.md) → [术语表](docs/getting-started/glossary.md) → [使用手册](docs/user-guide.md)。
-- **准备开发**：[代码地图](docs/engineering/code-map.md) → [Measurements 功能追踪](docs/engineering/feature-walkthrough.md) → [第一次贡献](docs/getting-started/first-contribution.md)。
-- **查完整文档**：[统一文档入口](docs/index.md)。使用已有实验室服务的组员不需要执行下面的部署命令。
+- **Learn the workflow:** [Getting started](docs/getting-started/README.md) → [Glossary](docs/getting-started/glossary.md) → [User guide](docs/user-guide.md).
+- **Prepare to develop:** [Code map](docs/engineering/code-map.md) → [Measurements feature walkthrough](docs/engineering/feature-walkthrough.md) → [First contribution](docs/getting-started/first-contribution.md).
+- **Browse all documentation:** [Documentation index](docs/index.md). Team members using an existing lab service do not need to run the deployment commands below.
 
 ## Quick start with Docker
 

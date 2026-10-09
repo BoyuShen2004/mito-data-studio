@@ -1,49 +1,65 @@
-# 追踪一个功能：Measurements
+# Trace a feature: Measurements
 
-这个例子连接“网页按钮”和“后台计算”。先按[操作指南](../user-guide/09-measurements.md)理解用户看到什么，再打开下面的文件。
+This example connects UI controls to backend computation. Read the
+[user workflow](../user-guide/09-measurements.md) first, then follow these files.
 
-## 1. 页面与输入
+## 1. Page and inputs
 
-[ProjectDetailPage.tsx](../../frontend/src/pages/ProjectDetailPage.tsx) 挂载 Measurements tab。
-[ProjectMeasurements.tsx](../../frontend/src/components/ProjectMeasurements.tsx) 管理 volume 选择和 voxel size 表单；
-[MitoMeasurements.tsx](../../frontend/src/components/MitoMeasurements.tsx) 管理 source、排队、状态和结果。
+[ProjectDetailPage.tsx](../../frontend/src/pages/ProjectDetailPage.tsx) mounts the
+Measurements tab.
+[ProjectMeasurements.tsx](../../frontend/src/components/ProjectMeasurements.tsx)
+handles volume selection and voxel-size inputs;
+[MitoMeasurements.tsx](../../frontend/src/components/MitoMeasurements.tsx)
+handles source selection, queueing, status and results.
 
-这里的 state 是浏览器状态，不等于数据库记录。切换 volume 时，要避免上一个异步请求覆盖新 volume 的结果。
+Browser state is distinct from database records. When switching volumes, stale
+asynchronous responses must not replace the newly selected volume's state.
 
-## 2. 浏览器调用 API
+## 2. Browser API requests
 
-[api/measurements.ts](../../frontend/src/api/measurements.ts) 通过公共客户端发送请求：
+[api/measurements.ts](../../frontend/src/api/measurements.ts) uses the common client:
 
-| 请求 | 意义 |
+| Request | Effect |
 | --- | --- |
-| `GET /api/volumes/:id/measurement-spacing/` | 读取可用的真实 spacing，不保存元数据 |
-| `GET /api/volumes/:id/measurements/?source=official` | 获取这个来源最近的作业和结果 |
-| `POST /api/volumes/:id/measurements/` | 请求排队；不在 HTTP 请求内完成骨架计算 |
+| `GET /api/volumes/:id/measurement-spacing/` | Reads available physical spacing without saving metadata |
+| `GET /api/volumes/:id/measurements/?source=official` | Reads the latest job/result for that source |
+| `POST /api/volumes/:id/measurements/` | Queues a run; skeletonization does not execute inside the HTTP request |
 
-在 [config/urls.py](../../backend/config/urls.py) 查这些路径，就能找到
-[measurement_api.py](../../backend/annotation/measurement_api.py)。
-后端仍然检查身份和权限，即使有人绕过前端直接发请求，也不能靠显示按钮获得权限。
+Find these routes in [config/urls.py](../../backend/config/urls.py), which leads to
+[measurement_api.py](../../backend/annotation/measurement_api.py). Read endpoints
+require authentication and volume-view access. Run requests require a manager.
+UI controls do not replace backend authorization.
 
-## 3. 数据和计算
+## 3. Data and computation
 
-- [measurement_spacing.py](../../backend/annotation/measurement_spacing.py)：逐轴保留登记值，再补充可读取的文件元数据。未知仍是未知。
-- [processing/models.py](../../backend/processing/models.py)：持久化作业状态。
-- [processing/services.py](../../backend/processing/services.py)：dispatcher 领取作业，调用相应 runner。
-- [measurement_jobs.py](../../backend/annotation/measurement_jobs.py)：选取输入、核对文件和 spacing 是否变化、保存派生结果。
-- [measurements.py](../../backend/annotation/measurements.py)：逐 ID 统计体积并计算骨架长度。
+- [measurement_spacing.py](../../backend/annotation/measurement_spacing.py): preserves registered spacing per axis, then supplements missing axes from readable file metadata. Missing calibration stays unknown.
+- [processing/models.py](../../backend/processing/models.py): persists processing-job metadata and status.
+- [processing/services.py](../../backend/processing/services.py): the dispatcher claims jobs and invokes the appropriate runner.
+- [measurement_jobs.py](../../backend/annotation/measurement_jobs.py): selects inputs, checks file/spacing changes and stores derived results.
+- [measurements.py](../../backend/annotation/measurements.py): computes per-ID voxel counts, physical volume and skeleton cable length.
 
-存储中的 spacing 单位为 µm，测量引擎使用 nm。转换发生在明确的边界，不能因为表单显示 nm 就把原始数值直接存成 µm。
-网页只排队而 dispatcher 未启动时，结果不会自己出现。中断恢复等已知改进见[审计记录](software-audit.md)。
+Stored spacing is in µm; the form and measurement engine use nm. Convert at the
+measurement boundary instead of storing nm values as µm. Measurement API jobs
+select the local processing backend and execute via the dispatcher's native
+Python runner, separately from interactive SAM2 inference.
 
-## 4. 找到约束它的测试
+A queued job will not run until a dispatcher accepts it with the required
+dependencies installed. See the [measurement prerequisites](measurements.md#deployment-prerequisites)
+and [audit](../research/documentation-audit.md#ambiguities-and-suspected-implementation-bugs-no-runtime-changes)
+for deployment and interrupted-job recovery limits.
 
-| 测试 | 保护什么 |
+## 4. Follow the regression tests
+
+| Test | Behavior covered |
 | --- | --- |
-| [ProjectMeasurements.test.tsx](../../frontend/src/components/ProjectMeasurements.test.tsx) | volume 选择、spacing 读取和保存 |
-| [MitoMeasurements.test.tsx](../../frontend/src/components/MitoMeasurements.test.tsx) | 发起作业、状态和结果呈现 |
-| [test_measurement_api.py](../../backend/annotation/test_measurement_api.py) | API 权限、排队、输入变化 |
-| [test_measurement_spacing.py](../../backend/annotation/test_measurement_spacing.py) | 轴顺序、单位和缺失值 |
-| [test_measurements.py](../../backend/annotation/test_measurements.py) | 已知合成形状的体积与长度 |
+| [ProjectMeasurements.test.tsx](../../frontend/src/components/ProjectMeasurements.test.tsx) | Volume selection and spacing detection/save |
+| [MitoMeasurements.test.tsx](../../frontend/src/components/MitoMeasurements.test.tsx) | Explicit queueing, job status and result presentation |
+| [test_measurement_api.py](../../backend/annotation/test_measurement_api.py) | API authorization, queueing and input changes |
+| [test_measurement_spacing.py](../../backend/annotation/test_measurement_spacing.py) | Axis order, units and missing values |
+| [test_measurements.py](../../backend/annotation/test_measurements.py) | Volume and length for known synthetic shapes |
 
-练习：沿代码说明“为什么打开页面不会开始计算”和“为什么未 Save 的编辑不会进入结果”。
-先回答这两个问题，再尝试改计算功能。合成测试通过也不等于真实科研样本的生物学准确性已经得到验证。
+Exercise: trace why opening the page does not start computation and why
+browser-only pending edits cannot be measurement inputs. Edits already persisted
+by explicit Save or autosave are part of the saved working source. Answer these
+questions before changing computation. Synthetic test success does not establish
+biological accuracy on real research samples.

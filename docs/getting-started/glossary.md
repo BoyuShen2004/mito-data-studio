@@ -1,26 +1,28 @@
-# 术语表
+# Glossary
 
-| 术语 | 在本软件中的意思 | 容易混淆的地方 |
+| Term | Meaning in this application | Common distinction |
 | --- | --- | --- |
-| Project 项目 | 一组科研工作及其成员、数据、任务 | 不是一个图像文件 |
-| Dataset 数据集 | 项目内对 volumes 的分组 | 同项目可以有多个数据集 |
-| Volume 体数据 | 一份三维显微图像及关联的 label、ROI 和元数据 | Slice 只是其中一层 |
-| Voxel 体素 | 三维数组中的一个元素，可理解为三维像素 | 体素数量不是物理体积 |
-| Z / Y / X | 内部数组的轴顺序；轴向浏览按 Z 切片 | 不能随意交换顺序 |
-| Physical voxel size | 每个轴上一个体素对应的实际尺寸 | Measurements 表单用 nm；内部元数据用 µm |
-| Image | 显微镜得到的强度图像 | 软件不会把标注画进原图 |
-| Label / instance ID | 整数分割；0 为背景，正整数区分对象 | label 颜色是显示方式，不是新的科学类别 |
-| ROI / region mask | 指定关注区域的掩膜；非零表示区域内 | 不是线粒体实例标注 |
-| Task 任务 | 分配给一个人的 volume 标注工作 | 项目访问权限不等于被分配任务 |
-| Working draft 草稿 | Save 成功后持久化的可编辑 label | 浏览器中尚未 Save 的编辑不在其中 |
-| Submission snapshot | Submit 时创建的不可变审核副本 | 后续改草稿不会同步改这个快照 |
-| Official label 正式标签 | 当前正式引用；初始标签、审核结果或撤回团队时提升的草稿 | 不一定等于最新草稿 |
-| Proposal 候选结果 | 算法生成、等待检查的建议标注 | 不是自动认可的真实结果 |
-| Hard case 难例 | 需要团队讨论的对象或问题记录 | 不是另一个自动提交渠道 |
-| Pyramid 图像金字塔 | 用于快速浏览的多分辨率派生数据 | 不替代原始数据，也不是可编辑草稿 |
-| API | 浏览器与后端交换数据的接口 | 隐藏按钮不能替代后端权限检查 |
-| Migration 数据库迁移 | 随代码版本记录的数据库结构或数据变更 | 不是复制实验图像，也不是重置数据库 |
-| Dispatcher | 领取并执行后台作业的进程 | 网页成功排队不代表作业已经运行 |
-| dev / production | 练习开发环境 / 正式科研环境 | 应使用独立数据库、文件和配置 |
+| Project | Related research work, members, data and tasks | A project is not an image file |
+| Dataset | A group of volumes within a project | One project can contain multiple datasets |
+| Volume | Microscopy image data with associated labels, ROI and metadata | A slice is one plane of a volume |
+| Voxel | One element of a 3-D array | Voxel count is not physical volume |
+| Z / Y / X | Internal array axis order; axial navigation indexes Z | Do not swap axes without checking the data contract |
+| Physical voxel size | Physical size of a voxel along each axis | Measurements uses nm in the form; stored metadata uses µm |
+| Registered source image | Microscopy intensity data registered with the application | Annotation does not paint into the source image |
+| Label / instance ID | Integer segmentation: 0 is background, positive integers identify objects | Display colors do not create scientific categories |
+| ROI / region mask | A read-only region of interest; nonzero means inside | It is not editable mitochondria instance segmentation |
+| Task | Volume annotation work assigned to one annotator | Project access does not imply task assignment |
+| Working label / saved working draft | Editable label persisted by a successful save | Pending browser-only edits are excluded; autosave can persist them |
+| Pending edit | A browser-buffer change not yet acknowledged by a successful save | It can be saved explicitly or by best-effort autosave |
+| Submission snapshot | Immutable label copy created by Submit for review | Later working-label edits do not update its bytes |
+| Official label | Current official reference: initial label, approved snapshot or draft promoted on withdrawal | It need not be the latest draft or an approved result |
+| SAM2 proposal | Model-generated candidate segmentation awaiting inspection | It is not automatically accepted ground truth |
+| Hard case | A recorded object or question for team discussion | It is not another submission channel |
+| Pyramid | Derived multiresolution data for viewing | It replaces neither the source nor the editable draft |
+| API | Interface between browser and backend | Hidden buttons do not substitute for backend authorization |
+| Migration | Versioned database schema or data change | It is not an image copy or database reset |
+| Processing dispatcher | Process that claims and executes queued processing jobs | Successful queueing does not mean execution has started |
+| Development / production | Practice/development environment versus live research service | Keep their databases, storage and configuration separate |
 
-精确的轴、格式和存储约定见[数据契约](../engineering/data-and-storage.md)。
+See the [data contract](../engineering/data-and-storage.md) for exact axes,
+formats and storage conventions.

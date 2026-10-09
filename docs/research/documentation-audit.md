@@ -438,3 +438,37 @@ API/failure fixtures did not produce test failures.
 - docs/user-guide/08-collaboration-and-safety.md
 - docs/user-guide/09-measurements.md
 - docs/user-guide/workflows.md
+
+
+## English documentation follow-up — 2026-10-09
+
+After audit commit `46832d8`, translated the remaining Chinese onboarding,
+indexes, measurements guide, engineering reading guides, directory READMEs and
+compatibility forwarding pages into English. Removed the stale “Chinese
+onboarding guide” link label. `docs/` remains the maintained documentation tree.
+Kept UI labels, routes, filenames, permissions, units and pending/saved/snapshot
+terminology aligned with the implementation. Explicitly distinguished browser-only
+pending edits from edits already persisted by autosave in the Measurements
+walkthrough. No runtime, test, configuration or licensing changes were made.
+The preceding severity counts and file list describe the original audit pass.
+
+Follow-up checks:
+
+- Scanned all 68 tracked Markdown files: no Chinese characters remain.
+- `python scripts/docs/check_links.py`: 311 local links, zero errors.
+- Checked 54 unique concrete implementation-file references: zero missing files.
+- `git diff --check`: passed.
+- `npm test --prefix frontend -- src/components/ProjectMeasurements.test.tsx src/components/MitoMeasurements.test.tsx`: 14 tests passed.
+- In an isolated SQLite/test-storage environment, reran `annotation.test_measurement_api` and `annotation.test_measurement_spacing`: 19 tests, 18 passed and one error, twice. The failure was `MeasurementSpacingTests.test_nifti_requires_declared_spatial_units`; it passed in the earlier 744-test run. Do not interpret that earlier run as proof this case is stable.
+
+**B09 — header-cache invalidation:** `backend/core/utils.py:_header_cached`
+keys header reads by kind, path and floating-point modification time. The
+NIfTI spacing test rewrites an unknown-unit file with declared micron units at
+the same path. A follow-up probe reproduced unchanged modification timestamps
+in 22 of 30 rapid writes, yielding stale cached unknown spacing each time despite
+valid updated units. Direct `nifti_voxel_size_zyx` reads or `clear_header_cache`
+recovered the calibrated values in every stale case. This is an implementation
+limitation exposed by the existing test, not a translation regression. Registered
+sources should remain stable; maintainers should decide how to invalidate header
+metadata reliably after replacement and make this regression deterministic in a
+separate code task. Runtime behavior was not changed in this documentation pass.

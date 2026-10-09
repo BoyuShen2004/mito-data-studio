@@ -1,46 +1,63 @@
-# 9. Measurements：测量已有标注
+# 9. Measurements: analyze saved labels
 
-入口是 **Project → Measurements**。先选择 Volume；Manager 可以发起测量，已有 volume 访问权限的成员可以读取结果和导出 CSV。
+Open **Project → Measurements** and select a volume. Managers can start a run;
+authenticated users with volume-view access can read results and export CSV.
+Public shares do not expose measurements.
 
-## 操作顺序
+## Run measurements
 
-1. 选择 Volume，等待读取 physical voxel size。已登记值优先，缺失轴再从支持的原始文件元数据读取。
-2. 核对 Z、Y、X，单位是 **nm**。缺失时从采集记录取得实际值再输入；不能用猜测值代替。手动修改后按 **Save voxel size**。
-3. 选择 **Official label** 或 **Saved working draft**。后者不包含浏览器中尚未 Save 的编辑。
-4. 按 **Run measurements**，等待后台作业完成。
-5. 查看每个 label ID 的结果，或导出 CSV。更换 Volume 或 source 会切换对应的结果。
+1. Select a volume and wait for physical voxel size detection. Registered values
+   take priority; supported source-file metadata supplies missing axes.
+2. Check Z, Y and X in **nm**. Obtain missing values from acquisition records;
+   do not guess. After manual changes, press **Save voxel size**.
+3. Choose **Official label** or **Saved working draft**. The latter excludes
+   pending edits still held only in the browser.
+4. Press **Run measurements** and wait for the processing job to finish.
+5. Inspect results per label ID or export CSV. Changing volume or source selects
+   that combination's latest job and result.
 
-完整的自动读取值可以直接用于测量；读取元数据不会自动改写已登记值。
-测量既不保存标注，也不提交或审批任务。
+Complete detected spacing can be used immediately. Detection does not write
+registered metadata. **Save voxel size** updates spacing metadata only;
+measurements do not save labels, submit work or approve tasks.
 
-Official label 指当前正式标签引用：可能是初始登记标签、审核通过的快照，
-也可能是[撤回团队分配](03-people-and-assignment.md#working-team-changes-and-withdrawal)时提升的已保存草稿。
-名称不保证已通过审核。提交快照不能直接选为测量来源；必须先通过审批安装，或测量已有正式/工作文件。
-同一 Volume 同时只允许一个 queued/running 测量，另一个 source 也不能并行发起。
-如果输入在执行前或执行中改变，作业失败且不发布部分结果；确认 Save 完成再重跑。
+The official label is the current reference: it may be an initial registered
+label, an approved submission snapshot or a saved draft promoted during
+[working-team withdrawal](03-people-and-assignment.md#working-team-changes-and-withdrawal).
+The name does not guarantee review approval. Submission snapshots cannot be
+selected directly as measurement sources; approval must first install a
+snapshot as the official label, or use an existing official/working file.
 
-## 结果代表什么
+Only one measurement may be queued or active per volume, including across the
+two sources. If inputs change before or during execution, the job fails without
+publishing partial results. Ensure label saves have finished before retrying.
 
-- Voxel count：该 ID 包含的体素数量。
-- Volume（µm³）：数量乘以每个体素的实际体积。
-- Skeleton cable length（µm）：骨架所有边的总长度，不是对象两端的直线距离。
+## Understand the results
 
-例如 Z/Y/X 为 30/16/16 nm，100 个体素的体积是
-`100 × 0.03 × 0.016 × 0.016 = 0.000768 µm³`。
-这只是单位换算示例，不是推荐填写的体素尺寸。
+- **Voxel count:** number of voxels with this ID.
+- **Volume (µm³):** voxel count multiplied by calibrated voxel volume.
+- **Skeleton cable length (µm):** total length of skeleton edges, rather than
+  the straight-line distance between the object's ends.
 
-测量覆盖整个 label volume，不按 ROI 或任务范围裁剪。同一 ID 的区域合并统计；
-少于 100 体素的连通分量计入体积，但不参与骨架长度，因此长度 0 不一定表示体积 0。
+For example, with Z/Y/X spacing of 30/16/16 nm, 100 voxels occupy
+`100 × 0.03 × 0.016 × 0.016 = 0.000768 µm³`.
+This illustrates unit conversion; it is not a recommended spacing value.
 
-## 跑不了或结果过时怎么办
+Measurements cover the whole label volume without ROI or task-range clipping.
+Disconnected regions sharing one ID are measured together. Components smaller
+than 100 voxels count toward volume but are excluded from skeletonization, so
+zero cable length does not necessarily mean zero volume.
 
-| 现象 | 检查 |
+## Recover from failures or outdated results
+
+| Symptom | Check / recovery |
 | --- | --- |
-| 缺少 spacing / 按钮不可用 | 三个轴是否都有真实的正数值；手动修改是否已保存；账号是否为 Manager |
-| 没有可用 label | 选择的 source 是否存在；Saved working draft 是否已经保存 |
-| 一直 queued / Measurement failed | 请维护者检查 dispatcher 是否处理 `measure_mito` 且安装 kimimaro；当前 Docker 镜像缺少此依赖，也不自动启动 dispatcher；不要反复点运行 |
-| 超出 crop 限制 | Web 每个对象的带边界裁剪上限为 8,000,000 体素；交给维护者评估离线测量 |
-| Outdated result | label 或 spacing 已变化；确认来源后重新运行 |
+| Missing spacing or disabled Run | All three axes need real positive spacing; save manual changes and check that your account is a manager |
+| No label available | Check that the chosen source exists and the working draft has been saved |
+| Stays queued or Measurement failed | Ask the maintainer to check dispatcher job types and kimimaro dependencies. Current Docker images omit kimimaro and Compose starts no dispatcher. Repeatedly queueing work will not fix this |
+| Crop limit exceeded | Each padded object bounding box in the web path is limited to 8,000,000 voxels. Ask the maintainer to assess offline measurement |
+| Outdated result | Labels or spacing changed. Verify the source and run again |
 
-更多方法、限制和离线命令见[测量实现](../engineering/measurements.md)。
-返回[使用手册](../user-guide.md)。
+For method limits, provenance and offline commands, see the
+[measurement implementation](../engineering/measurements.md).
+
+[User guide](../user-guide.md) · Previous: [Collaboration and safety](08-collaboration-and-safety.md)

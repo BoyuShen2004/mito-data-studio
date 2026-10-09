@@ -1,55 +1,65 @@
-# Mito Data Studio 文档
+# Mito Data Studio documentation
 
-这是整个仓库的文档入口。新组员先理解标注流程，再学习代码；使用已有实验室实例不需要安装开发环境。
-入门导读使用中文，按钮和代码名称保留英文，详细工程参考目前以英文为主。
+This is the documentation entry point for the repository. New team members
+should learn the annotation workflow before exploring the code. Using an
+existing lab instance does not require a local development environment.
+Documentation is maintained in English; UI labels and code identifiers retain
+the names used by the application.
 
-## 按你的任务开始
+## Start with your task
 
-| 我想做什么 | 从这里开始 | 下一步 |
+| Goal | Start here | Next step |
 | --- | --- | --- |
-| 第一次加入项目 | [新组员入门](getting-started/README.md) | [术语表](getting-started/glossary.md) |
-| 学会使用软件 | [使用手册](user-guide.md) | 按角色选择章节 |
-| 知道 Measurements 在算什么 | [测量操作](user-guide/09-measurements.md) | [方法和实现](engineering/measurements.md) |
-| 看懂代码、准备开发 | [代码地图](engineering/code-map.md) | [一个功能如何贯穿前后端](engineering/feature-walkthrough.md) |
-| 做第一个小改动 | [第一次贡献](getting-started/first-contribution.md) | [开发环境](development.md) |
-| 安装或维护服务 | [运维入口](operations/README.md) | 选择 Docker 或已有服务器流程 |
-| 准备发布或写论文 | [发布检查](release/checklist.md) | [研究材料](research/README.md) |
+| Join the project | [Getting started](getting-started/README.md) | [Glossary](getting-started/glossary.md) |
+| Learn to use the application | [User guide](user-guide.md) | Choose chapters for your role |
+| Understand Measurements | [Measurement workflow](user-guide/09-measurements.md) | [Method and implementation](engineering/measurements.md) |
+| Explore the code before developing | [Code map](engineering/code-map.md) | [Feature walkthrough](engineering/feature-walkthrough.md) |
+| Make a first contribution | [First contribution](getting-started/first-contribution.md) | [Development environment](development.md) |
+| Install or maintain a service | [Operations](operations/README.md) | Choose Docker or the existing-host workflow |
+| Prepare a release or manuscript | [Release checklist](release/checklist.md) | [Research materials](research/README.md) |
 
-## 文档树
+## Documentation tree
 
 ```text
 docs/
-  index.md                  总入口
-  overview.md               产品范围与角色
-  getting-started/           新组员路线、术语、第一次贡献
-  user-guide.md             使用手册入口
-  user-guide/               按界面任务划分的操作说明
-  engineering/              代码地图、架构、数据、算法、测量实现
-  development.md            开发环境和日常命令
-  product-invariants.md     改代码必须保留的产品约定
-  operations/               安装、生产维护、参考硬件
-  release/                  发布检查和带日期的验证记录
-  research/                 Methods、研究证据、可复现性
-  attribution.md            第三方代码与归属
+  index.md                  Documentation entry point
+  overview.md               Product scope and roles
+  getting-started/           Onboarding, glossary, first contribution
+  user-guide.md             User guide entry point
+  user-guide/               Instructions organized by UI workflow
+  engineering/              Code map, architecture, data, algorithms, measurements
+  development.md            Development environment and routine commands
+  product-invariants.md     Product requirements changes must preserve
+  operations/               Installation, production operations, reference hardware
+  release/                  Release checks and dated validation evidence
+  research/                 Methods, research evidence, reproducibility
+  attribution.md            Third-party code and attribution
 ```
 
-旧 `documentation/` 和部分旧 `docs/*.md` 只保留迁移入口，不再维护第二份正文。
-代码、迁移和测试决定实际行为；验证记录只证明对应日期和版本，不能代表后续版本自动通过。
+The legacy `documentation/` tree and some old `docs/*.md` pages only forward to
+maintained pages. Do not maintain a second copy of a topic. Implementation,
+migrations and tests determine actual behavior; a validation record applies
+only to its stated date and version.
 
-## 专题参考
+## Reference topics
 
-- 工程：[根目录文件说明](engineering/root-files.md)、[架构](engineering/architecture.md)、[数据与存储](engineering/data-and-storage.md)、[AI 与算法](engineering/ai-and-algorithms.md)、[测量实现](engineering/measurements.md)、[审计与改进建议](engineering/software-audit.md)。
-- 发布：[带日期的验证历史](release/validation-history.md)、[第三方归属](attribution.md)。
+- Engineering: [root files](engineering/root-files.md), [architecture](engineering/architecture.md), [data and storage](engineering/data-and-storage.md), [AI and algorithms](engineering/ai-and-algorithms.md), [measurements](engineering/measurements.md), [software audit](engineering/software-audit.md).
+- Release: [dated validation history](release/validation-history.md), [third-party attribution](attribution.md).
 
-## 当前实现核对
+## Current implementation audit
 
-[Documentation audit](research/documentation-audit.md) 记录 main 的文档差异、代码/测试依据与验证范围，
-包括自动保存、Track preview、CUDA 要求及正式标签提升的例外。
+The [documentation audit](research/documentation-audit.md) records differences
+between documentation and main, implementation/test evidence, and validation
+limits. Findings include autosave, Track previews, CUDA requirements and
+exceptions to approval-based official-label promotion.
 
-## 维护文档
+## Maintain the documentation
 
-新增操作说明放在 `user-guide/`；内部设计放在 `engineering/`；部署步骤放在 `operations/`。
-每个主题保留一份完整正文，其他页面链接过去。改变功能时同步更新对应说明；不要在文档中填写真实密码、token 或生产数据。
+Put workflow instructions in `user-guide/`, internal design in `engineering/`,
+and deployment steps in `operations/`. Maintain one complete page per topic and
+link to it elsewhere. Update documentation when behavior changes. Never include
+real passwords, tokens or production data.
 
-仓库根目录执行 `python scripts/docs/check_links.py` 检查文档链接。
-贡献规则、许可证、安全政策仍在根目录：[CONTRIBUTING](../CONTRIBUTING.md)、[LICENSE](../LICENSE)、[SECURITY](../SECURITY.md)。
+Run `python scripts/docs/check_links.py` from the repository root to check local
+links. Project policies remain at the root: [CONTRIBUTING](../CONTRIBUTING.md),
+[LICENSE](../LICENSE), and [SECURITY](../SECURITY.md).

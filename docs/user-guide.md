@@ -4,7 +4,7 @@ This guide describes the current main-branch behavior of Mito Data Studio.
 Controls are permission-aware: a requester, manager, annotator, and public-link
 visitor can open the same data but see different actions.
 
-New to the lab? Start with the [Chinese onboarding guide](getting-started/README.md) and [glossary](getting-started/glossary.md).
+New to the lab? Start with the [onboarding guide](getting-started/README.md) and [glossary](getting-started/glossary.md).
 
 ## Choose a module
 

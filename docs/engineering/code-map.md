@@ -1,70 +1,79 @@
-# 代码地图：从页面找到实现
+# Code map: trace a page to its implementation
 
-先读[新组员入门](../getting-started/README.md)。不需要从第一行开始读整个仓库；先选一个功能，沿着页面、API、后端服务和测试追踪。
+Read [getting started](../getting-started/README.md) first. Choose one feature
+and follow its page, API, backend service and tests rather than reading the
+entire repository sequentially.
 
-## 顶层目录
+## Top-level directories
 
-| 路径 | 里面是什么 | 新人什么时候看 |
+| Path | Contents | When to read it |
 | --- | --- | --- |
-| [frontend/](../../frontend/) | 浏览器界面、交互、前端测试 | 改页面、工具或显示 |
-| [backend/](../../backend/) | Django API、权限、数据模型、算法、后台作业 | 理解保存、审核、测量如何完成 |
-| [docs/](../index.md) | 唯一的完整文档树 | 使用、开发、运维、研究 |
-| [documentation/](../../documentation/README.md) | 旧链接迁移入口 | 不在这里新增正文 |
-| [scripts/](../../scripts/) | 本地开发与文档检查脚本 | 重复执行开发检查 |
-| [ops/](../../ops/) | Docker、staging、production 和发布工具 | 由维护者部署时使用 |
-| [vendor/](../../vendor/) | 可选模型资源及第三方资产 | 使用 AI 功能或核对归属 |
-| [manage.py](../../manage.py)、[Makefile](../../Makefile) | 命令入口和常用命令集合 | 环境配置完成后使用 |
-| [environment.yml](../../environment.yml)、[requirements/release.txt](../../requirements/release.txt) | 开发环境 / 带哈希的发布依赖锁 | 不把已有开发环境当作固定发布环境 |
-| [frontend/package.json](../../frontend/package.json)、[frontend/package-lock.json](../../frontend/package-lock.json) | 前端命令 / 依赖锁 | 查 npm 命令和精确依赖 |
+| [frontend/](../../frontend/) | Browser UI, interactions and frontend tests | Changing pages, tools or display |
+| [backend/](../../backend/) | Django APIs, authorization, models, algorithms and processing jobs | Understanding persistence, review and measurements |
+| [docs/](../index.md) | Maintained documentation | Using, developing, operating or researching the application |
+| [documentation/](../../documentation/README.md) | Compatibility forwarding pages | Following old links; add maintained content under docs |
+| [scripts/](../../scripts/) | Development and documentation checks | Repeating local checks |
+| [ops/](../../ops/) | Docker, staging, production and release tooling | Maintainer deployment work |
+| [vendor/](../../vendor/) | Optional model resources and third-party assets | AI setup or attribution review |
+| [manage.py](../../manage.py), [Makefile](../../Makefile) | Command entry points | After configuring your environment |
+| [environment.yml](../../environment.yml), [requirements/release.txt](../../requirements/release.txt) | Development environment and hashed release dependency lock | Distinguishing development from a reproducible release environment |
+| [frontend/package.json](../../frontend/package.json), [frontend/package-lock.json](../../frontend/package-lock.json) | Frontend scripts and dependency lock | Checking npm commands and exact dependencies |
 
-本地还可能看到 `var/`、`data/`、`logs/`、`venv/`、`node_modules/`、`dist/`：它们通常是运行数据、环境或构建产物，不是需要学习或搬动的源代码。
-真实 `.env` 不入库；`.env.*.example` 是配置模板。
+Local `var/`, `data/`, `logs/`, `venv/`, `node_modules/` and `dist/` directories
+usually hold runtime data, environments or build artifacts. They are not source
+to reorganize casually. Real `.env` files are untracked; `.env.*.example` files
+are templates.
 
-## 先理解三层
+## Understand the application layers
 
-前端是浏览器中的 React/TypeScript 界面；后端是服务器上的 Django/Python 程序。
-API 把它们连接起来。数据库记录用户、任务和文件位置，显微图像及标注数组保存在文件存储中。
-修改页面文字通常只涉及前端；修改谁能保存、保存到哪里或如何计算，则需要理解后端约束。
+The frontend is React/TypeScript running in the browser; the backend is
+Django/Python on the server. APIs connect them. Database records describe users,
+tasks and file locations; microscopy and label arrays live in filesystem storage.
+UI wording usually changes in the frontend. Permissions, persistence and
+computation require understanding backend rules.
 
-根目录文件的用途与本次迁移路径见[根目录文件说明](root-files.md)。
+See [root files](root-files.md) for command/configuration entry points and moved paths.
 
-## 前端怎么读
+## Read the frontend
 
-| 顺序 | 文件或目录 | 作用 |
+| Order | File or directory | Purpose |
 | --- | --- | --- |
-| 1 | [main.tsx](../../frontend/src/main.tsx) → [AppRoutes.tsx](../../frontend/src/routes/AppRoutes.tsx) | 启动应用，按 URL 找到页面 |
-| 2 | [pages/](../../frontend/src/pages/) | Home、ProjectDetail、TaskDetail、Viewer 等整页组合 |
-| 3 | [components/](../../frontend/src/components/) | 可复用列表、表单、审核框和测量面板 |
-| 4 | [api/](../../frontend/src/api/)、[types/](../../frontend/src/types/) | 请求后端以及数据类型 |
-| 5 | [features/viewer/](../../frontend/src/features/viewer/) | 图像画布、编辑状态、工具交互；初学者按功能找，不从巨型 Canvas 文件顺读 |
-| 6 | 相邻的 `*.test.tsx` / `*.test.ts`、[e2e/](../../frontend/e2e/) | 查看行为例子和回归约束 |
+| 1 | [main.tsx](../../frontend/src/main.tsx) → [AppRoutes.tsx](../../frontend/src/routes/AppRoutes.tsx) | Application startup and URL routing |
+| 2 | [pages/](../../frontend/src/pages/) | Home, ProjectDetail, TaskDetail, Viewer and other page composition |
+| 3 | [components/](../../frontend/src/components/) | Reusable lists, forms, review controls and measurement panels |
+| 4 | [api/](../../frontend/src/api/), [types/](../../frontend/src/types/) | Backend requests and data types |
+| 5 | [features/viewer/](../../frontend/src/features/viewer/) | Canvas, editing state and tools; follow a feature through the large canvas module |
+| 6 | Adjacent `*.test.tsx` / `*.test.ts`, [e2e/](../../frontend/e2e/) | Behavioral examples and regression constraints |
 
-## 后端怎么读
+## Read the backend
 
-从 [config/urls.py](../../backend/config/urls.py) 找 API，再读对应 app 的 API、service、model 和测试。
-不同 app 的文件划分略有差别，不是每个功能都只在一个 `services.py` 中。
+Start from [config/urls.py](../../backend/config/urls.py), then find the app's API,
+service, models and tests. Module boundaries differ between apps; a feature need
+not live entirely in one `services.py`.
 
-| App | 职责 |
+| App | Responsibility |
 | --- | --- |
-| [accounts/](../../backend/accounts/) | 用户角色、机构、团队、访问和审计 |
-| [projects/](../../backend/projects/) | 项目、dataset、成员和分享 |
-| [volumes/](../../backend/volumes/) | 图像注册、元数据、ROI、金字塔和切块读取 |
-| [annotation/](../../backend/annotation/) | 标注任务、编辑、提交审核、难例、AI、测量 |
-| [processing/](../../backend/processing/) | 持久化后台作业及 dispatcher |
-| [core/](../../backend/core/) | 公共类型、存储边界、安全和部署辅助 |
+| [accounts/](../../backend/accounts/) | Roles, institutions, teams, access and audit events |
+| [projects/](../../backend/projects/) | Projects, datasets, membership and sharing |
+| [volumes/](../../backend/volumes/) | Registration, metadata, ROI, pyramids and chunk reads |
+| [annotation/](../../backend/annotation/) | Tasks, edits, submission/review, hard cases, AI and measurements |
+| [processing/](../../backend/processing/) | Durable processing jobs and dispatcher |
+| [core/](../../backend/core/) | Shared types, storage boundaries, security and deployment helpers |
 
-`models.py` 描述数据库对象，`serializers.py` 描述接口数据，`migrations/` 记录数据库演进。
-体素文件不直接塞进这些数据库表；位置、归属和生命周期见[数据与存储](data-and-storage.md)。
+`models.py` defines database objects, serializers define API representations,
+and `migrations/` records database evolution. Voxel arrays are not stored in
+these tables; see [data and storage](data-and-storage.md) for ownership and lifecycle.
 
-## 按问题定位
+## Find a feature
 
-| 我要理解 | 第一组文件 |
+| Question | Start with |
 | --- | --- |
-| Home 中的任务与 Review 按钮 | [HomePage](../../frontend/src/pages/HomePage.tsx)、[WorkList](../../frontend/src/components/WorkList.tsx) |
-| 如何测量、为什么要 spacing | [Measurements 功能追踪](feature-walkthrough.md) |
-| 草稿、提交和正式标签 | [label_paths.py](../../backend/annotation/label_paths.py)、[annotation services](../../backend/annotation/services.py)、[审核手册](../user-guide/07-submit-and-review.md) |
-| 查看图像为何可以很快 | [pyramid/](../../backend/volumes/pyramid/)、[架构](architecture.md) |
-| 哪些行为不能顺手改掉 | [产品约定](../product-invariants.md)、[AGENTS.md](../../AGENTS.md) |
+| How do Home tasks and Review controls work? | [HomePage](../../frontend/src/pages/HomePage.tsx), [WorkList](../../frontend/src/components/WorkList.tsx) |
+| How do measurements use spacing? | [Measurements walkthrough](feature-walkthrough.md) |
+| What distinguishes working labels, snapshots and official labels? | [label_paths.py](../../backend/annotation/label_paths.py), [annotation services](../../backend/annotation/services.py), [review guide](../user-guide/07-submit-and-review.md) |
+| How does streaming improve viewing? | [pyramid/](../../backend/volumes/pyramid/), [architecture](architecture.md) |
+| What behavior must changes preserve? | [Product invariants](../product-invariants.md), [AGENTS.md](../../AGENTS.md) |
 
-运行时代码目录保持稳定，避免为了整理目录破坏导入、迁移、模型路径或服务配置。
-内部大模块的拆分建议单独记录在[软件审计](software-audit.md)，不是本次文档重组的内容。
+Runtime directories remain stable so documentation organization does not break
+imports, migrations, model paths or services. Potential module refactors are
+recorded separately in the [software audit](software-audit.md).
