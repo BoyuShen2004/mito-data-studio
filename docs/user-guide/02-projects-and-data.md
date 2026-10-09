@@ -20,11 +20,11 @@ of the thing it changes:
 | --- | --- |
 | **Overview** | Status, deadline, the approval banner, progress, annotator workload, and what is publicly shared (read-only here) |
 | **Data** | Datasets and volumes, with one **Add data** button at the top right |
-| **Measurements** | Select a volume and measurement source; members read/export, managers run and save voxel size |
 | **Tasks** | The work list for this project. Tick rows and press **Assign volumes** to edit just those; press it with nothing ticked to open the whole project's plan |
 | **Cases** | Hard cases raised on this project |
 | **People** | Project members and the working team (managers) |
 | **Settings** | Edit the project, control its public link, and — in a bordered **Danger zone** at the bottom — delete it |
+| **Extensions** | Always the rightmost tab. Open research tools such as Measurements; each tool describes the actions your role can perform |
 
 Other roles see the permitted subset: People is manager-only, and Settings
 appears for managers and the requester who created the project.

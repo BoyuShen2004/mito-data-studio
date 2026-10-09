@@ -1,6 +1,11 @@
 # 9. Measurements: analyze saved labels
 
-Open **Project → Measurements** and select a volume. Managers can start a run;
+Open **Project → Extensions → Measurements** and select a volume.
+The volume detail page's **Measurements** shortcut opens the same extension with
+that volume selected. Old project Measurements links also open this workspace.
+See [Extensions](extensions.md) for discovery and access.
+
+Managers can start a run;
 authenticated users with volume-view access can read results and export CSV.
 Public shares do not expose measurements.
 

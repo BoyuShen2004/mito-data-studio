@@ -7,6 +7,12 @@ follows semantic versioning for tagged releases.
 
 ### Changed
 
+- Moved Measurements into the rightmost project **Extensions** tab for every
+  role. A typed registry lists enabled research tools and loads only the selected
+  workspace. Old Measurements links retain their volume selection. Added English
+  user instructions and guidelines for registering or disabling extensions;
+  measurement APIs, permissions and scientific computation are unchanged.
+
 - Grouped environment templates under `config/env/` and release dependencies
   under `requirements/`, updating setup and deployment references. Actual env
   files and dependency versions are unchanged. Makefile now runs backend tests

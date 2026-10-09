@@ -18,6 +18,7 @@ New to the lab? Start with the [onboarding guide](getting-started/README.md) and
 | [6. Region-only, assisted masks, and SAM2 Track](user-guide/06-assisted-and-track.md) | Protect content outside an ROI and review AI-assisted proposals safely |
 | [7. Save, submit, review, and feedback](user-guide/07-submit-and-review.md) | Understand drafts and snapshots, both submission channels, decisions, and label comments |
 | [8. Hard cases, sharing, time, profile, and safety](user-guide/08-collaboration-and-safety.md) | Collaborate, publish revocable read-only links, interpret time, and recover safely |
+| [Extensions](user-guide/extensions.md) | Discover enabled project research tools and understand role-specific actions |
 | [9. Measurements](user-guide/09-measurements.md) | Select a volume and label source, confirm physical spacing, run measurements and export results |
 
 ## Recommended end-to-end path

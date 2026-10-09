@@ -43,7 +43,8 @@ See [root files](root-files.md) for command/configuration entry points and moved
 | 3 | [components/](../../frontend/src/components/) | Reusable lists, forms, review controls and measurement panels |
 | 4 | [api/](../../frontend/src/api/), [types/](../../frontend/src/types/) | Backend requests and data types |
 | 5 | [features/viewer/](../../frontend/src/features/viewer/) | Canvas, editing state and tools; follow a feature through the large canvas module |
-| 6 | Adjacent `*.test.tsx` / `*.test.ts`, [e2e/](../../frontend/e2e/) | Behavioral examples and regression constraints |
+| 6 | [features/extensions/](../../frontend/src/features/extensions/) | Project research-tool registry, typed context and lazy workspace; see [extension guidelines](extensions.md) |
+| 7 | Adjacent `*.test.tsx` / `*.test.ts`, [e2e/](../../frontend/e2e/) | Behavioral examples and regression constraints |
 
 ## Read the backend
 
@@ -69,6 +70,7 @@ these tables; see [data and storage](data-and-storage.md) for ownership and life
 | Question | Start with |
 | --- | --- |
 | How do Home tasks and Review controls work? | [HomePage](../../frontend/src/pages/HomePage.tsx), [WorkList](../../frontend/src/components/WorkList.tsx) |
+| How do I add or disable a research tool? | [Project extension guidelines](extensions.md) |
 | How do measurements use spacing? | [Measurements walkthrough](feature-walkthrough.md) |
 | What distinguishes working labels, snapshots and official labels? | [label_paths.py](../../backend/annotation/label_paths.py), [annotation services](../../backend/annotation/services.py), [review guide](../user-guide/07-submit-and-review.md) |
 | How does streaming improve viewing? | [pyramid/](../../backend/volumes/pyramid/), [architecture](architecture.md) |

@@ -50,3 +50,14 @@ measured on.
 - Blank is a real value. Cases recorded before the field existed have none, and
   the inbox lists them as **Uncategorised** rather than guessing on their
   behalf. Clicking the selected category again clears it back to blank.
+
+## Project research extensions
+
+- **Extensions** is the rightmost project tab for every role. Research tools use
+  the shared catalog; Measurements is not a separate core tab.
+- Catalog visibility never grants permissions. Backend authorization governs
+  tool actions; annotators can read measurements but cannot start runs.
+- Opening the catalog or Measurements mutates no annotations and queues no jobs.
+  Explicit save/run controls retain their existing meaning.
+- Disabling a frontend extension preserves data and jobs. Core registration,
+  assignment, annotation and review remain available.

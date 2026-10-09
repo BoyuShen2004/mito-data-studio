@@ -8,7 +8,7 @@ and React application.
 ## Start here as a new team member
 
 - **Learn the workflow:** [Getting started](docs/getting-started/README.md) → [Glossary](docs/getting-started/glossary.md) → [User guide](docs/user-guide.md).
-- **Prepare to develop:** [Code map](docs/engineering/code-map.md) → [Measurements feature walkthrough](docs/engineering/feature-walkthrough.md) → [First contribution](docs/getting-started/first-contribution.md).
+- **Prepare to develop:** [Code map](docs/engineering/code-map.md) → [Measurements feature walkthrough](docs/engineering/feature-walkthrough.md) → [First contribution](docs/getting-started/first-contribution.md). Research tools use the [project extension contract](docs/engineering/extensions.md); Measurements is the first example.
 - **Browse all documentation:** [Documentation index](docs/index.md). Team members using an existing lab service do not need to run the deployment commands below.
 
 ## Quick start with Docker
@@ -68,7 +68,7 @@ All maintained documentation lives under [`docs/`](docs/index.md):
 | Topic | Entry point |
 | --- | --- |
 | Onboarding and terminology | [Getting started](docs/getting-started/README.md) |
-| Operating the software | [User guide](docs/user-guide.md), including [Measurements](docs/user-guide/09-measurements.md) |
+| Operating the software | [User guide](docs/user-guide.md), including [Extensions](docs/user-guide/extensions.md) → [Measurements](docs/user-guide/09-measurements.md) |
 | Code and system design | [Code map](docs/engineering/code-map.md), [architecture](docs/engineering/architecture.md) |
 | Local development | [Development](docs/development.md), [product invariants](docs/product-invariants.md) |
 | Installation and operations | [Operations](docs/operations/README.md) |

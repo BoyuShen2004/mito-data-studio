@@ -64,7 +64,7 @@ experience is organized around these three roles.
 
 ### Measurements
 
-- Project-level Measurements tab with per-volume official-label or saved-draft sources.
+- Measurements extension under the rightmost project **Extensions** tab with per-volume official-label or saved-draft sources.
 - Physical spacing read from registered metadata or supported source headers; manual entry for missing values.
 - Per-instance voxel count, physical volume, skeleton cable length and CSV export.
 - Explicit manager-triggered background jobs; labels remain unchanged.

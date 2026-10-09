@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   addProjectMember,
@@ -15,7 +15,8 @@ import { listProjectVolumes } from "../api/volumes";
 import { listHardCases } from "../api/hardCases";
 import { useAuth } from "../auth/AuthContext";
 import { useAsync, type AsyncState } from "../hooks/useAsync";
-import ProjectMeasurements from "../components/ProjectMeasurements";
+import ProjectExtensions from "../features/extensions/ProjectExtensions";
+import { legacyProjectExtension } from "../features/extensions/registry";
 import ProjectSummaryCard from "../components/ProjectSummaryCard";
 import DatasetsCard from "../components/DatasetsCard";
 import DeleteButton from "../components/DeleteButton";
@@ -36,7 +37,7 @@ import { showError } from "../errorPopup";
 /** Nouns, not verbs — "Assign" was the odd one out and is now a bulk action
  * inside Tasks; "Activity" was a junk drawer and its two halves went to
  * Overview (workload) and Cases (hard cases). */
-type ProjectTab = "overview" | "data" | "tasks" | "cases" | "measurements" | "people" | "settings";
+type ProjectTab = "overview" | "data" | "tasks" | "cases" | "people" | "settings" | "extensions";
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
@@ -52,6 +53,16 @@ export default function ProjectDetailPage() {
   const hardCases = useAsync(() => listHardCases({ project: projectId }), [projectId]);
 
   const [reviewing, setReviewing] = useState(false);
+
+  // Existing extension links keep their scoped inputs, such as volume ID.
+  const legacyExtension = legacyProjectExtension(searchParams.get("tab"));
+  useEffect(() => {
+    if (!legacyExtension) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "extensions");
+    next.set("extension", legacyExtension.id);
+    setSearchParams(next, { replace: true });
+  }, [legacyExtension, searchParams, setSearchParams]);
 
   const reloadAll = () => {
     summary.reload();
@@ -86,9 +97,9 @@ export default function ProjectDetailPage() {
     { id: "data", label: "Data", count: project.volume_count },
     { id: "tasks", label: "Tasks", count: project.task_count },
     { id: "cases", label: "Cases", count: hardCases.data?.filter((row) => row.status === "open").length },
-    { id: "measurements", label: "Measurements" },
     ...(isManager ? [{ id: "people" as const, label: "People" }] : []),
     ...(canEditProject ? [{ id: "settings" as const, label: "Settings" }] : []),
+    { id: "extensions", label: "Extensions" },
   ];
   const requested = searchParams.get("tab") as ProjectTab | null;
   const active = tabs.some((tab) => tab.id === requested)
@@ -164,9 +175,8 @@ export default function ProjectDetailPage() {
 
         {active === "cases" && <ProjectHardCases cases={hardCases} />}
 
-        {active === "measurements" && <ProjectMeasurements
-          volumes={volumes.data ?? []} loading={volumes.loading} error={volumes.error}
-          canRun={isManager} onSaved={volumes.reload}
+        {active === "extensions" && <ProjectExtensions
+          project={project} volumes={volumes} isManager={isManager}
         />}
 
         {active === "people" && isManager && <>

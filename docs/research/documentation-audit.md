@@ -1,5 +1,15 @@
 # Documentation audit — 2026-10-09
 
+## Follow-up: project Extensions
+
+The subsequent Extensions change supersedes references in this dated audit to
+a standalone Measurements tab. The current route is **Project → Extensions →
+Measurements**; legacy `tab=measurements` links retain their volume selection.
+Measurement APIs, source rules and scientific limits are unchanged. See the
+[current user guide](../user-guide/extensions.md) and
+[extension contract](../engineering/extensions.md). The historical findings below
+remain evidence for their audited baseline.
+
 ## Baseline and method
 
 Audit baseline: `origin/main` and `HEAD` both `1c47b3bce8e032957687aba9ec658e026eae1ac7`, verified after `git fetch origin main`. The checkout branch is `feature/measure-mito`; its files match main. Initial worktree was clean. This report was completed before editing other documentation. Approximate locations below describe the pre-fix documents; function/test identifiers are preferred over unstable line numbers.

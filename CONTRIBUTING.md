@@ -15,6 +15,11 @@ Thank you for improving Mito Data Studio. Before starting, read the
 5. Submit a pull request describing behavior changes, migrations, operational
    impact, and the commands used for verification.
 
+Research-specific project tools belong in the shared **Extensions** catalog.
+Follow the [extension contract and checklist](docs/engineering/extensions.md);
+Measurements demonstrates the integration. Keep workflow instructions and
+developer guidelines in English.
+
 Keep Django migrations additive. Never commit `.env`, databases, microscopy
 volumes, generated masks, pyramids, logs, model caches, or credentials. Avoid
 mixing formatting-only work with behavioral changes.

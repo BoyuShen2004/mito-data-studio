@@ -6,7 +6,12 @@ This example connects UI controls to backend computation. Read the
 ## 1. Page and inputs
 
 [ProjectDetailPage.tsx](../../frontend/src/pages/ProjectDetailPage.tsx) mounts the
-Measurements tab.
+rightmost **Extensions** tab. The [extension registry](../../frontend/src/features/extensions/registry.ts)
+lists Measurements and lazily loads its [adapter](../../frontend/src/features/extensions/measurements/extension.tsx)
+when selected. The adapter receives shared project and volume context from
+[ProjectExtensions.tsx](../../frontend/src/features/extensions/ProjectExtensions.tsx).
+See [adding a project extension](extensions.md) to reuse this host for another
+research tool without adding a core tab.
 [ProjectMeasurements.tsx](../../frontend/src/components/ProjectMeasurements.tsx)
 handles volume selection and voxel-size inputs;
 [MitoMeasurements.tsx](../../frontend/src/components/MitoMeasurements.tsx)

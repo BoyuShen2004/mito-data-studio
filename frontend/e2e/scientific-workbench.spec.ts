@@ -315,8 +315,8 @@ test("volume measurements queue explicitly and show source, units and CSV export
     if (route.request().method() === "PATCH") spacing = route.request().postDataJSON();
     await route.fulfill({ json: { ...visualVolume, ...spacing, image_path: "image.tif", label_path: "labels.tif", region_mask_path: "" } });
   });
-  await page.goto("/projects/3?tab=measurements&volume=9");
-  await expect(page.getByRole("tab", { name: "Measurements" })).toHaveAttribute("aria-selected", "true");
+  await page.goto("/projects/3?tab=extensions&extension=measurements&volume=9");
+  await expect(page.getByRole("tab", { name: "Extensions" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("button", { name: "Run measurements" })).toBeDisabled();
   for (const [axis, value] of [["Z", "30"], ["Y", "16"], ["X", "16"]]) {
     await page.getByLabel(`${axis} (nm)`, { exact: true }).fill(value);
@@ -350,11 +350,68 @@ test("source spacing auto-fills nanometres without saving volume metadata", asyn
   await page.route("**/api/volumes/9/measurements/**", route => route.fulfill({ json: { job: null } }));
   await page.goto("/projects/3?tab=measurements&volume=9");
   await expect(page.getByLabel("Z (nm)", { exact: true })).toHaveValue("30");
+  await expect(page).toHaveURL(/tab=extensions&volume=9&extension=measurements/);
   await expect(page.getByLabel("Y (nm)", { exact: true })).toHaveValue("16");
   await expect(page.getByRole("button", { name: "Run measurements", exact: true })).toBeEnabled();
   await expect(page.getByText(/Spacing from source metadata/)).toBeVisible();
   expect(writes).toEqual([]);
 });
+
+for (const role of ['manager', 'annotator']) {
+  test(`${role} discovers Measurements through the rightmost Extensions tab`, async ({ page }, info) => {
+    await installScientificFixture(page, role);
+    await signInFixture(page);
+    let measurementReads = 0;
+    // This annotator is a project viewer, not the creator used by the default fixture.
+    if (role === 'annotator') await page.route('**/api/projects/3/summary/', route => route.fulfill({ json: {
+      project: { ...visualProject, created_by: 99 }, progress: {}, workload: [],
+    } }));
+    const writes: string[] = [];
+    page.on('request', request => {
+      if (request.url().includes('/api/') && ['POST', 'PATCH', 'PUT'].includes(request.method())) writes.push(request.url());
+    });
+    await page.route('**/api/volumes/9/measurement-spacing/', route => route.fulfill({ json: {
+      voxel_size_um_zyx: [0.03, 0.016, 0.016], origins: ['source_file', 'source_file', 'source_file'],
+    } }));
+    await page.route('**/api/volumes/9/measurements/**', route => {
+      measurementReads++;
+      return route.fulfill({ json: { job: role === 'manager' ? null : {
+        id: 100, source: 'official', status: 'succeeded', is_current: true, error: '',
+        result: { source: 'official', measured_at: '2026-10-02T00:01:00Z', voxel_size_nm_zyx: [30, 16, 16],
+          dust_size_voxels: 100, method: 'TEASAR (kimimaro)', scope: 'Whole volume',
+          rows: [{ label_id: 5, voxel_count: 3600, volume_um3: 0.027648, skeleton_length_um: 1.6 }],
+        },
+      } } });
+    });
+    await page.goto('/projects/3?tab=extensions');
+    await expect(page.getByRole('button', { name: 'Open Measurements', exact: true })).toBeVisible();
+    const tabs = page.getByRole('tab');
+    await expect(tabs.last()).toHaveText('Extensions');
+    await expect(page.getByRole('tab', { name: 'Measurements', exact: true })).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath(`extensions-${role}.png`), fullPage: true });
+    expect(measurementReads).toBe(0);
+    await page.getByRole('button', { name: 'Open Measurements', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Mitochondria measurements' })).toBeVisible();
+    await expect(page).toHaveURL(/tab=extensions&extension=measurements/);
+    if (role === 'manager') {
+      await expect(page.getByRole('button', { name: 'Run measurements', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Save voxel size', exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByRole('button', { name: 'Run measurements', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Save voxel size', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: 'People', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: 'Settings', exact: true })).toHaveCount(0);
+      const download = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+      expect((await download).suggestedFilename()).toBe('mitochondria-volume-9-official-run-100.csv');
+    }
+    expect(writes).toEqual([]);
+    await page.getByRole('button', { name: /All extensions/ }).click();
+    await expect(page.getByRole('button', { name: 'Open Measurements', exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Tasks', exact: false }).click();
+    await expect(page).toHaveURL(/tab=tasks/);
+  });
+}
 
 test('pyramid polling retains pending volume metadata', async ({ page }) => {
   await installScientificFixture(page);

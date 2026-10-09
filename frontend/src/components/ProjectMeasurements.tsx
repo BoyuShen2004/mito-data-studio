@@ -4,6 +4,7 @@ import { getMeasurementSpacing } from "../api/measurements";
 import { editVolume } from "../api/volumes";
 import type { Volume } from "../types/volume";
 import MitoMeasurements from "./MitoMeasurements";
+import { projectExtensionSearch } from "../features/extensions/registry";
 
 export default function ProjectMeasurements({ volumes, loading, error, canRun, onSaved }: {
   volumes: Volume[];
@@ -25,7 +26,7 @@ export default function ProjectMeasurements({ volumes, loading, error, canRun, o
       {selected && <>
         <label className="field">
           <span>Volume</span>
-          <select aria-label="Volume" value={selected.id} onChange={event => setParams({ tab: "measurements", volume: event.target.value })}>
+          <select aria-label="Volume" value={selected.id} onChange={event => setParams(projectExtensionSearch("measurements", { volume: event.target.value }))}>
             {volumes.map(volume => <option key={volume.id} value={volume.id}>
               {volume.dataset_name ? `${volume.dataset_name} / ` : ""}{volume.name} · #{volume.id}
             </option>)}

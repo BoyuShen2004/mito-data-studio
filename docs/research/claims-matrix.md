@@ -17,6 +17,7 @@ and tests; it does not automatically mean scientifically validated.
 | Track batch throughput is improved | Timing logs and a contiguous slab optimization exist | Requires matched before/after benchmarks on frozen data/hardware |
 | The software uses all GPUs automatically | Probe detects GPUs but one Track batch is not sharded | Must not be claimed |
 | The software is hardware adaptive | Probe-derived worker/device/memory/crop recommendations and Docker env wiring | May be described with the exact scope and limitations |
+| Research tools can share a project Extensions catalog; Measurements is the first registered example | `features/extensions/` typed contract, lazy registry, host tests with two tools, role/navigation browser tests | May be described as implemented frontend extensibility. Backend integration still requires explicit APIs, authorization and job routing; no runtime plugin installation or scaling benchmark is provided |
 | The software is open source | Root license currently grants no first-party reuse permission | Must not be claimed until licensing changes |
 | Unit tests establish biological validity | Tests establish software behavior only | Must not be claimed |
 | Tasks, hard cases, and projects share one list presentation, and review occurs on the task's own page | `components/WorkList.tsx`, `pages/TaskDetailPage.tsx`, `components/ReviewBox.tsx`, UI tests | May be described as implemented interface design |

@@ -3,7 +3,7 @@
 For a first run, read the [user guide](../user-guide/09-measurements.md).
 For the request-to-runner code path, read the [feature walkthrough](feature-walkthrough.md).
 
-Open **Project → Measurements**, select a volume, and physical spacing is read automatically: registered values take priority,
+Open **Project → Extensions → Measurements**, select a volume, and physical spacing is read automatically: registered values take priority,
 then missing axes are read from the raw image header. TIFF/OME/ImageJ, NIfTI
 with declared spatial units, and HDF5 `element_size_um` are supported by the
 existing application readers. Unitless pixel ratios are not physical spacing.

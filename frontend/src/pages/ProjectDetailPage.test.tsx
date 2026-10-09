@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProjectDetailPage from "./ProjectDetailPage";
 
@@ -77,9 +77,12 @@ const summary = {
   workload: [],
 };
 
+function Location() { return <output aria-label="Current project URL">{useLocation().search}</output>; }
+
 const open = (search: string) =>
   render(
     <MemoryRouter initialEntries={[`/projects/4${search}`]}>
+      <Location />
       <Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes>
     </MemoryRouter>,
   );
@@ -99,15 +102,38 @@ describe("ProjectDetailPage tabs", () => {
     open("");
     await screen.findByRole("tab", { name: "Overview" });
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "Overview", "Data2", "Tasks2", "Cases0", "Measurements", "People", "Settings",
+      "Overview", "Data2", "Tasks2", "Cases0", "People", "Settings", "Extensions",
     ]);
   });
 
-  it("opens Measurements from the project tabs", async () => {
+  it("opens Measurements through the final Extensions tab", async () => {
     open("");
-    fireEvent.click(await screen.findByRole("tab", { name: "Measurements" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Extensions" }));
+    expect(screen.queryByText("No volumes registered in this project.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open Measurements" }));
     expect(await screen.findByText("No volumes registered in this project.")).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Measurements" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Extensions" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps Extensions last for annotators and leaves manager sections hidden", async () => {
+    harness.isManager = false;
+    open("?tab=extensions");
+    await screen.findByRole("heading", { name: "Extensions" });
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[tabs.length - 1].textContent).toBe("Extensions");
+    expect(screen.queryByRole("tab", { name: "People" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Settings" })).toBeNull();
+    expect(screen.getByText(/You can inspect results and export CSV/)).toBeTruthy();
+  });
+
+  it("preserves volume selection in legacy Measurements links", async () => {
+    open("?tab=measurements&volume=17");
+    expect(await screen.findByText("No volumes registered in this project.")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Extensions" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByLabelText("Current project URL").textContent).toBe("?tab=extensions&volume=17&extension=measurements");
+    expect(screen.getByRole("button", { name: /All extensions/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /All extensions/ }));
+    expect(await screen.findByRole("button", { name: "Open Measurements" })).toBeTruthy();
   });
 
   it("carries a breadcrumb up to the project list", async () => {

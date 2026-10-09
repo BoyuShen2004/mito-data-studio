@@ -9,6 +9,7 @@ import {
 } from "../api/volumes";
 import { listProjectTasks } from "../api/tasks";
 import Breadcrumb from "../components/Breadcrumb";
+import { isProjectExtensionEnabled, projectExtensionHref } from "../features/extensions/registry";
 import DeleteButton from "../components/DeleteButton";
 import StatusBadge from "../components/StatusBadge";
 import ShareControl from "../components/ShareControl";
@@ -120,7 +121,9 @@ export default function VolumeDetailPage() {
       <div className="volume-body">
         <div className="volume-main">
           <MetadataDetailsCard volume={v} task={task} />
-          <p><Link to={`/projects/${v.project}?tab=measurements&volume=${v.id}`}>Open Measurements for this volume</Link></p>
+          {isProjectExtensionEnabled("measurements") && <p>
+            <Link to={projectExtensionHref(v.project, "measurements", { volume: String(v.id) })}>Open Measurements for this volume</Link>
+          </p>}
           <StreamingStatusCard
             volume={v}
             isManager={isManager}
