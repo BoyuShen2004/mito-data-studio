@@ -2,13 +2,25 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import RegisterDataPage from "./RegisterDataPage";
+import { ApiError } from "../api/client";
 
 const harness = vi.hoisted(() => ({
   scan: vi.fn(),
   register: vi.fn(),
   snapshot: vi.fn(),
   reconcile: vi.fn(),
+  navigate: vi.fn(),
 }));
+
+vi.mock("react-router-dom", async importOriginal => ({
+  ...await importOriginal<typeof import("react-router-dom")>(),
+  useNavigate: () => harness.navigate,
+}));
+
+beforeEach(() => {
+  harness.navigate.mockReset();
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+});
 
 vi.mock("../auth/AuthContext", () => ({
   useAuth: () => ({ isManager: true }),
@@ -222,6 +234,62 @@ describe("Register Data volume naming", () => {
     const payload = harness.register.mock.calls[0][0];
     expect(payload.dataset).toBe("Heart set");
     expect(payload.volume).toBeUndefined();
+    await waitFor(() => expect(harness.navigate).toHaveBeenCalledWith("/projects/7?tab=data", { replace: true }));
+  });
+
+  it("stays on the registration form when explicitly registering more", async () => {
+    await scanned();
+    fireEvent.change(screen.getByLabelText(/Dataset name/), { target: { value: "Heart set" } });
+    fireEvent.click(screen.getByLabelText("Stay here to register more"));
+    fireEvent.click(screen.getByRole("button", { name: /Register 1 dataset/ }));
+    await screen.findByText("Heart set (1)");
+    expect(harness.navigate).not.toHaveBeenCalled();
+    expect((screen.getByLabelText(/Raw image directory/) as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText(/Project \*/) as HTMLSelectElement).value).toBe("7");
+  });
+
+  it("preserves an unqueued directory when only staged datasets succeeded", async () => {
+    await scanned();
+    fireEvent.change(screen.getByLabelText(/Dataset name/), { target: { value: "Heart set" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add another directory/ }));
+    fireEvent.change(screen.getByLabelText(/Raw image directory/), { target: { value: "/data/unscanned" } });
+    fireEvent.click(screen.getByRole("button", { name: /Register 1 dataset/ }));
+    await screen.findByText("Heart set (1)");
+    expect(harness.navigate).not.toHaveBeenCalled();
+    expect((screen.getByLabelText(/Raw image directory/) as HTMLInputElement).value).toBe("/data/unscanned");
+  });
+
+  it("retains only failed queued datasets after a partial batch instead of navigating", async () => {
+    await scanned();
+    fireEvent.change(screen.getByLabelText(/Dataset name/), { target: { value: "Successful set" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add another directory/ }));
+    fireEvent.change(screen.getByLabelText(/Raw image directory/), { target: { value: imagePath } });
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
+    await screen.findByText(imageName);
+    fireEvent.change(screen.getByLabelText(/Dataset name/), { target: { value: "Failed set" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add another directory/ }));
+    harness.register.mockResolvedValueOnce({ project: { id: 7 }, volumes: [{ id: 1 }] })
+      .mockRejectedValueOnce(new ApiError(400, "Source unavailable", {}));
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+    fireEvent.click(screen.getByRole("button", { name: /Register 2 datasets/ }));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringContaining("Failed set (Source unavailable)")));
+    expect(harness.navigate).not.toHaveBeenCalled();
+    const queued = screen.getByRole('button', { name: 'Remove' }).closest('table')!;
+    expect(queued.textContent).toContain('Failed set');
+    expect(queued.textContent).not.toContain('Successful set');
+    alert.mockRestore();
+  });
+
+  it("stays with the results when registered volumes could not produce tasks", async () => {
+    await scanned();
+    fireEvent.change(screen.getByLabelText(/Dataset name/), { target: { value: "Heart set" } });
+    harness.register.mockResolvedValueOnce({ project: { id: 7 }, volumes: [{ id: 1 }], skipped_volumes: 1 });
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+    fireEvent.click(screen.getByRole("button", { name: /Register 1 dataset/ }));
+    await screen.findByText("Heart set (1)");
+    expect(harness.navigate).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith(expect.stringContaining('tasks could not be created yet'));
+    alert.mockRestore();
   });
 
   it("sends the per-row rename as that volume's name", async () => {
@@ -424,6 +492,7 @@ describe("Register Data interrupted response reconciliation", () => {
       {dataset: null, volumeIds: []},
     );
     expect(alert).not.toHaveBeenCalled();
+    expect(harness.navigate).toHaveBeenCalledWith("/projects/7?tab=data", { replace: true });
     alert.mockRestore();
   });
 
@@ -437,6 +506,7 @@ describe("Register Data interrupted response reconciliation", () => {
       "Some directories could not be registered: nag_p10_batch2 (Failed to fetch)",
     ));
     expect(screen.queryByText("nag_p10_batch2 (1)")).toBeNull();
+    expect(harness.navigate).not.toHaveBeenCalled();
     alert.mockRestore();
   });
 
@@ -452,6 +522,7 @@ describe("Register Data interrupted response reconciliation", () => {
     expect(alert).not.toHaveBeenCalledWith(
       expect.stringMatching(/Some directories could not be registered/),
     );
+    expect(harness.navigate).not.toHaveBeenCalled();
     alert.mockRestore();
   });
 });

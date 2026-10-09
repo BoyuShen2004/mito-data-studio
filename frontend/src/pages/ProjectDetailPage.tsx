@@ -71,9 +71,12 @@ export default function ProjectDetailPage() {
     }
   };
 
-  if (summary.loading) return <p className="muted">Loading…</p>;
-  if (summary.error) return <div className="error">{summary.error}</div>;
-  if (!summary.data) return null;
+  // Refreshing after a team or plan save must not unmount the editor and lose
+  // its selection/draft. Only block the initial load for this project.
+  if (!summary.data || summary.data.project.id !== projectId) {
+    if (summary.error) return <div className="error">{summary.error}</div>;
+    return summary.loading ? <p className="muted">Loading…</p> : null;
+  }
 
   const { project, progress, workload } = summary.data;
   const reviewed = project.manager_reviewed;
@@ -108,6 +111,11 @@ export default function ProjectDetailPage() {
           </p>
         </div>
       </header>
+
+      {summary.error && <div className="error" role="alert">
+        Could not refresh project details: {summary.error}{" "}
+        <button type="button" className="secondary" onClick={summary.reload}>Retry</button>
+      </div>}
 
       <SectionTabs tabs={tabs} active={active} onChange={selectTab} label="Project sections" sticky />
 
@@ -366,7 +374,7 @@ function ProjectTasks({
     <button type="button" onClick={() => setAssigning(ids)}>Assign volumes</button>
   );
 
-  if (assigning) {
+  if (assigning && canAssign) {
     return (
       <section className="section-block">
         <div className="row spread section-heading">

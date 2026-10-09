@@ -19,6 +19,12 @@ For a requester-created project, approve it first. Then:
 The assignment editor can filter rows and stage multiple changes. Review the
 dirty-row count on **Save plan (N)** before committing a large plan.
 
+Choose or create the working team directly inside **Assign volumes**. Saving the
+team keeps this editor open, including pending task metadata and the rows you
+selected. Team eligibility updates immediately; task assignments still require
+**Save plan**. Switching an existing working team retains its withdrawal
+confirmation and clears pending assignees who are no longer eligible.
+
 ## Whole-volume task model
 
 One registered volume maps to one whole-volume task with at most one active

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProjectDetailPage from "./ProjectDetailPage";
@@ -39,7 +39,11 @@ vi.mock("../api/datasets", () => ({
   projectDependents: vi.fn(),
 }));
 vi.mock("../components/DatasetsCard", () => ({ default: () => <div>Datasets pane content</div> }));
-vi.mock("../components/AssignmentPlanEditor", () => ({ default: () => <div>Assignment editor</div> }));
+vi.mock("../components/AssignmentPlanEditor", () => ({ default: ({ onSaved }: { onSaved: () => void }) => <div>
+  Assignment editor
+  <input aria-label="Pending assignment instructions" />
+  <button onClick={onSaved}>Save working team</button>
+</div> }));
 vi.mock("../components/DeleteButton", () => ({ default: () => <button>Delete</button> }));
 vi.mock("../components/ProjectEditForm", () => ({ default: () => <div>Project edit form</div> }));
 vi.mock("../components/ShareControl", () => ({
@@ -61,7 +65,7 @@ const summary = {
     volume_count: 2,
     task_count: 2,
     created_by: 1,
-    working_team: null,
+    working_team: null as number | null,
   },
   progress: {
     volumes: 2,
@@ -148,6 +152,34 @@ describe("ProjectDetailPage tabs", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back to tasks" }));
     expect(await screen.findByRole("button", { name: "Assign volumes" })).toBeTruthy();
+  });
+
+  it("keeps the assignment editor and pending changes mounted while its project refreshes", async () => {
+    open("?tab=tasks");
+    fireEvent.click(await screen.findByRole("button", { name: "Assign volumes" }));
+    const instructions = screen.getByLabelText("Pending assignment instructions") as HTMLInputElement;
+    fireEvent.change(instructions, { target: { value: "Keep these draft instructions" } });
+    let finishRefresh!: (value: typeof summary) => void;
+    harness.getProjectSummary.mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Save working team" }));
+    await waitFor(() => expect(harness.getProjectSummary).toHaveBeenCalledTimes(2));
+    expect(instructions.isConnected).toBe(true);
+    await act(async () => finishRefresh({ ...summary, project: { ...summary.project, working_team: 3 } }));
+    expect(screen.getByLabelText("Pending assignment instructions")).toBe(instructions);
+    expect(instructions.value).toBe("Keep these draft instructions");
+    expect(screen.queryByRole("button", { name: "Assign volumes" })).toBeNull();
+  });
+
+  it("keeps pending assignment edits accessible after a failed summary refresh", async () => {
+    open("?tab=tasks");
+    fireEvent.click(await screen.findByRole("button", { name: "Assign volumes" }));
+    const instructions = screen.getByLabelText("Pending assignment instructions") as HTMLInputElement;
+    fireEvent.change(instructions, { target: { value: "Pending plan" } });
+    harness.getProjectSummary.mockRejectedValueOnce(new Error("Refresh unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Save working team" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Refresh unavailable");
+    expect(screen.getByLabelText("Pending assignment instructions")).toBe(instructions);
+    expect(instructions.value).toBe("Pending plan");
   });
 
   it("gives requesters the shared nouns but no People or share control", async () => {

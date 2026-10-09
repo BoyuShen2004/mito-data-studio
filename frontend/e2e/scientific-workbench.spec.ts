@@ -5,6 +5,82 @@ async function signInFixture(page: Page) {
   await page.addInitScript(() => localStorage.setItem("mito_token", "isolated-visual-fixture"));
 }
 
+test("choosing a working team keeps the assignment editor and pending instructions open", async ({ page }) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  let teamId: number | null = null;
+  let summaryReads = 0;
+  const collaboration = {
+    institutions: [], users: [{ id: 7, username: 'researcher', role: 'annotator' }],
+    teams: [{ id: 8, name: 'Microscopy team', members: [{ user_id: 7, username: 'researcher' }] }],
+  };
+  await page.route('**/api/collaboration/', route => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toEqual({ action: 'set_project_working_team', project_id: 3, team_id: 8 });
+      teamId = 8;
+    }
+    return route.fulfill({ json: collaboration });
+  });
+  await page.route('**/api/projects/3/summary/', route => {
+    summaryReads++;
+    return route.fulfill({ json: { project: { ...visualProject, working_team: teamId }, progress: {}, workload: [] } });
+  });
+  await page.route('**/api/projects/3/assign-plan/rows/', route => route.fulfill({ json: {
+    created_tasks: 0, skipped_volumes: 0,
+    entries: [{ ...visualTask, dataset_id: 1, dataset_name: visualTask.dataset,
+      file_format: 'tiff', assigned_to: null, voxel_size_z: 0.03, voxel_size_y: 0.016, voxel_size_x: 0.016 }],
+  } }));
+  await page.goto('/projects/3?tab=tasks');
+  await page.getByRole('button', { name: 'Assign volumes', exact: true }).click();
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Instructions', exact: true }).fill('Preserve this unsaved plan');
+  await page.getByLabel('Working team', { exact: true }).selectOption('8');
+  await expect.poll(() => summaryReads).toBeGreaterThanOrEqual(2);
+  await expect(page.getByLabel('Working team', { exact: true })).toHaveValue('8');
+  await expect(page.getByRole('textbox', { name: 'Instructions', exact: true })).toHaveValue('Preserve this unsaved plan');
+  await expect(page.getByLabel(`Assignee for ${visualTask.volume_name}`)).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Save plan (1)', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Assign volumes', exact: true })).toHaveCount(0);
+});
+
+for (const role of ['manager', 'requester']) {
+  test(`${role} continues from project creation through registration directly to project data`, async ({ page }) => {
+    await installScientificFixture(page, role);
+    await signInFixture(page);
+    const project = { ...visualProject, title: 'New microscopy project', manager_reviewed: role === 'manager' };
+    await page.route('**/api/projects/', route => route.fulfill({ json: route.request().method() === 'POST' ? project : [project] }));
+    await page.route('**/api/projects/3/summary/', route => route.fulfill({ json: { project, progress: {}, workload: [] } }));
+    await page.route('**/api/hpc/scan/', route => route.fulfill({ json: {
+      image_directory: '/synthetic/raw', region_mask_directory: '', mask_directory: '',
+      image_files: [{ name: 'raw.tif', path: '/synthetic/raw/raw.tif', extension: '.tif', size: 1 }],
+      region_mask_files: [], mask_files: [], pairs: [], region_by_image: {},
+      unmatched_images: ['raw.tif'], unmatched_masks: [], unmatched_region_masks: [], extra_channels: [],
+      pairing_source: 'filename', split: '', suggestions: { images: [], masks: [] }, dataset_metadata: {}, manifest_path: '',
+    } }));
+    await page.route('**/api/register-data/', route => route.fulfill({ json: {
+      project, volumes: [visualVolume], created_tasks: 1, skipped_volumes: 0,
+    } }));
+    await page.goto('/projects/new');
+    await page.getByLabel('Project title *', { exact: true }).fill(project.title);
+    await page.getByRole('button', { name: 'Create project & register data →', exact: true }).click();
+    await expect(page).toHaveURL(/\/register-data\?project=3$/);
+    await expect(page.getByRole('combobox', { name: 'Project *', exact: true })).toHaveValue('3');
+    await page.getByLabel('Raw image directory', { exact: false }).fill('/synthetic/raw');
+    await page.getByRole('button', { name: 'Scan', exact: true }).click();
+    await expect(page.getByText('raw.tif', { exact: true })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Dataset name *', exact: true }).fill('Practice dataset');
+    await page.getByRole('button', { name: 'Register 1 dataset', exact: true }).click();
+    await expect(page).toHaveURL(/\/projects\/3\?tab=data$/);
+    await expect(page.getByRole('heading', { name: project.title, exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^Data/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: 'Go to project →' })).toHaveCount(0);
+    if (role === 'requester') {
+      await page.getByRole('tab', { name: /^Tasks/ }).click();
+      await expect(page.getByRole('button', { name: 'Assign volumes', exact: true })).toHaveCount(0);
+    }
+  });
+}
+
 for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
   test(`scientific context, usable targets, and stable canvas at ${size.width}px`, async ({ page }, info) => {
     await page.setViewportSize(size);

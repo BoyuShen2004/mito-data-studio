@@ -71,6 +71,12 @@ mask is never treated as starting labels.
 8. Select **Register**, or **Add another directory** to queue another dataset
    before registering the batch.
 
+When the complete batch succeeds, the application opens that project's **Data**
+tab automatically. Choose **Stay here to register more** before registering if
+you want to continue on the form. Failed or uncertain registrations, unreadable
+source headers and unqueued input keep you on the page so you can resolve them
+without losing work. **Open project data** is available from retained results.
+
 When `dataset.json` is present, the scanner may prefill pairing or metadata. The
 badge means the manifest supplied the proposal, not that a human verified it.
 Check unmatched, duplicated, or unexpectedly paired filenames before continuing.

@@ -84,15 +84,15 @@ export default function RegisterDataPage() {
   const [renamingIndex, setRenamingIndex] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stayForMore, setStayForMore] = useState(false);
   // Ignore an older scan response if the user starts another scan before it
   // completes. HPC directory scans can have noticeably different latencies.
   const scanRequest = useRef(0);
 
   // Directories queued up to register together, each becoming its own dataset.
   const [staged, setStaged] = useState<StagedDataset[]>([]);
-  // Result of the last "Register" action (one entry per dataset registered),
-  // shown as a success banner. A project can hold many datasets, so we stay on
-  // the page afterwards instead of navigating straight to the project.
+  // Retain results when the user explicitly continues registering or needs to
+  // resolve failures, uncertain responses or unqueued input.
   const [lastResult, setLastResult] = useState<
     {
       dataset: string;
@@ -348,6 +348,10 @@ export default function RegisterDataPage() {
       showError("Add at least one directory to register.");
       return;
     }
+    const hasUnqueuedInput = currentEntry == null && Boolean(
+      imageDir.trim() || regionMaskDir.trim() || maskDir.trim() || dataset.trim()
+      || description.trim() || notes.trim() || Object.values(metadata).some(Boolean),
+    );
 
     setBusy(true);
     const succeeded: {
@@ -451,6 +455,11 @@ export default function RegisterDataPage() {
     if (inconclusive.length > 0) {
       showError(`Registration may have completed for ${inconclusive.join(", ")} — check the project Data tab before trying again.`);
     }
+    if (!stayForMore && !hasUnqueuedInput && succeeded.length === entries.length
+        && !succeeded.some(result => (result.skippedVolumes ?? 0) > 0)) {
+      navigate(`/projects/${lastProjectId}?tab=data`, { replace: true });
+      return;
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -495,9 +504,9 @@ export default function RegisterDataPage() {
               {projectId && (
                 <button
                   type="button"
-                  onClick={() => navigate(`/projects/${projectId}`)}
+                  onClick={() => navigate(`/projects/${projectId}?tab=data`)}
                 >
-                  Go to project →
+                  Open project data →
                 </button>
               )}
             </div>
@@ -545,6 +554,7 @@ export default function RegisterDataPage() {
                       <button
                         type="button"
                         className="secondary"
+                        disabled={busy}
                         onClick={() => removeStaged(i)}
                       >
                         Remove
@@ -571,6 +581,7 @@ export default function RegisterDataPage() {
       )}
 
       <form onSubmit={registerAll}>
+        <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div className="card">
           <div className="row spread register-dirs-head">
             <h3>Directories</h3>
@@ -869,18 +880,26 @@ export default function RegisterDataPage() {
           >
             + Add another directory
           </button>
-          <button
-            type="submit"
-            disabled={busy || registerCount === 0 || !projectId}
-            title={!projectId ? "Choose a project before registering" : undefined}
-          >
-            {busy
-              ? "Registering…"
-              : `Register ${registerCount} dataset${
-                  registerCount === 1 ? "" : "s"
-                }`}
-          </button>
+          <div className="row">
+            <label className="row">
+              <input type="checkbox" checked={stayForMore} disabled={busy}
+                onChange={event => setStayForMore(event.target.checked)} />
+              Stay here to register more
+            </label>
+            <button
+              type="submit"
+              disabled={busy || registerCount === 0 || !projectId}
+              title={!projectId ? "Choose a project before registering" : undefined}
+            >
+              {busy
+                ? "Registering…"
+                : `Register ${registerCount} dataset${
+                    registerCount === 1 ? "" : "s"
+                  }`}
+            </button>
+          </div>
         </div>
+        </fieldset>
       </form>
     </>
   );
