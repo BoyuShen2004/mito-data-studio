@@ -19,9 +19,10 @@ export default function ProjectMeasurements({ volumes, loading, error, canRun, o
       <div className="section-heading">
         <h2>Measurements</h2>
       </div>
-      {loading ? <p>Loading volumes…</p> : error ? <p className="error" role="alert">{error}</p> : !selected ? (
-        <p>No volumes registered in this project.</p>
-      ) : <>
+      {error && <p className="error" role="alert">{error}</p>}
+      {loading && <p role="status">{volumes.length ? "Refreshing volumes…" : "Loading volumes…"}</p>}
+      {!selected && !loading && !error && <p>No volumes registered in this project.</p>}
+      {selected && <>
         <label className="field">
           <span>Volume</span>
           <select aria-label="Volume" value={selected.id} onChange={event => setParams({ tab: "measurements", volume: event.target.value })}>
@@ -30,7 +31,7 @@ export default function ProjectMeasurements({ volumes, loading, error, canRun, o
             </option>)}
           </select>
         </label>
-        <VolumeMeasurements key={`${selected.id}-${selected.voxel_size_z}-${selected.voxel_size_y}-${selected.voxel_size_x}`} volume={selected} canRun={canRun} onSaved={onSaved} />
+        <VolumeMeasurements key={selected.id} volume={selected} canRun={canRun} onSaved={onSaved} />
       </>}
     </section>
   );
@@ -44,8 +45,11 @@ function VolumeMeasurements({ volume, canRun, onSaved }: { volume: Volume; canRu
   const [saved, setSaved] = useState(false);
   const [detecting, setDetecting] = useState(true);
   const [origins, setOrigins] = useState<string[]>([]);
+  // List refreshes return new objects. Reload detection only when its inputs
+  // change, so unrelated refreshes cannot overwrite manually entered spacing.
   useEffect(() => {
     let alive = true;
+    setDetecting(true);
     getMeasurementSpacing(volume.id).then(result => {
       if (!alive) return;
       const [z, y, x] = result.voxel_size_um_zyx;
@@ -56,7 +60,7 @@ function VolumeMeasurements({ volume, canRun, onSaved }: { volume: Volume; canRu
       if (alive) setError("Metadata unavailable. Enter spacing manually or reopen this tab to retry.");
     }).finally(() => { if (alive) setDetecting(false); });
     return () => { alive = false; };
-  }, [volume]);
+  }, [volume.id, volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x, volume.has_label]);
   const previous = [current.voxel_size_z, current.voxel_size_y, current.voxel_size_x].map(value => value == null ? "" : String(value * 1000));
   const dirty = spacing.some((value, index) => value !== previous[index]);
   const valid = spacing.every(value => value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) > 0);
@@ -97,6 +101,6 @@ function VolumeMeasurements({ volume, canRun, onSaved }: { volume: Volume; canRu
       </> : <p>Z: {previous[0] || "Unknown"} · Y: {previous[1] || "Unknown"} · X: {previous[2] || "Unknown"} nm</p>}
       {error && <p role="alert" className="error">{error}</p>}
     </section>
-    <MitoMeasurements key={previous.join("-")} volume={current} canRun={canRun} runBlocked={dirty || busy || detecting} />
+    <MitoMeasurements volume={current} canRun={canRun} runBlocked={dirty || busy || detecting} />
   </>;
 }

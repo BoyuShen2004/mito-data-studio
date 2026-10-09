@@ -18,7 +18,10 @@ sources: **Official label** (the current official reference, initially registere
 labels) and **Saved working draft**.
 Managers can queue a run. Users who already have access to the volume can read
 its latest result for each source and export CSV. Public shares do not expose
-measurement endpoints. Merely opening the page does not start computation.
+measurement endpoints. Merely opening the page does not start computation. Setup and result lifetimes
+are described in [frontend refresh and draft ownership](architecture.md#frontend-refresh-and-draft-ownership).
+Saving spacing preserves the source selection and refetches the backend's
+result freshness; it does not automatically rerun measurements.
 
 Each nonzero label ID produces a voxel count, volume in µm³, and TEASAR skeleton
 cable length in µm. The volume/header storage contract is µm; the UI and skeleton engine use nm.

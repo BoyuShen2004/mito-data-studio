@@ -26,6 +26,16 @@ follows semantic versioning for tagged releases.
 
 ### Fixed
 
+- Volume metadata drafts survive pyramid-status refreshes and refresh failures.
+  Automatic polls wait for the previous refresh to settle, and status-only
+  updates no longer reload the project's full task list.
+- Measurement setup preserves the selected label source through voxel-size
+  saves and volume-list refreshes. Changed calibration clears cached results
+  before refetching freshness; failed refreshes cannot leave that old result
+  displayed with its previous current status. Saves do not automatically run
+  measurements.
+
+
 - **Point Mask could 500 on the first click after a worker booted.** Two
   gunicorn threads in one worker (a warm plus the click) could each build a
   `SAM2ImagePredictor` on the shared CUDA model without holding the image

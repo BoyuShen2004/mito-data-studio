@@ -8,6 +8,9 @@ const PAGE_SIZE = 50;
 
 export default function MitoMeasurements({ volume, canRun, runBlocked = false }: { volume: Volume; canRun: boolean; runBlocked?: boolean }) {
   const [source, setSource] = useState<MeasurementSource>("official");
+  // A result belongs to a volume, source and calibration. Reset that child
+  // when inputs change, while keeping the user's source selection here.
+  const resultKey = [volume.id, source, volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x].join(":");
   return (
     <section className="section-block" aria-label="Mitochondria measurements">
       <div className="section-heading">
@@ -21,7 +24,7 @@ export default function MitoMeasurements({ volume, canRun, runBlocked = false }:
           <option value="working">Saved working draft</option>
         </select>
       </label>
-      <MeasurementRun key={`${volume.id}-${source}`} volume={volume} source={source} canRun={canRun} runBlocked={runBlocked} />
+      <MeasurementRun key={resultKey} volume={volume} source={source} canRun={canRun} runBlocked={runBlocked} />
     </section>
   );
 }
@@ -34,8 +37,11 @@ function MeasurementRun({ volume, source, canRun, runBlocked }: { volume: Volume
   const [refresh, setRefresh] = useState(0);
   const [page, setPage] = useState(0);
   const running = active(job);
+  // Keep the source selection in the parent. Refetch freshness after spacing
+  // changes rather than remounting that parent and reverting to Official label.
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       try {
@@ -53,7 +59,7 @@ function MeasurementRun({ volume, source, canRun, runBlocked }: { volume: Volume
     };
     void load();
     return () => { alive = false; clearTimeout(timer); };
-  }, [volume.id, source, refresh]);
+  }, [volume.id, volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x, source, refresh]);
 
   const spacing = [volume.voxel_size_z, volume.voxel_size_y, volume.voxel_size_x];
   const validSpacing = spacing.every(value => value != null && Number.isFinite(value) && value > 0);
@@ -106,7 +112,7 @@ function MeasurementRun({ volume, source, canRun, runBlocked }: { volume: Volume
         <p role="status">Run #{job.id} · {job.status}{job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ""}</p>
       ) : !error ? <p className="muted">No runs for this label source.</p> : null}
       {job?.error && <p className="error" role="alert">{job.error}</p>}
-      {result && (
+      {!loading && result && (
         <>
           {!job.is_current && <p role="status">Outdated result: labels or voxel size changed. Run again to update.</p>}
           <p className="muted">

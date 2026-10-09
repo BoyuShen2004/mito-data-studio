@@ -95,3 +95,34 @@ describe("MitoMeasurements", () => {
     expect(csv).toContain("3,4,official,2026-10-02T00:01:00Z,30,16,16,100,5,3600,0.027648,1.6");
   });
 });
+
+it("refetches result freshness when voxel spacing changes without resetting the source", async () => {
+  vi.mocked(getMeasurements).mockResolvedValue({ job: done });
+  const view = render(<MitoMeasurements volume={volume} canRun />);
+  await screen.findByRole('table');
+  fireEvent.change(screen.getByLabelText('Label source'), { target: { value: 'working' } });
+  await waitFor(() => expect(getMeasurements).toHaveBeenCalledWith(3, 'working'));
+  await screen.findByRole('table');
+  vi.mocked(getMeasurements).mockClear().mockResolvedValue({ job: { ...done, source: 'working', is_current: false } });
+  view.rerender(<MitoMeasurements volume={{ ...volume, voxel_size_z: 31 }} canRun />);
+  await screen.findByText(/Outdated result/);
+  expect(getMeasurements).toHaveBeenCalledWith(3, 'working');
+  expect((screen.getByLabelText('Label source') as HTMLSelectElement).value).toBe('working');
+  expect(runMeasurements).not.toHaveBeenCalled();
+});
+
+it("clears old freshness when new spacing results cannot be fetched", async () => {
+  vi.mocked(getMeasurements).mockResolvedValue({ job: done });
+  const view = render(<MitoMeasurements volume={volume} canRun />);
+  await screen.findByRole("table");
+  vi.mocked(getMeasurements).mockRejectedValueOnce(new Error("Results unavailable"));
+  view.rerender(<MitoMeasurements volume={{ ...volume, voxel_size_z: 31 }} canRun />);
+  expect((await screen.findByRole("alert")).textContent).toBe("Results unavailable");
+  expect(screen.queryByRole("table")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Export CSV" })).toBeNull();
+  vi.mocked(getMeasurements).mockResolvedValue({ job: { ...done, is_current: false } });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh results" }));
+  await screen.findByText(/Outdated result/);
+  expect(screen.getByRole("table")).toBeTruthy();
+  expect(runMeasurements).not.toHaveBeenCalled();
+});

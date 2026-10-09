@@ -37,14 +37,16 @@ export default function VolumeDetailPage() {
   const { isManager, isRequester } = useAuth();
   const navigate = useNavigate();
   const vol = useAsync(() => getVolume(volumeId), [volumeId]);
+  // A status poll changes the volume object, but not which task list we need.
+  const projectId = vol.data?.id === volumeId ? vol.data.project : null;
   const tasks = useAsync(
     () =>
-      vol.data
-        ? listProjectTasks(vol.data.project).then((all) =>
+      projectId != null
+        ? listProjectTasks(projectId).then((all) =>
             all.filter((t) => t.volume === volumeId),
           )
         : Promise.resolve([]),
-    [vol.data, volumeId],
+    [projectId, volumeId],
   );
 
   const [pyramidBusy, setPyramidBusy] = useState<"image" | "region" | null>(null);
@@ -53,10 +55,11 @@ export default function VolumeDetailPage() {
     vol.data?.streaming_status === "building" ||
     vol.data?.region_streaming_status === "building";
   useEffect(() => {
-    if (!building) return;
+    // Wait for each refresh to settle before starting the next polling period.
+    if (!building || vol.loading) return;
     const timer = window.setInterval(vol.reload, 3000);
     return () => window.clearInterval(timer);
-  }, [building, vol.reload]);
+  }, [building, vol.loading, vol.reload]);
 
   const buildPyramid = async (layer: "image" | "region") => {
     setPyramidBusy(layer);
@@ -70,9 +73,11 @@ export default function VolumeDetailPage() {
     }
   };
 
-  if (vol.loading) return <p className="muted">Loading…</p>;
-  if (vol.error) return <div className="error">{vol.error}</div>;
-  if (!vol.data) return null;
+  // Polling pyramid status must not discard pending metadata edits.
+  if (!vol.data || vol.data.id !== volumeId) {
+    if (vol.error) return <div className="error">{vol.error}</div>;
+    return vol.loading ? <p className="muted">Loading…</p> : null;
+  }
   const v = vol.data;
   const task: AnnotationTask | undefined = (tasks.data ?? [])[0];
   const canEdit = isManager || isRequester;
@@ -107,6 +112,11 @@ export default function VolumeDetailPage() {
         </p>
       </header>
 
+      {vol.error && <div className="error" role="alert">
+        Could not refresh volume details: {vol.error}{" "}
+        <button type="button" className="secondary" onClick={vol.reload}>Retry</button>
+      </div>}
+
       <div className="volume-body">
         <div className="volume-main">
           <MetadataDetailsCard volume={v} task={task} />
@@ -121,6 +131,7 @@ export default function VolumeDetailPage() {
 
         {canEdit && (
           <VolumeMetadataSidebar
+            key={v.id}
             volume={v}
             onSaved={() => {
               vol.reload();

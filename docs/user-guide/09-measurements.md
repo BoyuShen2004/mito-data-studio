@@ -18,7 +18,11 @@ Public shares do not expose measurements.
 
 Complete detected spacing can be used immediately. Detection does not write
 registered metadata. **Save voxel size** updates spacing metadata only;
-measurements do not save labels, submit work or approve tasks.
+measurements do not save labels, submit work or approve tasks. Saving voxel size
+or refreshing the volume list keeps your selected measurement source. Unrelated
+list refreshes also keep pending spacing edits. Changing to another volume
+starts its own setup. After spacing changes, results are fetched again so their
+current or outdated status reflects the saved metadata.
 
 The official label is the current reference: it may be an initial registered
 label, an approved submission snapshot or a saved draft promoted during

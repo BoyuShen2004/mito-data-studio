@@ -118,6 +118,8 @@ retry, or rebuild optional image and region-mask streaming derivatives from the
 volume's **Streaming** section. A background job creates and validates the
 derivative before it is marked ready. Pending or failed builds do not replace
 the original file; report a failure with project, dataset, volume, and layer.
+Status refreshes keep pending metadata edits on the volume page. If refreshing
+fails, use **Retry**; **Save metadata** is still required to persist edits.
 
 ## Registration troubleshooting
 

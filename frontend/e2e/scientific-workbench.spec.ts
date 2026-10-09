@@ -293,3 +293,62 @@ test("source spacing auto-fills nanometres without saving volume metadata", asyn
   await expect(page.getByText(/Spacing from source metadata/)).toBeVisible();
   expect(writes).toEqual([]);
 });
+
+test('pyramid polling retains pending volume metadata', async ({ page }) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  let reads = 0;
+  let taskReads = 0;
+  await page.route('**/api/projects/3/tasks/', route => {
+    taskReads++;
+    return route.fulfill({ json: [visualTask] });
+  });
+  await page.route('**/api/volumes/9/', route => {
+    reads++;
+    return route.fulfill({ json: { ...visualVolume,
+      image_path: '/synthetic/raw.tif', region_mask_path: '', label_path: '/synthetic/label.tif',
+      streaming_status: reads === 1 ? 'building' : 'ready',
+    } });
+  });
+  await page.goto('/volumes/9');
+  const name = page.getByRole('textbox', { name: 'Name', exact: true });
+  await name.fill('Pending metadata during build');
+  await expect.poll(() => reads).toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole('button', { name: 'Rebuild pyramid', exact: true })).toBeVisible();
+  await expect(name).toHaveValue('Pending metadata during build');
+  await expect(page.getByRole('button', { name: 'Save metadata', exact: true })).toBeVisible();
+  expect(taskReads).toBe(1);
+});
+
+test('saving voxel size retains the selected working measurement source', async ({ page }) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  let spacing: Record<string, number> = {};
+  const runs: string[] = [];
+  await page.route('**/api/volumes/9/measurement-spacing/', route => route.fulfill({ json: {
+    voxel_size_um_zyx: Object.keys(spacing).length ? [spacing.voxel_size_z, spacing.voxel_size_y, spacing.voxel_size_x] : [null, null, null],
+    origins: Object.keys(spacing).length ? ['registered', 'registered', 'registered'] : ['unknown', 'unknown', 'unknown'],
+  } }));
+  await page.route('**/api/volumes/9/measurements/**', route => {
+    if (route.request().method() === 'POST') runs.push(route.request().postDataJSON().source);
+    return route.fulfill({ json: { job: null } });
+  });
+  await page.route('**/api/projects/3/volumes/', route => route.fulfill({ json: [{ ...visualVolume, ...spacing }] }));
+  await page.route('**/api/volumes/9/', route => {
+    if (route.request().method() === 'PATCH') spacing = route.request().postDataJSON();
+    return route.fulfill({ json: { ...visualVolume, ...spacing } });
+  });
+  await page.goto('/projects/3?tab=measurements&volume=9');
+  await expect(page.getByRole('button', { name: 'Run measurements', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Z (nm)', { exact: true })).toBeEnabled();
+  await page.getByLabel('Label source', { exact: true }).selectOption('working');
+  for (const [axis, value] of [['Z', '30'], ['Y', '16'], ['X', '16']]) {
+    await page.getByLabel(`${axis} (nm)`, { exact: true }).fill(value);
+  }
+  await page.getByRole('button', { name: 'Save voxel size', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Run measurements', exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Label source', { exact: true })).toHaveValue('working');
+  expect(runs).toEqual([]);
+  await page.getByRole('button', { name: 'Run measurements', exact: true }).click();
+  await expect.poll(() => runs).toEqual(['working']);
+});

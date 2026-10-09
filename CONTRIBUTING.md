@@ -19,6 +19,22 @@ Keep Django migrations additive. Never commit `.env`, databases, microscopy
 volumes, generated masks, pyramids, logs, model caches, or credentials. Avoid
 mixing formatting-only work with behavioral changes.
 
+## Maintainable workflow changes
+
+- Name the component that owns each draft, selection and server response. Reset
+  state when its entity or scientific inputs change; preserve pending input
+  through unrelated refreshes. See [frontend refresh and draft ownership](docs/engineering/architecture.md#frontend-refresh-and-draft-ownership).
+- Use request inputs as effect dependencies. Stop timers on cleanup and avoid
+  overlapping automatic polls or refetching unrelated lists. Keep the task
+  serializer prefetch constants required by `AGENTS.md`.
+- Cover delayed responses, failures, entity changes and explicit saves where
+  they affect the workflow. Check request counts for accidental repeated fetches.
+  State performance claims in terms of measured workloads and limits.
+- Keep maintained documentation in English. Explain roles, actions, state
+  changes and recovery in the user guide; put module paths, extension boundaries
+  and known scaling limitations in engineering docs. Describe implemented
+  behavior and distinguish it from proposals or unverified capacity claims.
+
 ## Project conventions
 
 - Django apps and tests live under `backend/`; use the root `manage.py`.

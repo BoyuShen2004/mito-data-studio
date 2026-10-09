@@ -58,6 +58,40 @@ The annotation canvas combines browser-side pending label slices with
 server-planned operations. This allows previews and compound Undo/Redo without
 persisting every intermediate model or deterministic-tool result.
 
+## Frontend refresh and draft ownership
+
+The page, editable setup, and result display have separate lifetimes. Preserve
+these boundaries when extending project and volume workflows:
+
+| Owner | State and refresh contract |
+| --- | --- |
+| `hooks/useAsync.ts` | Keeps the last successful payload while reloading; ignores replies from an obsolete effect. It does not abort the underlying HTTP request or provide a shared cache. |
+| `pages/ProjectDetailPage.tsx` | Retains a loaded, matching project during refresh so team saves do not unmount the assignment editor. A different project ID must not display the prior project's data. |
+| `pages/VolumeDetailPage.tsx` | Retains a loaded, matching volume and metadata draft during refresh. Automatic pyramid polling waits three seconds after the previous refresh settles and stops when neither layer is building. Task-list dependencies use project/volume IDs; status-only updates do not reload every project task. Explicit metadata saves refresh both volume and task data. |
+| `components/ProjectMeasurements.tsx` | Setup is keyed by volume ID. Unrelated list refreshes preserve pending spacing and the selected source. Detection reruns when the ID, registered spacing, or label availability changes; switching volume starts separate setup. |
+| `components/MitoMeasurements.tsx` | Owns the selected source. Its result child is keyed by volume ID, source and voxel spacing; input changes clear the cached result and refetch freshness without resetting the source. Only an explicit run action queues computation. |
+
+Refresh errors remain visible alongside retained state. Cached data is the last
+successful response, not a promise that access or metadata is still current;
+backend authorization and input checks apply to each action. Retaining a draft
+through refresh does not persist it across leaving the page or closing the tab.
+
+Use scalar request dependencies rather than refreshed object identity when the
+endpoint inputs have not changed. Keep effect cleanup for timers and late
+responses. Regression checks should exercise a delayed response, a failed
+refresh, changing entity ID, and explicit saves; include request counts when a
+status refresh could accidentally fetch unrelated lists. Do not infer that
+keeping a component mounted makes its cached scientific result current.
+
+These changes reduce repeated requests; they do not establish an application
+capacity limit. The volume page still retrieves the project task list and
+filters it in the browser. Large-project scalability requires payload, query,
+latency and memory measurements before changing that API contract. Any list
+embedding `AnnotationTaskSerializer` must retain `TASK_SELECT_RELATED` and
+`TASK_PREFETCH_RELATED` in `backend/annotation/api.py`. See the
+[workflow audit](../research/workflow-simplification-audit.md) for remaining
+navigation and state-lifetime issues.
+
 ## Core data flow
 
 1. Registration stores a validated source path and inspected metadata.

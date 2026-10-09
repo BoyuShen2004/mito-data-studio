@@ -69,3 +69,50 @@ it("allows manual fallback if metadata detection fails", async () => {
   expect((screen.getByLabelText("Z (nm)") as HTMLInputElement).disabled).toBe(false);
   expect((screen.getByRole("button", { name: "Run measurements" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it("preserves the chosen draft source through a spacing save and volume-list refresh", async () => {
+  const updated = { ...volume, voxel_size_z: 0.03, voxel_size_y: 0.016, voxel_size_x: 0.016 };
+  vi.mocked(editVolume).mockResolvedValue(updated);
+  const onSaved = vi.fn();
+  const content = (volumes: Volume[], loading = false, error: string | null = null) =>
+    <MemoryRouter initialEntries={["/projects/1?tab=measurements&volume=4"]}>
+      <ProjectMeasurements volumes={volumes} loading={loading} error={error} canRun onSaved={onSaved} />
+    </MemoryRouter>;
+  const view = render(content([volume]));
+  await screen.findByText(/No runs for this label source/);
+  fireEvent.change(screen.getByLabelText("Label source"), { target: { value: "working" } });
+  await waitFor(() => expect(getMeasurements).toHaveBeenCalledWith(4, "working"));
+  const source = screen.getByLabelText("Label source") as HTMLSelectElement;
+  for (const [axis, value] of [["Z", "30"], ["Y", "16"], ["X", "16"]]) {
+    fireEvent.change(screen.getByLabelText(`${axis} (nm)`), { target: { value } });
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Save voxel size" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+  expect(source.value).toBe("working");
+  view.rerender(content([volume], true));
+  expect(source.isConnected).toBe(true);
+  vi.mocked(getMeasurementSpacing).mockResolvedValue({ voxel_size_um_zyx: [0.03, 0.016, 0.016], origins: ["registered", "registered", "registered"] });
+  view.rerender(content([updated]));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Run measurements" }).hasAttribute("disabled")).toBe(false));
+  expect(screen.getByLabelText("Label source")).toBe(source);
+  expect(source.value).toBe("working");
+  expect(runMeasurements).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Run measurements" }));
+  await waitFor(() => expect(runMeasurements).toHaveBeenCalledWith(4, "working"));
+});
+
+it("retains pending spacing and source through an unrelated refresh or refresh error", async () => {
+  const content = (loading: boolean, error: string | null = null) =>
+    <MemoryRouter><ProjectMeasurements volumes={[{ ...volume }]} loading={loading} error={error} canRun onSaved={vi.fn()} /></MemoryRouter>;
+  const view = render(content(false));
+  await screen.findByText(/No runs for this label source/);
+  fireEvent.change(screen.getByLabelText("Z (nm)"), { target: { value: "45" } });
+  fireEvent.change(screen.getByLabelText("Label source"), { target: { value: "working" } });
+  view.rerender(content(true));
+  expect((screen.getByLabelText("Z (nm)") as HTMLInputElement).value).toBe("45");
+  view.rerender(content(false, "Could not refresh volumes"));
+  expect(screen.getByRole("alert").textContent).toBe("Could not refresh volumes");
+  expect((screen.getByLabelText("Z (nm)") as HTMLInputElement).value).toBe("45");
+  expect((screen.getByLabelText("Label source") as HTMLSelectElement).value).toBe("working");
+  expect(getMeasurementSpacing).toHaveBeenCalledOnce();
+});
