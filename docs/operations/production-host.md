@@ -63,7 +63,11 @@ Do not reload or restart unrelated units on other ports.
 Canonical development is the product source of truth. Before promotion:
 
 1. Compare application paths while excluding `.env`, `venv/`, `var/`,
-   `logs/`, `run/`, `frontend/dist/`, caches, and databases.
+   `logs/`, `run/`, `frontend/dist/`, caches, and databases. Compare the running
+   development checkout as well as canonical `main`: a previously deployed fix
+   can be absent from the branch being promoted. Incorporate reviewed runtime
+   differences into canonical with their regression tests before promotion;
+   do not copy deployment-specific environments from dev.
 2. Port a production-only bugfix into canonical first; never preserve two
    feature variants.
 3. Copy only reviewed application, test, Docker, and shared documentation

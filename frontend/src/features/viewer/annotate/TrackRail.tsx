@@ -160,7 +160,7 @@ export default function TrackRail({
             <button type="button" className="secondary" disabled={!promptEditing || savingProgress} title="Pause with queued prompts retained. Select a seed tool to resume." onClick={onSaveProgress}>{savingProgress ? "Saving…" : "Save progress"}</button>
             {!promptEditing && progressSaved && <span className="muted track-progress-saved" role="status">Progress saved — select a tool to resume.</span>}
             <label className={`track-size-control${promptTool === "brush" || promptTool === "erase" ? "" : " inactive"}`}>
-              {promptTool === "erase" ? "Eraser" : "Brush"} size
+              <span className="track-size-label">{promptTool === "erase" ? "Eraser" : "Brush"} size</span>
               <input type="range" min={1} max={64} disabled={promptTool !== "brush" && promptTool !== "erase"} value={promptTool === "erase" ? promptEraserSize : promptBrushSize} onChange={(e) => (promptTool === "erase" ? onPromptEraserSize : onPromptBrushSize)(Number(e.target.value))} />
               <span>{promptTool === "erase" ? promptEraserSize : promptBrushSize}px</span>
             </label>

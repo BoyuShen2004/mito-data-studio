@@ -26,6 +26,11 @@ follows semantic versioning for tagged releases.
 
 ### Fixed
 
+- Restored the Track panel layout fix omitted from `main`: range labels and
+  controls no longer overlap, narrow rails stack appropriately, and queued
+  prompts scroll without covering the preview review controls.
+
+
 - Volume metadata drafts survive pyramid-status refreshes and refresh failures.
   Automatic polls wait for the previous refresh to settle, and status-only
   updates no longer reload the project's full task list.

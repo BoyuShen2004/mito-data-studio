@@ -63,6 +63,11 @@ temporarily unavailable. Wait a moment and prompt again.
 
 Track propagates prompted instances across an inclusive z-layer range:
 
+Drag the divider beside Track to resize the panel. Narrow panels stack range
+fields and propagation buttons vertically. Scroll within the queue to browse
+classes, or within the panel to reach the remaining controls. Confirm and Reject
+remain visible at the bottom while the panel content scrolls.
+
 1. Select **Add class … to queue**. It always allocates a fresh unused ID and
    makes it active; it does not reuse the previously active ID.
 2. Select Brush, Erase, Box, Box erase, or Point in the Track rail and create

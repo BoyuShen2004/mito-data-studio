@@ -1,6 +1,68 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installScientificFixture, visualTask, visualProject, visualVolume } from "./fixtures/scientific-workbench";
 
+for (const height of [600, 900]) {
+  test(`Track controls stay separate and scrollable at ${height}px height`, async ({ page }, info) => {
+    await page.setViewportSize({ width: 1440, height });
+    await installScientificFixture(page);
+    await signInFixture(page);
+    await page.route('**/api/tasks/42/track/prompts/**', route => route.fulfill({ json: {
+      version: 1,
+      items: Array.from({ length: 12 }, (_, index) => ({
+        parent_id: 100000 + index, status: 'ready', start_z: 0, end_z: 63, z_range: [0, 63],
+        subclasses: [{ index: 1, seeds: [{ z: 0, shape: [256, 256], rle: [[0, 1]] }] }],
+      })),
+    } }));
+    await page.goto('/editor/tasks/42');
+    const rail = page.locator('.track-rail');
+    await expect(rail.getByRole('textbox', { name: 'Start layer' })).toBeVisible();
+    await rail.getByRole('button', { name: 'Brush', exact: true }).click();
+    for (const width of [320, 180, 520]) {
+      // Exercise the same grid column updated by the resize handle, without drag timing noise.
+      await page.locator('.canvas-main-row').evaluate((element, width) => {
+        element.style.gridTemplateColumns = `${width}px 14px minmax(0, 1fr) 14px 320px`;
+      }, width);
+      await page.screenshot({ path: info.outputPath(`track-${width}.png`) });
+      const layout = await rail.evaluate(element => {
+        const tools = element.querySelector('.track-prompt-tools')!.getBoundingClientRect();
+        const queue = element.querySelector('.track-queue-panel')!.getBoundingClientRect();
+        const list = element.querySelector('.track-prompt-list') as HTMLElement;
+        const overflowing = Array.from(element.querySelectorAll('button, input, select, .track-range-field, .track-range-hint'))
+          .filter(control => {
+            const rect = control.getBoundingClientRect();
+            const rail = element.getBoundingClientRect();
+            return rect.width > 0 && (rect.left < rail.left - 1 || rect.right > rail.right + 1);
+          }).map(control => control.textContent || control.getAttribute('aria-label'));
+        const fields = element.querySelectorAll('.track-range-field');
+        const clippedContent = Array.from(element.querySelectorAll('.track-range-field input, .track-prompt-row > *'))
+          .filter(control => {
+            const rect = control.getBoundingClientRect();
+            const parent = control.closest('.track-range-field, .track-prompt-row')!.getBoundingClientRect();
+            return rect.left < parent.left - 1 || rect.right > parent.right + 1;
+          }).map(control => control.textContent || control.getAttribute('aria-label'));
+        const start = fields[0].getBoundingClientRect();
+        const end = fields[1].getBoundingClientRect();
+        const overlappingRangeFields = Math.min(start.right, end.right) - Math.max(start.left, end.left) > 1 &&
+          Math.min(start.bottom, end.bottom) - Math.max(start.top, end.top) > 1;
+        return { toolsBottom: tools.bottom, queueTop: queue.top, overflowing, clippedContent, overlappingRangeFields,
+          listHeight: list.clientHeight };
+      });
+      expect(layout.overflowing).toEqual([]);
+      expect(layout.clippedContent).toEqual([]);
+      expect(layout.overlappingRangeFields).toBe(false);
+      expect(layout.toolsBottom).toBeLessThanOrEqual(layout.queueTop);
+      expect(layout.listHeight).toBeGreaterThanOrEqual(80);
+      const footer = rail.getByRole('region', { name: 'Pending Track preview review' });
+      await expect(footer).toBeVisible();
+      const footerBox = await footer.boundingBox();
+      expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(height);
+      await rail.getByRole('button', { name: 'Propagate selected', exact: true }).scrollIntoViewIfNeeded();
+      await expect(rail.getByRole('button', { name: 'Propagate selected', exact: true })).toBeInViewport();
+      await expect(footer).toBeInViewport();
+    }
+  });
+}
+
 async function signInFixture(page: Page) {
   await page.addInitScript(() => localStorage.setItem("mito_token", "isolated-visual-fixture"));
 }

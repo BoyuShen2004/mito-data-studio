@@ -67,3 +67,14 @@ project task list only once. A measurement regression confirms changed spacing
 clears cached freshness on a failed request and allows explicit result refresh
 recovery. README and maintained docs were checked for Chinese text; none was
 found. These checks do not substitute for a large-project load test.
+
+## Production promotion correction
+
+The first production alignment to `ed62d3f` matched canonical `main`, but missed
+the Track layout fix from `4aec268`, which was running in dev and was absent
+from that branch. Comparing only production with canonical did not reveal the
+omission. The correction restores Track markup/CSS, its user-guide paragraph,
+and both layout browser regressions to canonical before redeploying production.
+The production promotion runbook now requires a comparison with running dev as
+well. Effective checks found all nine backend feature flags and both chunk
+build declarations matched across dev and production; no flags were changed.
