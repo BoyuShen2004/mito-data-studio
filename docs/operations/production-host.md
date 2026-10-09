@@ -7,7 +7,10 @@ The host runs the same application source as the canonical repository, but
 keeps its environment, virtualenv, logs, process state, database, and volume
 data local.
 
-| Item | Current value |
+Recorded host values below are maintainer runbook context, not re-probed by the
+2026-10-09 repository audit; verify effective units and environment before use.
+
+| Item | Recorded value |
 | --- | --- |
 | Checkout | `/home/weidf/shenb/mito-data-studio-production-v1.1.5` |
 | Service user | `mito-production-v11` |
@@ -186,12 +189,14 @@ registered sources as a deployment step.
 
 ## Data-safety rules
 
-- Annotation tools never persist implicitly. Only explicit Save writes pending
-  slices to the working draft.
+- Pending slices persist through explicit Save, Verify's flush and best-effort
+  30-second/hidden-tab autosave. ROI loss-producing saves require confirmation.
+  Resolve Track previews promptly: autosave does not currently exclude them.
 - Save acknowledgements are revision-specific; a concurrent newer edit remains
   pending.
 - The working draft—not the official label—is the source for further work.
-  Approval is what updates the official label.
+  Approval installs the selected snapshot. Working-team withdrawal can also
+  repoint the official label to the saved working TIFF without approval.
 - Whole-volume plans are bounded by the configured tool/track voxel limits.
 - Never wipe or repoint `MITO_DATA_ROOT`, labels, region masks, pyramids, or the
   database during a code deployment.
@@ -204,7 +209,11 @@ registered sources as a deployment step.
 Deleting a project, dataset, or volume removes the files the app generated for
 it once the delete commits (`backend/projects/services.py`,
 `_plan_file_cleanup`): a deleted dataset's folder goes, a project's folder stays
-until that project is deleted, and registered sources are never touched. Deletes
+until that project is deleted, and current registered source paths are protected.
+An earlier imported label whose reference was replaced by approval may lose
+that protection inside an owned folder. Keep original inputs archived separately.
+App-generated approved labels can be removed; generic processing-job outputs and
+SET_NULL job history are retained. Deletes
 made while an older release was running left those files behind. To clear them once, as the service user:
 
 1. **List candidates, read-only.** A candidate is a project or dataset folder

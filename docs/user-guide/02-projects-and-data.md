@@ -13,13 +13,14 @@ A requester-created project waits for manager review. The manager opens its
 **Overview** and approves it before assignment. Approval does not assign an
 annotator and does not register data.
 
-A project's tab strip is six nouns, and what changes a thing lives at the scope
+A project's tabs group work by scope, and what changes a thing lives at the scope
 of the thing it changes:
 
 | Tab | What is there |
 | --- | --- |
 | **Overview** | Status, deadline, the approval banner, progress, annotator workload, and what is publicly shared (read-only here) |
 | **Data** | Datasets and volumes, with one **Add data** button at the top right |
+| **Measurements** | Select a volume and measurement source; members read/export, managers run and save voxel size |
 | **Tasks** | The work list for this project. Tick rows and press **Assign volumes** to edit just those; press it with nothing ticked to open the whole project's plan |
 | **Cases** | Hard cases raised on this project |
 | **People** | Project members and the working team (managers) |
@@ -103,8 +104,12 @@ generated for the deleted item under its data root: working masks, label-state
 files, streaming pyramids, model feature caches, Track previews, approved
 labels, and submission uploads. Deleting a dataset removes that dataset's
 folder; the project's folder stays until the project itself is deleted.
-Registered source files — the raw image, region mask, and starting labels you
-registered — are never deleted, even when they are stored inside the data root.
+Currently registered source paths — raw image, region mask and referenced
+labels — are protected, even inside the data root. Approval replaces the label
+reference: an earlier imported label inside the deleted folder may no longer
+be protected. Keep an independent archive of original inputs. App-generated approved labels can be
+removed with the volume. Generic processing-job history and output files are
+retained; deletion does not guarantee every derivative has been purged.
 
 ## Streaming pyramids
 

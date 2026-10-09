@@ -4,9 +4,10 @@
 
 ## Save is not Submit
 
-1. **Save** writes pending browser edits to the task's mutable working draft.
+1. **Save** writes pending browser edits to the mutable working label. The editor
+   also attempts autosave; **Verify** flushes pending planes first.
 2. **Submit for review** creates an immutable snapshot of the saved draft.
-3. A manager decision may promote that snapshot to the official checkpoint or
+3. A manager decision may promote that snapshot to the official label or
    return the task for more work.
 
 Always save and confirm there are no unsaved changes before submission. A
@@ -23,6 +24,14 @@ memory.
 A task may have one pending in-app and one pending offline submission. They are
 reviewed independently until one is approved. Do not assume uploading a file
 replaces the current in-app draft.
+
+Resubmitting supersedes only the older pending submission in that channel;
+its history and snapshot file remain. Revision/reject leaves a pending sibling
+channel alone, so the task stays **Submitted** while that sibling awaits review.
+The editing gate is assignment/manager permission plus an unlocked task, rather
+than a fixed list of statuses. Managers can also edit and submit unlocked tasks.
+A stale review form for an already decided/voided submission fails; reload the
+task and inspect its latest history instead of retrying the old decision.
 
 ## Manager review
 
@@ -44,8 +53,8 @@ Available decisions are:
 
 | Decision | Result |
 | --- | --- |
-| Approve & close | Install the snapshot as the official checkpoint and lock further painting/submission |
-| Approve & keep open | Install the checkpoint but allow another annotation and review round |
+| Approve & close | Install the snapshot as the official label and lock further painting/submission |
+| Approve & keep open | Install the official label but allow another annotation and review round |
 | Request revision | Return the reviewed channel for more work; do not change the official mask |
 | Reject | Return the reviewed channel; do not change the official mask |
 
@@ -54,8 +63,13 @@ entry, and — if another submission is waiting — **Next waiting submission �
 takes you straight to it. No decision sends you back to a home page.
 
 Approval voids the competing pending channel and starts a fresh working copy
-from the approved checkpoint. A later open round starts a fresh per-label
+from the official label. A later open round starts a fresh per-label
 verification lifecycle. Source images and region masks are never modified.
+
+The **Official label** measurement source follows the volume's current label
+reference: initially registered labels, then an installed approved snapshot.
+There is also a tested exception: withdrawing working-team assignments can
+promote the saved working label without approval. See [assignment withdrawal](03-people-and-assignment.md#working-team-changes-and-withdrawal).
 
 ## Comment on a specific instance
 

@@ -10,8 +10,9 @@ intensity volumes and integer label masks.
 
 The system combines a role-aware work-management application with an
 interactive slice editor. It keeps registered image data immutable, maintains a
-separate working label draft, and requires explicit review decisions before a
-submitted result becomes the official label.
+separate working label draft, and installs submitted snapshots as official labels
+through explicit review decisions. Working-team withdrawal can also promote a
+saved draft without approval; official does not itself mean reviewed.
 
 ## Roles
 
@@ -52,12 +53,13 @@ experience is organized around these three roles.
 
 - Brush, erase, rectangular erase, merge, connected-component split, flood
   fill, 3-D watershed, and between-slice interpolation.
-- Conservative empty-voxel-only overwrite by default, with explicit
-  overwrite-all mode where supported.
+- Empty-only/all-voxel policies for fill, interpolation, Track and outside-ROI
+  presentation; Brush and committed masks can replace unprotected IDs.
 - Point-, box-, and boundary-prompted SAM 2 proposals.
 - SAM 2.1 propagation across inclusive z ranges with automatic branch
   inference, contact handling, merge/reseed continuation, and batch preview.
-- Pending browser edits, Undo/Redo, explicit Save, and revision-aware writes.
+- Pending browser edits, Undo/Redo, explicit Save, best-effort autosave, Verify's
+  save flush, and revision-aware writes.
 - Region-only editing that protects content outside the immutable ROI.
 
 ### Measurements
@@ -77,7 +79,8 @@ experience is organized around these three roles.
   masks are never rewritten.
 - Hard-case records with discussion, status, focused viewer entry, and optional
   independently revocable public links.
-- Read-only project, dataset, volume, task, and hard-case shares.
+- Read-only project, dataset, volume and hard-case shares with revocation.
+  Legacy signed task shares remain read-only but lack per-link revocation/expiry.
 - Annotation-time accounting that excludes inactive/read-only sessions and
   avoids double-counting overlapping intervals.
 - Append-only audit vocabulary for access, assignment, submission, review, and
@@ -86,7 +89,9 @@ experience is organized around these three roles.
 ## Explicit non-goals and boundaries
 
 - The application is not a clinical diagnostic system.
-- AI results are proposals, not ground truth, and are never silently saved.
+- AI results are proposals, not ground truth. Accepted masks enter the draft
+  buffer; unresolved Track previews also enter it and are not excluded by autosave.
+  See the [Track caveat](user-guide/06-assisted-and-track.md#failure-and-safety-rules).
 - A single Track request is not automatically sharded across all visible GPUs.
 - Zarr pyramids are application-specific Zarr v3 derivatives; the repository
   does not currently claim OME-NGFF, Neuroglancer, or Fileglancer compatibility.

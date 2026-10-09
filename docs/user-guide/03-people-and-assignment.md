@@ -48,12 +48,31 @@ Expand a row's details to set:
 An approved-and-closed task is viewable but cannot be painted or submitted
 until a manager reopens it. Access alone does not override that lock.
 
+## Working-team changes and withdrawal
+
+Managers manage the working team from **People** or the project's **People**
+tab. With team features enabled, grants mirror team members into project access;
+removing a mirrored grant preserves separately granted explicit access. Team
+eligibility and task assignment remain separate: access never assigns a task.
+
+Replacing/removing a working team, removing an affected member, or deleting the
+team can withdraw assignments outside the retained team. Review the confirmation
+before applying a withdrawal. The server promotes each affected volume's saved
+working TIFF to its official label reference when that file exists, even without
+submission approval. Unsaved browser edits are excluded. It voids pending
+submissions, clears assignment/current task decision fields, and returns the task
+to the unassigned pool. A durable withdrawal record appears in the former
+annotator's Done history; recorded time remains. If no working file exists, the
+previous official label remains. This is consequential data-state behavior,
+not merely a change to who can see the project.
+
 ## Reset annotations
 
 **Reset annotations** is a destructive whole-task operation. It discards the
 working annotation, pending or saved edits represented by that working copy,
 Track prompts/progress, and per-label verification state, then restores the
-registered starting label mask. It keeps the task and assignment and never
+registered reset seed (the latest approved label after an approval, otherwise
+the original starting mask). It keeps the task and assignment and never
 modifies the registered source file.
 
 Reset cannot be undone. If a task is approved and locked, reopen it before

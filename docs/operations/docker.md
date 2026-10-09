@@ -119,19 +119,22 @@ account exists.
 The AI-assist stack (PyTorch) is roughly ten times the size of everything
 else, so it is opt-in. Every `import torch` in the codebase is lazy, and `annotation/tracking/registry.py` falls back to the
 `local` tracking provider with a logged warning when torch is missing — so the
-default image starts, serves and annotates normally. Only the
-AI-assisted tools degrade.
+default image starts, serves and annotates normally. Prompted SAM2 tools report unavailable. If `sam2` is selected and torch is
+missing, Track falls back to the simple local intensity-based stand-in; this is
+not SAM2 CPU inference. When torch exists but CUDA does not, the SAM2 provider
+raises instead of falling back. Ordinary annotation remains usable.
 
 Set `MITO_DEPS` in `.env.docker`:
 
 | Profile | Size | What you get |
 | --- | --- | --- |
-| `core` *(default)* | ~570 MB | Everything except AI assist. Annotation, viewing, 3-D meshes, watershed split, review and sharing. |
-| `ai-cpu` | ~3 GB | Adds SAM 2 Track and the Point Mask, Box Mask and Boundary tools on CPU. Complete, but slow enough that it is best kept for trying the tools out. |
-| `ai-gpu` | ~8 GB | The same on CUDA 12.4. Needs a GPU host — see below. |
+| `core` *(default)* | ~570 MB | Annotation, viewing, 3-D meshes, watershed split, review and sharing; excludes AI and kimimaro measurements. |
+| `ai-cpu` | ~3 GB | Installs CPU PyTorch. The application SAM2 provider requires CUDA, so this profile does not enable SAM2 masks or SAM2 Track. Explicit local tracking remains a non-model stand-in. |
+| `ai-gpu` | ~8 GB | Adds SAM2 masks and Track on CUDA 12.4. Needs a GPU host and weights; excludes kimimaro measurements. |
 
-Both AI profiles also need the `vendor/` weights fetched with `git lfs pull`
-and `MITO_HOST_VENDOR_DIR` pointing at them.
+SAM2 requires the `ai-gpu` profile, usable CUDA and the `vendor/` weights fetched
+with `git lfs pull`, with `MITO_HOST_VENDOR_DIR` pointing at them. Installing
+CPU torch and weights does not bypass the CUDA requirement.
 
 ### GPU
 
@@ -228,19 +231,47 @@ Re-run the probe after hardware changes.
 
 ## Upgrade profiles
 
-`MITO_UPGRADE_PROFILE` selects a feature contract, and the SPA must be compiled
-for the same one — `FRONTEND_BUILD_SCRIPT` picks the npm script that does it.
-The backend cross-checks the pairing at startup and refuses to run on a
-mismatch.
+`MITO_UPGRADE_PROFILE` selects the backend feature defaults/deployment identity;
+`FRONTEND_BUILD_SCRIPT` selects browser flags. Startup checks validate declared
+`VITE_*` environment values against backend dependencies. They do not inspect
+the compiled SPA; operators must ensure declarations describe the actual build.
+
+For a portable real-data deployment, keep backend identity `legacy`, choose
+`FRONTEND_BUILD_SCRIPT=build:no-demo`, enable the nine backend features below and
+declare both browser chunk flags. This uses the same functional feature set as
+development/production while disabling the demo-account UI, without claiming the
+host-specific audited backend identity. Add these values to `.env.docker`:
+
+```dotenv
+FRONTEND_BUILD_SCRIPT=build:no-demo
+MITO_UPGRADE_PROFILE=legacy
+FEATURE_TEAMS=true
+FEATURE_AUTO_FILL_SCHEDULER=true
+FEATURE_REVIEW_HISTORY=true
+FEATURE_DASHBOARDS=true
+FEATURE_ANNOTATION_OPS=true
+FEATURE_INTERPOLATION=true
+FEATURE_ANNOTATION_TOOLS=true
+FEATURE_VOLUME_PYRAMIDS=true
+FEATURE_CHUNK_SERVICE=true
+VITE_FEATURE_CHUNK_PULL_QUEUE=true
+VITE_FEATURE_CHUNK_RENDERER=true
+ENABLE_MOCK_DEV_LOGIN=false
+MITO_ALLOW_DEV_RESET=false
+```
+
+The checked-in Docker templates currently enable only the two streaming backend
+flags. Follow [Feature flags](../development.md#feature-flags--development-runs-what-production-runs)
+for the full application contract; selecting `legacy` alone does not enable it.
 
 | `MITO_UPGRADE_PROFILE` | `FRONTEND_BUILD_SCRIPT` | Notes |
 | --- | --- | --- |
-| `legacy` *(default)* | `build` | No extra runtime contract. Use this. |
-| `legacy` | `build:no-demo` | Same, with the demo-account UI hidden. |
+| `legacy` *(template default)* | `build` | Development-account build; chunk frontend defaults off. Enable all nine backend features for full workflows. |
+| `legacy` | `build:no-demo` | Integrated chunk frontend, demo UI hidden; use the aligned settings above. |
 | `production_integrated_v1` | `build:production` | Advanced — read below. |
 
 `production_integrated_v1` is **not** a "more production" setting. It is an
-audited contract for one specific two-GPU host, and `backend/core/checks.py`
+audited deployment contract, and `backend/core/checks.py`
 refuses to start unless every clause holds: PostgreSQL, a non-empty
 `MITO_METRICS_BEARER_TOKEN`, an empty `MITO_PROCESSING_ENV_ALLOWLIST`, SAM2
 pinned to CUDA device 0, and the SAM2 checkpoint matching its exact byte
@@ -364,9 +395,29 @@ docker compose exec app /usr/local/bin/entrypoint.sh manage check
 ```
 
 The `manage` wrapper handles the working directory and waits for the database.
-A bare `docker compose exec app python manage.py ...` fails with
-`ModuleNotFoundError: No module named 'config'`, because the container's
-working directory is `/app`, not `/app/backend`.
+The root `manage.py` adds `backend/` to the import path, and the Dockerfile
+also sets `PYTHONPATH=/app/backend`, so a bare `python manage.py` works too;
+the wrapper additionally waits for PostgreSQL.
+
+### Queued processing
+
+Neither Compose app service starts a dispatcher; the entrypoint runs only
+gunicorn for `serve`. Start queued pyramid processing separately in another
+terminal, using the same environment/storage as the web app:
+
+```bash
+docker compose --env-file .env.docker exec app \
+  /usr/local/bin/entrypoint.sh manage run_processing_dispatcher --job-type build_pyramid
+```
+
+Use `app-gpu` in place of `app` when that is the selected service. `exec` ends when
+the process/container ends; supervise a dispatcher for ongoing operation. This
+command is appropriate for the included pyramid runtime. Measurement dispatch
+also requires kimimaro and its dependencies, which all current Docker profiles
+omit. See [measurement prerequisites](../engineering/measurements.md#deployment-prerequisites)
+before adding `--job-type measure_mito`; merely queueing a run is insufficient.
+Generic external pipelines require caller-supplied commands and the configured
+[processing backend](../engineering/architecture.md#background-processing).
 
 ### Database backup and restore
 
@@ -405,7 +456,8 @@ off unless you build for a profile that includes them.
 `DJANGO_ALLOWED_HOSTS`, then `docker compose up -d`.
 
 **AI tools report unavailable** — expected on the `core` image. Switch
-`MITO_DEPS` to `ai-cpu` or `ai-gpu`, run `git lfs pull`, and rebuild.
+`MITO_DEPS` to `ai-gpu`, verify NVIDIA container CUDA access, run `git lfs pull`,
+and rebuild. The ai-cpu profile cannot run the application SAM2 provider.
 
 **Compose picked up the wrong settings** — you almost certainly omitted
 `--env-file .env.docker`. Check what it actually resolved with

@@ -5,16 +5,17 @@ assigning mitochondria annotation work, editing instance labels, and reviewing
 results. It provides requester, manager, and annotator workflows in one Django
 and React application.
 
-## 新组员从这里开始
+## Start here as a new team member
 
-- **先学使用**：[入门路线](docs/getting-started/README.md) → [术语表](docs/getting-started/glossary.md) → [使用手册](docs/user-guide.md)。
-- **准备开发**：[代码地图](docs/engineering/code-map.md) → [Measurements 功能追踪](docs/engineering/feature-walkthrough.md) → [第一次贡献](docs/getting-started/first-contribution.md)。
-- **查完整文档**：[统一文档入口](docs/index.md)。使用已有实验室服务的组员不需要执行下面的部署命令。
+- **Learn the workflow:** [Getting started](docs/getting-started/README.md) → [Glossary](docs/getting-started/glossary.md) → [User guide](docs/user-guide.md).
+- **Prepare to develop:** [Code map](docs/engineering/code-map.md) → [Measurements feature walkthrough](docs/engineering/feature-walkthrough.md) → [First contribution](docs/getting-started/first-contribution.md).
+- **Browse all documentation:** [Documentation index](docs/index.md). Team members using an existing lab service do not need to run the deployment commands below.
 
 ## Quick start with Docker
 
-Docker Compose is the primary path for a fresh clone. It runs the application
-and PostgreSQL; Python, Node, and conda are not required on the host.
+Docker Compose is the primary path for a fresh clone. It runs the web application
+and PostgreSQL; queued work needs a separately started dispatcher. Python, Node,
+and conda are not required on the host for the web stack.
 
 ```bash
 git clone https://github.com/BoyuShen2004/mito-data-studio.git
@@ -25,7 +26,9 @@ ops/docker/detect-hardware.sh --apply .env.docker
 
 Open `.env.docker` and set the four values in its `REQUIRED` section:
 `DJANGO_SECRET_KEY`, `MITO_DB_PASSWORD`, `DJANGO_ALLOWED_HOSTS`, and
-`MITO_HOST_DATA_DIR`. Then start the stack:
+`MITO_HOST_DATA_DIR`. For real-data deployments, also apply the
+[no-demo build and aligned feature settings](docs/operations/docker.md#upgrade-profiles);
+the template defaults use the development frontend build. Then start the stack:
 
 ```bash
 docker compose --env-file .env.docker up -d --build
@@ -41,6 +44,10 @@ docker compose --env-file .env.docker exec app \
 The default image supports viewing, annotation, review, sharing, and export.
 AI-assisted masks and SAM2 tracking are optional profiles; see
 [Docker deployment](docs/operations/docker.md#build-profiles).
+
+Queued pyramid and measurement work needs the [dispatcher](docs/operations/docker.md#queued-processing).
+Current Docker dependency profiles omit kimimaro, so nonempty-label measurements
+require a separately validated [measurement runtime](docs/engineering/measurements.md#deployment-prerequisites).
 
 ## Prerequisites
 
@@ -80,7 +87,8 @@ Project policies remain at the root: [contributing](CONTRIBUTING.md),
 - **Manager:** reviews projects, controls access, assigns one volume to one
   annotator, reviews submissions, and manages public shares.
 - **Annotator:** works on assigned volumes, explicitly saves draft edits, and
-  submits results for review.
+  submits results for review. Members with volume-view access can create volume
+  shares; project/dataset shares remain manager-only.
 
 Development accounts and the passwordless reset are disabled unless their
 explicit development-only flags are enabled. Selecting a development account

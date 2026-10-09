@@ -35,22 +35,28 @@ chunks matched source-derived SHA-256 digests.
 
 Requesters registered datasets and specified work; managers approved projects,
 controlled access, assigned whole volumes, and reviewed submissions; annotators
-edited assigned volumes. Browser edits remained pending until explicit Save.
-Model and deterministic whole-volume tools returned preview plans, permitting
-inspection and rejection before persistence. Submission created an immutable
+edited assigned volumes. Browser edits entered a pending buffer saved explicitly,
+by Verify's flush, or by best-effort 30-second/hidden-tab autosave. Backend tool
+plans did not write label files. The current Track implementation stages previews
+before Confirm and autosave does not exclude them; this limitation must be
+reported rather than claiming confirmation guarantees a persistence barrier. Submission created an immutable
 snapshot. Manager approval promoted the selected snapshot to the official
-label, while rejection or revision returned it for additional work.
+label, while rejection or revision returned that submission channel for additional
+work; a pending sibling kept the task submitted. Working-team withdrawal could
+also repoint official labels to saved working TIFFs without review approval.
 
 The editor provided manual painting and erasing, label merge, connected-
 component split, flood fill, 3-D watershed, and between-slice interpolation.
-The conservative overwrite policy modified only background voxels unless the
-user explicitly selected overwrite-all. Verified labels were protected from
-Track overwrite.
+Fill, interpolation and Track used explicit empty-only/all-voxel policies.
+Brush and committed prompted masks could replace unprotected label values;
+verified labels were protected. Split used 26-connectivity and cleared components
+below 100 voxels. Browser interpolation used pixel geometry, while separate
+backend interpolation APIs could use physical spacing.
 
 ## Interface organisation
 
 The interface was organised around a single unit of work rather than around
-roles. A task — one volume, one assignee, one reviewing manager — was presented
+roles. A task — one volume and one active assignee, with a manager deciding each round — was presented
 as a numbered, stateful item with a discussion history, and a flagged label
 ("hard case") used the same presentation. Tasks, hard cases, and projects were
 therefore rendered by one list component with one row layout (state, title,
@@ -67,12 +73,11 @@ placed at the end of that sequence. Reviewing therefore occurred on the page
 that carried the evidence, and the resulting state change was displayed in
 place rather than by navigation.
 
-This history was **derived at request time** from durable records (assignment
+This history was **derived at render time** from durable records (assignment
 timestamps, submission rounds, and immutable review decisions) rather than
-materialised in a per-event table. The system consequently stores no row per
-user action, which was a deliberate constraint: an earlier notification inbox
-that grew one row per action per recipient was removed, and derived quantities
-such as progress and elapsed time are likewise recomputed rather than cached.
+materialised in a task-conversation event table. Separate append-only audit
+events are persisted for selected actions; derived conversation history does
+not imply absence of audit rows or other denormalized workflow fields.
 
 ## Interactive segmentation
 
@@ -84,8 +89,8 @@ back. Encoder features were cached in memory per worker and in a shared float16
 on-disk cache. For point prompts, candidate masks were restricted to components
 containing a positive click and selected by predicted IoU under a plane-fraction
 limit, with a relaxed limit and then the smallest anchored candidate under a
-hard cap as fallbacks. Execution used CUDA when available and the CPU otherwise;
-when the model could not be loaded, the tools reported themselves unavailable
+hard cap as fallbacks. The application provider required CUDA, with CPU fallback disabled;
+when CUDA or the model could not be loaded, the tools reported themselves unavailable
 rather than substituting another model. A runtime error during prediction
 returned a retryable response, which the client retried once. Predictions were
 returned as pending
@@ -105,20 +110,43 @@ identifier.
 Multi-class batches loaded one bounded combined z slab and processed classes in
 request order, preserving the rule that earlier classes win protected label
 collisions. The combined result was reviewed on the canvas and Confirmed or
-Rejected as one compound pending edit. The model's mutable inference state was
+Rejected through the pending edit buffer. The queue/prompt state was durable
+separately from label voxels; confirmation retired propagated queue entries. The model's mutable inference state was
 serialized within each worker.
 
 ## Quality and provenance controls
 
+The SPA used API tokens, with session authentication also supported; session and
+reset writes enforced CSRF according to their respective API gates. Public
+database-backed shares were scoped/read-only/revocable, while legacy signed
+task tokens lacked per-link revocation and age expiry.
+
 The implementation used role- and project-scoped authorization, revision-aware
 label writes, explicit source/working/snapshot separation, deterministic
 pyramid validation, and automated backend/frontend tests. Deleting a project,
-dataset, or volume removed the application-generated artifacts derived from it
-after the database transaction committed; registered source files were never
-removed. Annotation activity
+dataset, or volume removed the targeted working/submission/pyramid/cache/approved
+artifacts after commit, protecting current registered source paths and surviving
+references. Earlier imported labels whose references were replaced by approval
+were not separately tracked for cleanup protection. Original inputs required
+independent archives. Generic processing-job history and outputs were retained. Annotation activity
 was recorded only for eligible active editing sessions, excluding read-only or
 inactive browser periods and merging overlapping intervals to avoid double
 counting wall-clock time.
+
+## Measurements
+
+Manager-triggered `measure_mito` ProcessingJobs ran in the local dispatcher via
+a Python runner, separately from interactive SAM2. Official and saved working
+label files were explicit sources; browser pending edits and selectable
+submission snapshots were excluded. Per-ID voxel count and calibrated volume
+included all components. Kimimaro TEASAR skeletonization omitted components
+below 100 voxels; cable length summed edge distances in physical units. Same-ID
+components shared one padded bounding box; web crops exceeding 8,000,000 voxels
+failed without publishing partial results. Whole-volume measurement did not
+clip by ROI or change annotation state. Metadata fingerprints and spacing were
+checked before/after web computation. See the [implementation reference](../engineering/measurements.md)
+for parameters, units, export/provenance limits and deployment prerequisites.
+Synthetic tests establish software behavior, not biological validity.
 
 ## Required study-specific additions
 

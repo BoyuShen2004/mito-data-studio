@@ -1,49 +1,66 @@
-# 新组员从这里开始
+# Start here as a new team member
 
-Mito Data Studio 把显微图像、线粒体标注、任务分配、审核和测量放在同一个网页工作台里。
-图像告诉你“看到了什么”；标注用整数 ID 表示“哪些体素属于同一个对象”。软件帮助团队协作，不会自动保证标注或测量在生物学上正确。
+Mito Data Studio brings microscopy images, mitochondria annotation, assignment,
+review and measurement into one web workbench. Images record intensity;
+integer instance IDs identify voxels belonging to the same object. The
+application supports collaboration; biological correctness still requires
+independent validation of annotations and measurements.
 
-## 第一天：先学会使用
+## First day: learn the workflow
 
-1. 向组内负责人取得 **dev 地址、你的账号和练习任务**。不要在真实生产任务上练习，也不需要自己部署一套服务。
-2. 阅读[术语表](glossary.md)，能区分 image、label、volume、task、ROI。
-3. 按自己的角色阅读下表，然后在练习任务中完成一次操作。没有相应权限的按钮不会显示。
+1. Ask your team lead for the development-instance URL, your account and a
+   practice task. Use practice data rather than a live production task. You do
+   not need to deploy your own service to use an existing instance.
+2. Read the [glossary](glossary.md) to distinguish image, label, volume, task and ROI.
+3. Follow the instructions for your role below. Editing and review controls depend
+   on your account, assignment and task state; the backend also checks permissions.
 
-| 角色 | 第一次要完成什么 | 阅读 |
+| Role | First action | Read |
 | --- | --- | --- |
-| Annotator（标注者） | Home → Assigned to me → 任务；先 View，再 Annotate；选择 label，修改少量体素并 Save | [查看图像](../user-guide/04-viewer.md)、[标注工具](../user-guide/05-annotation-tools.md) |
-| Manager（管理者） | 打开待审核任务的 Review，查看提交，再作审核决定 | [分配任务](../user-guide/03-people-and-assignment.md)、[审核](../user-guide/07-submit-and-review.md) |
-| Requester（提出需求者） | 创建项目，准备数据路径，理解注册和审批 | [项目与数据](../user-guide/02-projects-and-data.md) |
+| Annotator | Home → Assigned to me → task; open View, then Annotate; select a label, edit a few voxels and Save | [Viewer](../user-guide/04-viewer.md), [annotation tools](../user-guide/05-annotation-tools.md) |
+| Manager | Open Review for a submitted task, inspect the submission and choose a review decision | [Assignment](../user-guide/03-people-and-assignment.md), [review](../user-guide/07-submit-and-review.md) |
+| Requester | Create a project, prepare data paths and learn registration and project approval | [Projects and data](../user-guide/02-projects-and-data.md) |
 
-练习中的 **Submit** 和 **Approve** 也会改变任务状态，先和负责该练习的组员约定好。
-如果看不到任务，先核对账号角色、项目访问权限和任务分配；它们不是一回事。
+Submit and Approve change task state even in practice. Agree on the exercise
+with the person responsible for the practice task. If a task is missing, check
+your role, project access and assignment separately.
 
-## 先记住这条数据流
+## Remember the data flow
 
 ```text
-原始图像（只读） + 初始 label（可选）
-                    ↓
-浏览器中的待保存编辑 → Save → 工作草稿
-                                  ↓ Submit
-                              提交快照
-                                  ↓ Manager approves
-                              正式 label
+Registered source image (read-only) + initial label (optional)
+                                      ↓
+Browser pending edits → successful save → working label
+                                      ↓ Submit
+                              immutable submission snapshot
+                                      ↓ Approve
+                                  official label
 ```
 
-- **Save** 保存草稿，不是提交审核。**Submit** 创建用于审核的快照。
-- **Approve** 才会把选定快照变成正式结果；被退回的任务可以继续修改并重新提交。
-- AI proposal 是候选结果，需要检查。接受 proposal 和保存标注是不同操作。
-- Measurements 读取正式 label 或已保存草稿，测量本身不修改标注。
-- 公共分享只读。没有体素尺寸时不能猜测实际长度或体积。
+- **Save** persists a draft; **Submit** creates a snapshot for review.
+- **Approve** installs the chosen snapshot as the official label. Working-team
+  withdrawal can also promote a saved draft without approval, so official does
+  not always mean reviewed.
+- The editor attempts autosave every 30 seconds and when the tab is hidden.
+  Still press **Save** and check success before leaving or submitting. An
+  unresolved Track preview may also be autosaved; see the
+  [known limitation](../user-guide/06-assisted-and-track.md#failure-and-safety-rules).
+- A SAM2 proposal requires inspection. Accepting a proposal and saving labels
+  are separate actions.
+- Measurements read the official label or saved working draft and do not modify
+  annotation state. Browser-only pending edits are excluded.
+- Public shares are read-only. Physical length and volume require real voxel spacing.
 
-## 接下来按目标学习
+## Continue with your goal
 
-- 继续使用软件：[完整操作流程](../user-guide/workflows.md)、[Measurements](../user-guide/09-measurements.md)。
-- 看懂组里做了什么：[产品范围](../overview.md)、[代码地图](../engineering/code-map.md)。
-- 开始写代码：[第一次贡献](first-contribution.md)，再读[功能追踪示例](../engineering/feature-walkthrough.md)。
-- 写论文或报告：[研究材料](../research/README.md)。功能存在、测试通过和科学有效性是三种不同证据。
+- Use the application: [complete workflow](../user-guide/workflows.md), [Measurements](../user-guide/09-measurements.md).
+- Understand the project: [product overview](../overview.md), [code map](../engineering/code-map.md).
+- Develop: [first contribution](first-contribution.md), then the [feature walkthrough](../engineering/feature-walkthrough.md).
+- Write a manuscript or report: [research materials](../research/README.md). Implemented features, passing tests and scientific validity require different evidence.
 
-## 你理解了吗？
+## Check your understanding
 
-能向同学解释：Save 与 Submit 的区别；ROI 与实例 label 的区别；为什么不同 ID 代表不同对象；
-为什么未知 voxel size 不能填 1 来“先跑通”；遇到问题时该提供任务 ID、操作步骤和报错，而不是发送账号密码。
+Explain the difference between Save and Submit, ROI and instance labels, and
+why different IDs denote different objects. Unknown voxel spacing must not be
+replaced with 1 merely to make measurements run. When reporting a problem,
+include the task ID, reproduction steps and error message rather than credentials.

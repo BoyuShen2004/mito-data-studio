@@ -9,8 +9,9 @@ current account, assignment, and task state allow changes. Requesters and public
 visitors remain read-only. Use View for inspection and review when no draft
 change is intended.
 
-The viewer may show a submitted snapshot, the current working label, or the
-official approved checkpoint depending on the entry route. Read the page header
+The viewer may show a submitted snapshot, the saved working label, or the
+official label depending on the entry route. Task-header **View** uses the saved
+working state when available; **View this submission** reads that snapshot. Read the page header
 and submission context before comparing results.
 
 ## Navigate a 3-D volume
@@ -20,12 +21,18 @@ and submission context before comparing results.
   array convention is `(z, y, x)`.
 - Pan and zoom to inspect boundaries. A tool-specific cursor may replace pan
   while an editing tool is active.
-- **Jump to region** moves to a plane occupied by the ROI when a region mask is
-  available.
+- **Jump to region** moves to the nearest ROI-occupied plane of the current axis;
+  it is disabled if already there or if the mask is empty.
 - Links created from a viewer can preserve axis, coordinates, and active label.
 
 Changing axis changes the displayed plane; it does not transpose or rewrite
 the registered data.
+
+Layer controls are one-based. Stored viewer-context/API coordinates are zero-based
+`z`, `y`, `x` voxel indices; axis chooses which coordinate is the displayed layer.
+Focused-label links can restore coordinates and solo the referenced ID. These
+links preserve view context, not access permission. Read-only picking, display
+controls and 3-D pinning change presentation without writing labels.
 
 ## Display controls
 

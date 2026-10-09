@@ -59,7 +59,7 @@ GPU 0. It does not automatically use GPUs 1–3 for one Track batch.
 
 | Profile | Intended behavior |
 | --- | --- |
-| CPU-only, modest RAM | Core image and local Track provider, or AI-CPU for evaluation; smaller slab/crop limits |
+| CPU-only, modest RAM | Core image and optional local Track stand-in; application SAM2 requires CUDA even if AI-CPU dependencies are installed |
 | Single 12 GiB GPU | One or two gunicorn workers, SAM2 on device 0, approximately 1536px crop ceiling |
 | Single 24 GiB GPU | Up to two workers and a larger crop/slab only after profiling |
 | Two or more GPUs | SAM 2 uses one device; no automatic intra-batch Track sharding |
