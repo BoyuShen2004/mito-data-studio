@@ -7,6 +7,11 @@ follows semantic versioning for tagged releases.
 
 ### Changed
 
+- Added selective progressive disclosure for grouped People rosters, multiple
+  teams and multiple datasets. Profiles, singleton records, reports and forms
+  remain directly visible. Collapsing retains drafts; refreshes preserve expanded
+  content. Existing permissions and destructive confirmations remain.
+
 - Moved Measurements into the rightmost project **Extensions** tab for every
   role. A typed registry lists enabled research tools and loads only the selected
   workspace. Old Measurements links retain their volume selection. Added English

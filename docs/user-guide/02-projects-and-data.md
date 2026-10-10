@@ -33,6 +33,11 @@ The header carries the project's name and status and nothing else. If you are
 looking for a control, the tab strip is meant to tell you where it is without
 your having to hunt.
 
+On **Data**, multiple datasets have expandable headings for metadata, volumes
+and permitted editing controls. A single dataset displays details directly.
+Names and volume counts remain visible. Registration metadata is directly
+visible. See [expandable sections](progressive-disclosure.md) for draft retention.
+
 ## Registration references files; it does not upload them
 
 **Register Data** records paths that the server can already read. Paths refer to

@@ -6,6 +6,8 @@ visitor can open the same data but see different actions.
 
 New to the lab? Start with the [onboarding guide](getting-started/README.md) and [glossary](getting-started/glossary.md).
 
+For the common interaction pattern, see [expandable sections and records](user-guide/progressive-disclosure.md).
+
 ## Choose a module
 
 | Module | Use it to learn |

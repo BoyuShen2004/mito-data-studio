@@ -7,6 +7,7 @@ import { roleLabel } from "../labels";
 import StatusBadge from "../components/StatusBadge";
 import AnnotatorTimeSection from "../components/AnnotatorTimeSection";
 import CollaborationManager from "../components/CollaborationManager";
+import Disclosure from "../components/Disclosure";
 import type { Person, PersonStats } from "../types/people";
 import { showError } from "../errorPopup";
 
@@ -22,9 +23,7 @@ export default function PeoplePage() {
   const { user, refresh } = useAuth();
   const overview = useAsync(getPeopleOverview, []);
 
-  if (overview.loading) return <p className="muted">Loading…</p>;
-  if (overview.error) return <div className="error">{overview.error}</div>;
-  if (!overview.data) return null;
+  if (!overview.data) return overview.error ? <div className="error">{overview.error}</div> : <p className="muted">Loading…</p>;
   const d = overview.data;
   const isManager = d.role === "manager";
   const isRequester = d.role === "requester" || d.role === "client";
@@ -37,6 +36,9 @@ export default function PeoplePage() {
           Signed in as {user?.username} ({roleLabel(d.role)})
         </span>
       </div>
+
+      {overview.loading && <p role="status">Refreshing people…</p>}
+      {overview.error && <p role="alert" className="error">{overview.error} <button type="button" onClick={overview.reload}>Retry</button></p>}
 
 
       <ProfileCard
@@ -262,8 +264,7 @@ function PeopleSection({
   statKeys?: StatKeys;
 }) {
   return (
-    <div className="card">
-      <h3 style={{ marginTop: 0 }}>{title}</h3>
+    <Disclosure className="card" title={title} count={people.length} collapsible={people.length > 1}>
       {hint && <p className="muted">{hint}</p>}
       {people.length === 0 ? (
         <p className="muted" style={{ marginBottom: 0 }}>
@@ -272,24 +273,27 @@ function PeopleSection({
       ) : (
         <div className="people-grid">
           {people.map((p) => (
-            <PersonCard key={p.id} person={p} statKeys={statKeys} />
+            <PersonCard key={p.id} person={p} statKeys={statKeys} collapsible={people.length > 1} />
           ))}
         </div>
       )}
-    </div>
+    </Disclosure>
   );
 }
 
 export function PersonCard({
   person,
   statKeys,
+  collapsible = true,
 }: {
   person: Person;
   statKeys?: StatKeys;
+  collapsible?: boolean;
 }) {
   const last = person.stats?.last_decision;
   return (
-    <div className="people-card">
+    <Disclosure className="people-card" collapsible={collapsible} title={person.display_name || person.username}
+      summary={`${person.display_name ? `${person.username} · ` : ""}${roleLabel(person.role)}`}>
       <div className="row spread">
         <strong>
           <Link to={`/people/${person.username}`}>
@@ -320,21 +324,18 @@ export function PersonCard({
       )}
       {person.projects && person.projects.length > 0 && (
         <ul className="people-projects">
-          {person.projects.slice(0, 5).map((p) => (
+          {person.projects.map((p) => (
             <li key={p.id}>
               <ProjectRef id={p.id} title={p.title} />
             </li>
           ))}
-          {person.projects.length > 5 && (
-            <li className="muted">+{person.projects.length - 5} more</li>
-          )}
         </ul>
       )}
       {/* Directly under the Projects list, collapsed. The roster renders many
           of these and most are never opened, so the request only fires on
           expand — see AnnotatorTimeSection. */}
       <AnnotatorTimeSection username={person.username} />
-    </div>
+    </Disclosure>
   );
 }
 

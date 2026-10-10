@@ -1,6 +1,94 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installScientificFixture, visualTask, visualProject, visualVolume } from "./fixtures/scientific-workbench";
 
+for (const width of [1280, 390]) {
+  test(`People disclosures reveal sections then entities and preserve drafts at ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 844 });
+    await installScientificFixture(page);
+    await signInFixture(page);
+    const person = { id: 7, username: 'alice', display_name: 'Alice', role: 'annotator', institution_name: 'Microscopy lab',
+      contact_note: 'Alice contact details', email: '', projects: [], stats: { assigned: 2 } };
+    await page.route('**/api/people/overview/', route => route.fulfill({ json: {
+      role: 'manager', me: { ...person, id: 1, username: 'researcher', display_name: 'Manager', role: 'manager', contact_note: 'Manager contact details' },
+      annotators: [person, { ...person, id: 8, username: 'bob', display_name: 'Bob', contact_note: 'Bob contact details' }],
+      requesters: [], managers: [], peers: [], projects: [],
+    } }));
+    await page.route('**/api/collaboration/', route => route.fulfill({ json: {
+      users: [person], teams: [{ id: 8, name: 'Microscopy team', description: 'Team scientific context', members: [{ user_id: 7, username: 'alice' }] }, { id: 10, name: 'Second team', members: [] }],
+      institutions: [],
+    } }));
+    await page.goto('/people');
+    await expect(page.getByRole('heading', { name: 'Your profile', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Your profile', exact: true })).toHaveCount(0);
+    const teams = page.getByRole('button', { name: 'Teams & assignment eligibility', exact: true });
+    await expect(teams).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByLabel('Team name for Microscopy team')).toHaveCount(0);
+    await teams.focus();
+    await page.keyboard.press('Enter');
+    const team = page.getByRole('button', { name: 'Microscopy team', exact: true });
+    await expect(team).toHaveAttribute('aria-expanded', 'false');
+    await team.focus();
+    await page.keyboard.press('Space');
+    await expect(page.getByText('Team scientific context', { exact: true })).toBeVisible();
+    const name = page.getByLabel('Team name for Microscopy team', { exact: true });
+    await name.fill('Pending team rename');
+    await team.click();
+    await expect(name).toBeHidden();
+    await teams.click();
+    await teams.click();
+    await team.click();
+    await expect(name).toHaveValue('Pending team rename');
+    await page.getByRole('button', { name: 'Annotators', exact: true }).click();
+    await expect(page.getByText('Alice contact details', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Alice', exact: true }).click();
+    await expect(page.getByText('Alice contact details', { exact: true })).toBeVisible();
+    await expect(page.getByText('Bob contact details', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: info.outputPath(`people-disclosures-${width}.png`), fullPage: true });
+  });
+}
+
+test('dataset details expand independently and retain an unsaved edit', async ({ page }) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  await page.route('**/api/projects/3/summary/', route => route.fulfill({ json: {
+    project: { ...visualProject, datasets: [...visualProject.datasets, { ...visualProject.datasets[0], id: 2, name: 'Second dataset' }] },
+    progress: {}, workload: [],
+  } }));
+  await page.goto('/projects/3?tab=data');
+  const dataset = page.getByRole('button', { name: visualTask.dataset, exact: true });
+  await expect(dataset).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('link', { name: 'Details', exact: true })).toHaveCount(0);
+  await dataset.click();
+  await expect(page.getByRole('link', { name: 'Details', exact: true })).toHaveAttribute('href', '/volumes/9');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const name = page.getByLabel('Dataset name', { exact: true });
+  await name.fill('Pending dataset name');
+  await dataset.click();
+  await expect(name).toBeHidden();
+  await dataset.click();
+  await expect(name).toHaveValue('Pending dataset name');
+});
+
+test('single-purpose reports, a lone dataset and registration metadata stay directly visible', async ({ page }) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  await page.goto('/projects/3?tab=overview');
+  await expect(page.getByRole('heading', { name: 'Annotator workload', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Annotator workload', exact: true })).toHaveCount(0);
+  await page.goto('/projects/3?tab=people');
+  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Existing access members', exact: true })).toHaveCount(0);
+  await page.goto('/projects/3?tab=data');
+  await expect(page.getByRole('link', { name: 'Details', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: visualTask.dataset, exact: true })).toHaveCount(0);
+  await page.goto('/register-data?project=3');
+  await expect(page.getByRole('heading', { name: 'Metadata (optional)', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Metadata (optional)', exact: true })).toHaveCount(0);
+});
+
 for (const height of [600, 900]) {
   test(`Track controls stay separate and scrollable at ${height}px height`, async ({ page }, info) => {
     await page.setViewportSize({ width: 1440, height });

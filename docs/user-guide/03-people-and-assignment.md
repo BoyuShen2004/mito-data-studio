@@ -2,6 +2,12 @@
 
 [User guide](../user-guide.md) · Previous: [Projects and data](02-projects-and-data.md) · Next: [Viewer](04-viewer.md)
 
+People uses [expandable sections and records](progressive-disclosure.md).
+Managers open **Teams & assignment eligibility** for existing teams; expand an
+individual team only when there are multiple teams. New team is a regular form.
+Multi-person rosters and their records expand on demand; singleton rosters show
+details directly. This does not change permissions.
+
 ## Set up collaboration in the right order
 
 For a requester-created project, approve it first. Then:

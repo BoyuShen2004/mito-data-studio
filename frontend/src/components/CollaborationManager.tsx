@@ -3,6 +3,7 @@ import { getCollaboration, mutateCollaboration } from "../api/collaboration";
 import { listProjects } from "../api/projects";
 import { useAsync } from "../hooks/useAsync";
 import TeamEditor from "./teams/TeamEditor";
+import Disclosure from "./Disclosure";
 import { showError } from "../errorPopup";
 
 export default function CollaborationManager() {
@@ -38,26 +39,34 @@ export default function CollaborationManager() {
   };
 
   return (
-    <div className="card">
-      <h3>Teams &amp; assignment eligibility</h3>
+    <>
+      {collaboration.error && <p role="alert" className="error">{collaboration.error} <button type="button" onClick={collaboration.reload}>Retry</button></p>}
+      {projects.error && <p role="alert" className="error">{projects.error} <button type="button" onClick={projects.reload}>Retry projects</button></p>}
+    <Disclosure className="card" title="Teams & assignment eligibility" count={data?.teams.length} collapsible={data ? Boolean(data.teams.length) : true}
+      summary={collaboration.loading ? "Refreshing teams…" : undefined}>
       <p className="muted">
         {currentProject
           ? `New teams grant browse access and assignment eligibility for ${currentProject.title}.`
           : "Working-team members can browse the project and receive assignments."}
         {" "}Removing a team member ends assignment eligibility; explicit project access remains.
       </p>
-      <TeamEditor
-        annotators={annotators}
-        teams={data?.teams ?? []}
-        defaultName={currentProject?.title ?? ""}
-        projectId={projectId ?? undefined}
-        onChanged={() => {
-          collaboration.reload();
-          projects.reload();
-        }}
-      />
+      <Disclosure title="New team" collapsible={false}>
+        <TeamEditor
+          annotators={annotators}
+          teams={data?.teams ?? []}
+          defaultName={currentProject?.title ?? ""}
+          projectId={projectId ?? undefined}
+          onChanged={() => {
+            collaboration.reload();
+            projects.reload();
+          }}
+        />
+      </Disclosure>
       {(data?.teams ?? []).map((team) => (
-        <div className="card" key={team.id}>
+        <Disclosure className="card" key={team.id} title={team.name} collapsible={(data?.teams.length ?? 0) > 1}
+          summary={`${team.members.length} member${team.members.length === 1 ? "" : "s"} · ${(projects.data ?? []).filter(project => project.working_team === team.id).length} working projects`}>
+          {team.organization_name && <p className="muted">Organization: {team.organization_name}</p>}
+          {team.description && <p className="muted">{team.description}</p>}
           <TeamEditor
             team={team}
             annotators={annotators}
@@ -91,11 +100,12 @@ export default function CollaborationManager() {
               Delete team
             </button>
           </div>
-        </div>
+        </Disclosure>
       ))}
       {!collaboration.loading && (data?.teams.length ?? 0) === 0 && (
         <p className="muted">No teams yet.</p>
       )}
-    </div>
+    </Disclosure>
+    </>
   );
 }

@@ -2,6 +2,30 @@
 
 Start with the [code map](code-map.md) and [feature walkthrough](feature-walkthrough.md) for an implementation reading path.
 
+## Shared progressive disclosure
+
+Use disclosure to distinguish parallel groups of verbose repeated records, not
+as a default wrapper for every table or form. Profiles, single-purpose reports,
+access tables and basic forms remain directly visible. People rosters and dataset
+collections use disclosure when they contain multiple records; singleton and
+empty collections render directly. Teams form one management group, with a second
+level only for multiple teams.
+
+[Disclosure.tsx](../../frontend/src/components/Disclosure.tsx) provides accessible
+buttons, stable body IDs and a `collapsible` option for plain sections. Foldable
+children mount on first expansion and remain hidden on collapse, retaining drafts.
+Use stable entity keys. Transitioning from a visible singleton to a larger
+collection preserves visibility and mounted forms; unrelated refreshes retain
+expansion. Leaving a page still unmounts its forms.
+
+This changes presentation, not API pagination or authorization. Existing scoped
+payloads still load normally; visited hidden children remain mounted, so disclosure
+is unsuitable for pausing computation/polling. Keep recovery errors visible.
+Existing annotation-time and review-round controls retain their own semantics.
+See the [audit](../research/progressive-disclosure-audit.md),
+[user guide](../user-guide/progressive-disclosure.md) and
+[component tests](../../frontend/src/components/Disclosure.test.tsx).
+
 ## Component overview
 
 ```text

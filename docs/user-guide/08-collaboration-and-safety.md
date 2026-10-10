@@ -79,6 +79,10 @@ standalone measure of biological quality or worker performance.
 
 ## Profile and shortcuts
 
+On **People**, **Your profile** and Edit are directly visible. Multi-person
+rosters and records expand on demand; annotation time retains its drill-down. See
+[expandable sections](progressive-disclosure.md).
+
 Open the username in the navigation bar to edit personal information and
 contact details. Annotators and managers can customize the tool shortcuts that
 are pressed with `Ctrl` (`⌘` on macOS) plus a letter; the plain-letter keys in

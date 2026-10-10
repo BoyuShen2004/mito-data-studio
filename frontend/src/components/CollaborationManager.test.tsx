@@ -52,9 +52,11 @@ describe("CollaborationManager", () => {
         {id: 10, username: "ann", role: "annotator"},
         {id: 12, username: "bob", role: "annotator"},
       ],
-      teams: [{id: 3, name: "Team A", members: [{user_id: 10, username: "ann", role: "member"}]}],
+      teams: [{id: 3, name: "Team A", members: [{user_id: 10, username: "ann", role: "member"}]}, {id: 5, name: "Team B", members: []}],
     });
     render(<MemoryRouter><CollaborationManager /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "Teams & assignment eligibility" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Team A" }));
     const picker = await screen.findByLabelText("Add annotator to Team A");
     expect(within(picker).queryByRole("option", {name: "ann"})).toBeNull();
     fireEvent.change(picker, {target: {value: "12"}});
@@ -80,18 +82,36 @@ describe("CollaborationManager", () => {
           task_count: 2,
           projects: [{id: 7, title: "Mito Project", task_count: 2}],
         },
-      }],
+      }, {id: 5, name: "Team B", members: []}],
     });
     projectApi.listProjects.mockResolvedValue([
       {id: 7, title: "Mito Project", teams: [3], working_team: 3},
     ]);
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<MemoryRouter><CollaborationManager /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "Teams & assignment eligibility" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Team A" }));
     fireEvent.click(await screen.findByRole("button", {name: "Delete team"}));
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("2 assignment(s) will be withdrawn"));
     await waitFor(() => expect(collaborationApi.mutateCollaboration).toHaveBeenCalledWith({
       action: "delete_team", team_id: 3, confirm: true,
     }));
     confirm.mockRestore();
+  });
+
+  it("retains a pending team name through collapse and membership refresh", async () => {
+    collaborationApi.getCollaboration.mockResolvedValue({ institutions: [], users: [{id: 10, username: "ann", role: "annotator"}],
+      teams: [{id: 3, name: "Team A", members: [{user_id: 10, username: "ann"}]}, {id: 5, name: "Team B", members: []}] });
+    render(<MemoryRouter><CollaborationManager /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", {name: "Teams & assignment eligibility"}));
+    const toggle = await screen.findByRole("button", {name: "Team A"});
+    expect(screen.queryByLabelText("Team name for Team A")).toBeNull();
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Team name for Team A"), {target: {value: "Pending rename"}});
+    fireEvent.click(screen.getByRole("button", {name: "Remove ann"}));
+    await waitFor(() => expect(collaborationApi.getCollaboration).toHaveBeenCalledTimes(2));
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect((screen.getByLabelText("Team name for Team A") as HTMLInputElement).value).toBe("Pending rename");
   });
 });

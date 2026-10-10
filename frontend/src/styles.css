@@ -2810,6 +2810,7 @@ button.dev-reset-btn:hover:not(:disabled) {
    manager's full roster and an annotator's two peers both look deliberate. */
 .people-grid {
   display: grid;
+  align-items: start;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
   gap: 0.75rem;
 }
@@ -3919,3 +3920,19 @@ input[type="checkbox"], input[type="radio"] {
 
 .measurement-table { overflow-x: auto; }
 .measurement-table td { font-variant-numeric: tabular-nums; }
+
+/* Shared secondary-information disclosure; hidden bodies retain form state. */
+.disclosure-heading { margin: 0; font-size: 1rem; }
+.disclosure-toggle {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+  width: 100%; text-align: left; color: var(--text); background: transparent;
+  border: 0; padding: 0.5rem; font-weight: 600; cursor: pointer;
+}
+.disclosure-toggle:hover { background: var(--bg); color: var(--text); }
+.disclosure-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.disclosure-title { min-width: 0; overflow-wrap: anywhere; }
+.disclosure-context { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.disclosure-static-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.disclosure-summary { color: var(--muted); font-size: 0.8rem; font-weight: 400; overflow-wrap: anywhere; }
+.disclosure-body:not([hidden]) { padding-top: 0.75rem; }
+.disclosure-body[hidden] { display: none; }

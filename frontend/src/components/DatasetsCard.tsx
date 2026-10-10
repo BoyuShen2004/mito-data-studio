@@ -12,6 +12,7 @@ import { useAuth } from "../auth/AuthContext";
 import { METADATA_FIELDS } from "../metadataFields";
 import DeleteButton from "./DeleteButton";
 import DatasetMeta from "./DatasetMeta";
+import Disclosure from "./Disclosure";
 import { DatasetVolumesTable } from "./VolumeMeta";
 import { showError } from "../errorPopup";
 
@@ -29,7 +30,12 @@ export default function DatasetsCard({
 }) {
   const { isManager, isRequester } = useAuth();
   const canManage = isManager || isRequester;
-  const [editing, setEditing] = useState<number | null>(null);
+  const [editing, setEditing] = useState<Set<number>>(() => new Set());
+  const toggleEditing = (id: number) => setEditing(current => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   return (
     <section className="section-block data-section">
@@ -53,23 +59,16 @@ export default function DatasetsCard({
             // show them under the dataset only when they genuinely belong to it.
             const own = volumes.filter((v) => v.dataset === ds.id);
             return (
-              <section className="dataset-section" key={ds.id}>
+              <Disclosure className="dataset-section" key={`${projectId}:${ds.id}`} title={ds.name} collapsible={datasets.length > 1}
+                summary={`· ${own.length} volume pair${own.length === 1 ? "" : "s"}`}>
                 <div className="row spread">
-                  <h4 className="dataset-section-title">
-                    {ds.name}{" "}
-                    <span className="muted" style={{ fontWeight: 400 }}>
-                      · {own.length} volume pair{own.length === 1 ? "" : "s"}
-                    </span>
-                  </h4>
                   {canManage && <div className="row">
                     <button
                       type="button"
                       className="secondary"
-                      onClick={() =>
-                        setEditing(editing === ds.id ? null : ds.id)
-                      }
+                      onClick={() => toggleEditing(ds.id)}
                     >
-                      {editing === ds.id ? "Close" : "Edit"}
+                      {editing.has(ds.id) ? "Close" : "Edit"}
                     </button>
                     <DeleteButton
                       label={`dataset "${ds.name}"`}
@@ -81,11 +80,11 @@ export default function DatasetsCard({
                 </div>
 
                 {ds.description && <p className="muted">{ds.description}</p>}
-                {editing === ds.id && (
+                {editing.has(ds.id) && (
                   <DatasetEditForm
                     dataset={ds}
                     onSaved={() => {
-                      setEditing(null);
+                      setEditing(current => { const next = new Set(current); next.delete(ds.id); return next; });
                       onChanged();
                     }}
                   />
@@ -107,7 +106,7 @@ export default function DatasetsCard({
                   actionLabel="Details"
                   action={(item) => <Link to={`/volumes/${(item as Volume).id}`}>Details</Link>}
                 />}
-              </section>
+              </Disclosure>
             );
           })}
         </div>
