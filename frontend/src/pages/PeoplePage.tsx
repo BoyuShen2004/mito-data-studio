@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { getPeopleOverview, updateMyProfile } from "../api/people";
+import { setAssistantManager, getPeopleOverview, updateMyProfile } from "../api/people";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleLabel } from "../labels";
@@ -57,7 +57,10 @@ export default function PeoplePage() {
             hint="Assignments, submission counts, and latest review decisions."
             people={d.annotators}
             statKeys={ANNOTATOR_STAT_KEYS}
+            onAccessChanged={user?.can_manage_assistant_managers ? overview.reload : undefined}
           />
+          <PeopleSection title="Assistant managers" hint="These annotators can switch to the Manager workspace."
+            people={d.assistant_managers ?? []} collapsible showTime={false} onAccessChanged={user?.can_manage_assistant_managers ? overview.reload : undefined} />
           <PeopleSection
             title="Customers (requesters)"
             hint="Requesters and registered projects."
@@ -210,7 +213,7 @@ function ProfileCard({ me, onSaved }: { me: Person; onSaved: () => void }) {
             </tr>
             <tr>
               <th>Role</th>
-              <td>{roleLabel(me.role)}</td>
+              <td>{me.is_assistant_manager ? "Annotator + Assistant manager" : roleLabel(me.role)}</td>
             </tr>
             <tr>
               <th>Lab / institution</th>
@@ -257,14 +260,20 @@ function PeopleSection({
   hint,
   people,
   statKeys,
+  onAccessChanged,
+  collapsible,
+  showTime = true,
 }: {
   title: string;
   hint?: string;
   people: Person[];
   statKeys?: StatKeys;
+  onAccessChanged?: () => void;
+  collapsible?: boolean;
+  showTime?: boolean;
 }) {
   return (
-    <Disclosure className="card" title={title} count={people.length} collapsible={people.length > 1}>
+    <Disclosure className="card" title={title} count={people.length} collapsible={collapsible ?? people.length > 1}>
       {hint && <p className="muted">{hint}</p>}
       {people.length === 0 ? (
         <p className="muted" style={{ marginBottom: 0 }}>
@@ -273,7 +282,7 @@ function PeopleSection({
       ) : (
         <div className="people-grid">
           {people.map((p) => (
-            <PersonCard key={p.id} person={p} statKeys={statKeys} collapsible={people.length > 1} />
+            <PersonCard key={p.id} person={p} statKeys={statKeys} collapsible={people.length > 1} onAccessChanged={onAccessChanged} showTime={showTime} />
           ))}
         </div>
       )}
@@ -285,22 +294,27 @@ export function PersonCard({
   person,
   statKeys,
   collapsible = true,
+  showTime = true,
+  onAccessChanged,
 }: {
   person: Person;
   statKeys?: StatKeys;
   collapsible?: boolean;
+  showTime?: boolean;
+  onAccessChanged?: () => void;
 }) {
+  const { isManager, isRequester } = useAuth();
+  const [changingAccess, setChangingAccess] = useState(false);
   const last = person.stats?.last_decision;
   return (
     <Disclosure className="people-card" collapsible={collapsible} title={person.display_name || person.username}
-      summary={`${person.display_name ? `${person.username} · ` : ""}${roleLabel(person.role)}`}>
+      summary={`${person.display_name ? `${person.username} · ` : ""}${person.is_assistant_manager ? "Annotator + Assistant manager" : roleLabel(person.role)}`}>
       <div className="row spread">
         <strong>
           <Link to={`/people/${person.username}`}>
             {person.display_name || person.username}
           </Link>
         </strong>
-        <span className="muted">{roleLabel(person.role)}</span>
       </div>
       <div className="muted" style={{ fontSize: "0.78rem" }}>
         {person.username}
@@ -334,7 +348,15 @@ export function PersonCard({
       {/* Directly under the Projects list, collapsed. The roster renders many
           of these and most are never opened, so the request only fires on
           expand — see AnnotatorTimeSection. */}
-      <AnnotatorTimeSection username={person.username} />
+      {showTime && (isManager || isRequester) && <AnnotatorTimeSection username={person.username} />}
+      {onAccessChanged && <div className="people-access-actions"><button type="button" disabled={changingAccess} className="secondary" onClick={async () => {
+        const enabled = !person.is_assistant_manager;
+        if (!window.confirm(`${enabled ? "Grant" : "Revoke"} assistant-manager access for ${person.username}? ${enabled ? "They will be able to manage all projects in the Manager workspace." : "Their annotations and assignments will be kept."}`)) return;
+        setChangingAccess(true);
+        try { await setAssistantManager(person.id, enabled); onAccessChanged(); }
+        catch (error) { showError(error instanceof Error ? error.message : "Could not change access."); }
+        finally { setChangingAccess(false); }
+      }}>{person.is_assistant_manager ? "Revoke assistant manager" : "Make assistant manager"}</button></div>}
     </Disclosure>
   );
 }

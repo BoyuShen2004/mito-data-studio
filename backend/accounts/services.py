@@ -27,7 +27,7 @@ from core.choices import ACTIVE_TASK_STATUSES, HardCaseStatus, TaskStatus, UserR
 from projects.models import Project
 
 from .models import UserProfile
-from .roles import get_role, is_manager, is_requester
+from .roles import get_role, is_manager, is_requester, available_roles, has_manager_role, base_role
 
 User = get_user_model()
 
@@ -54,6 +54,8 @@ def person_card(user, *, extra: dict | None = None) -> dict:
         "username": user.get_username(),
         "display_name": (profile.display_name if profile else "") or "",
         "role": get_role(user) or "",
+        "available_roles": available_roles(user),
+        "is_assistant_manager": "manager" in available_roles(user) and base_role(user) == UserRole.ANNOTATOR,
         "institution_name": (profile.institution_name if profile else "") or "",
         "contact_note": (profile.contact_note if profile else "") or "",
         "email": user.email or "",
@@ -102,12 +104,12 @@ def project_managers(project) -> list:
     than "any of these people"."""
     owners = []
     for candidate in (project.created_by, project.reviewed_by):
-        if candidate is not None and is_manager(candidate) and candidate not in owners:
+        if candidate is not None and has_manager_role(candidate) and candidate not in owners:
             owners.append(candidate)
     if owners:
         return owners
     return list(
-        User.objects.filter(profile__role=UserRole.MANAGER, is_active=True).order_by(
+        User.objects.filter(Q(profile__role=UserRole.MANAGER) | Q(profile__role=UserRole.ANNOTATOR, profile__is_assistant_manager=True), is_active=True).order_by(
             "username"
         )
     )
@@ -209,6 +211,7 @@ def people_overview(user) -> dict:
         "peers": [],
         "annotators": [],
         "requesters": [],
+        "assistant_managers": [],
         "projects": [],
     }
 
@@ -362,6 +365,7 @@ def _manager_overview(user) -> dict:
         "me": person_card(user, extra={"stats": me_stats}),
         "annotators": sorted(annotators, key=lambda p: p["username"]),
         "requesters": requesters,
+        "assistant_managers": [a for a in annotators if a.get("is_assistant_manager")],
         "projects": [_project_brief(p) for p in Project.objects.all()[:50]],
     }
 

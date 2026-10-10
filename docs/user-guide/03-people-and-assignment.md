@@ -8,6 +8,17 @@ individual team only when there are multiple teams. New team is a regular form.
 Multi-person rosters and their records expand on demand; singleton rosters show
 details directly. This does not change permissions.
 
+## Assistant-manager access
+
+Primary managers can grant/revoke assistant-manager access at the bottom of an
+annotator's expanded record, with confirmation. The **Assistant managers** section
+is collapsible even with one person and omits Time reports. Each person's role
+appears once in the record heading, including both roles when applicable.
+Assistant managers appear in both rosters;
+their ordinary annotator eligibility remains unchanged. Assistant managers can
+manage projects in the Manager workspace but cannot delegate this account-level
+access. See [workspace switching](01-roles-and-navigation.md#assistant-managers-and-workspace-switching).
+
 ## Set up collaboration in the right order
 
 For a requester-created project, approve it first. Then:

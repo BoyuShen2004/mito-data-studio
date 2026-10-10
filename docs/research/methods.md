@@ -133,6 +133,27 @@ was recorded only for eligible active editing sessions, excluding read-only or
 inactive browser periods and merging overlapping intervals to avoid double
 counting wall-clock time.
 
+## Research-tool composition and delegated management
+
+The project interface separated the core registration, assignment, annotation
+and review workflow from a rightmost Extensions catalog. Measurements was the
+first implemented tool. A typed, repository-owned registry described enabled
+entries and lazily mounted a selected workspace with project/volume context;
+backend authorization and scientific job routing remained explicit. Disabling
+an entry did not remove existing results or cancel jobs. This provided a common
+frontend contribution path for research-specific tools, not runtime plugin
+installation or a measured scalability/usability result.
+
+Assistant-manager access was stored as an additional annotator capability.
+Existing base manager identities or superusers granted/revoked it with an audit
+record. Dual-role users selected Annotator or Manager in their current browser
+tab; token-authenticated requests validated the selected role against database
+grants. Annotator mode retained ordinary scope; Manager mode exposed the global
+management workflow but could not delegate assistant access. Switching required
+confirmation and returned to Home without saving pending work. Profile listed
+both identities. See [role design](../engineering/roles-and-workspaces.md) and
+[extension contract](../engineering/extensions.md) for implementation limits.
+
 ## Measurements
 
 Manager-triggered `measure_mito` ProcessingJobs ran in the local dispatcher via

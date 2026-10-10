@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { switchWorkspace } from "../api/auth";
+import { showError } from "../errorPopup";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { roleLabel } from "../labels";
@@ -15,6 +18,7 @@ import BackButton from "./BackButton";
  */
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const [switching, setSwitching] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const fallback = backFallbackFor(pathname, user?.role);
@@ -46,9 +50,24 @@ export default function Navbar() {
       {/* The identity readout is the way into your own account — the profile
           (and the annotate shortcuts on it) had no entry point at all before,
           and "click who you are" is where people look for one. */}
-      <NavLink to="/profile" className="nav-link navbar-identity" title="Your profile and annotate shortcuts">
-        {user?.username} ({roleLabel(user?.role)})
-      </NavLink>
+      <details className="account-dropdown">
+        <summary className="nav-link navbar-identity">{user?.username} ({roleLabel(user?.role)})</summary>
+        <div className="account-dropdown-panel">
+          <NavLink to="/profile" onClick={event => event.currentTarget.closest("details")?.removeAttribute("open")}>Your profile</NavLink>
+          {user?.is_assistant_manager && user.available_roles?.map(role => (
+            <button type="button" key={role} disabled={switching || role === user.role}
+              aria-pressed={role === user.role} onClick={async () => {
+                if (!window.confirm(`Switch to ${roleLabel(role)}? Save pending changes first. Unsaved changes will be discarded.`)) return;
+                setSwitching(true);
+                try {
+                  await switchWorkspace(role);
+                  // Fresh role-scoped data: never retain manager lists in Annotator mode.
+                  window.location.assign("/");
+                } catch (error) { showError(error instanceof Error ? error.message : "Could not switch role."); setSwitching(false); }
+              }}>Use {roleLabel(role)} workspace</button>
+          ))}
+        </div>
+      </details>
       <button type="button" className="secondary" onClick={onLogout}>
         Log out
       </button>

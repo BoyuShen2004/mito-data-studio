@@ -22,8 +22,13 @@ saved draft without approval; official does not itself mean reviewed.
 | Manager | Approves projects, controls access, assigns volumes, manages teams, reviews submissions, and publishes or revokes read-only shares |
 | Annotator | Edits assigned volumes, records difficult cases, saves drafts, and submits snapshots for review |
 
-Legacy database roles remain readable for compatibility, but the current user
-experience is organized around these three roles.
+These are three workspaces. An annotator may also hold **assistant manager**
+access, granted/revoked by an existing manager identity or superuser. The account
+keeps its annotation work and switches between Annotator and Manager using the
+username dropdown. Manager mode has application-wide management scope, while
+Annotator mode retains ordinary project/assignment scope. Assistant managers
+cannot grant this capability to others. Legacy database roles remain readable.
+See [roles and navigation](user-guide/01-roles-and-navigation.md).
 
 ## Functional scope
 
@@ -61,6 +66,21 @@ experience is organized around these three roles.
 - Pending browser edits, Undo/Redo, explicit Save, best-effort autosave, Verify's
   save flush, and revision-aware writes.
 - Region-only editing that protects content outside the immutable ROI.
+
+### Research extensions
+
+The core workflow stays focused on registration, assignment, annotation and
+review. Research-specific analysis uses a shared, rightmost **Extensions** tab.
+Measurements demonstrates this composition: a typed registry entry and lazy
+adapter reuse the project context while computation remains in explicit backend
+APIs and processing jobs. It is the only built-in tool currently registered.
+
+Contributors can add or disable tools without adding a new core tab. Disabling
+an entry changes discovery, not stored results or job lifecycle. Extensions are
+trusted code shipped with the application and require a rebuild/deployment;
+there is no runtime third-party installer. See the
+[contribution contract](engineering/extensions.md). Lazy loading and modular
+composition do not establish biological validity or measured scalability.
 
 ### Measurements
 

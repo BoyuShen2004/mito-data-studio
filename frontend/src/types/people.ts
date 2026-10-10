@@ -27,6 +27,8 @@ export interface Person {
   username: string;
   display_name: string;
   role: string;
+  available_roles?: string[];
+  is_assistant_manager?: boolean;
   institution_name: string;
   contact_note: string;
   email: string;
@@ -45,6 +47,7 @@ export interface PeopleOverview {
   annotators: Person[];
   /** Manager: the customers, with the projects they registered. */
   requesters: Person[];
+  assistant_managers?: Person[];
   projects: PersonProjectBrief[];
 }
 

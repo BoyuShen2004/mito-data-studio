@@ -3,6 +3,28 @@
 This page preserves dated validation evidence, not a live build badge. It does
 not establish that every later commit is release-ready.
 
+## 2026-10-10 UTC — assistant-manager and documentation candidate
+
+This candidate starts from `12ad4bc` and includes the assistant-manager feature,
+People refinements and the [recent-change documentation audit](../research/recent-changes-documentation-audit.md).
+The audit covers recent workflow and architecture drift; it does not repeat the
+complete scientific audit or resolve its remaining findings.
+
+| Check | Result |
+| --- | --- |
+| Frontend Vitest suite | 95 files, 717 tests passed |
+| Targeted backend suite | 299 tests passed on isolated PostgreSQL test storage |
+| Documentation links and English-language scan | Passed; final count recorded in the audit report |
+| Git whitespace check | Passed |
+
+Backend selection: accounts, projects, annotation core/time tracking/review loop/
+measurement API, reset API/application reset and security profile. Test-only MD5
+password hashing speeds isolated fixtures; production password hashing is unchanged.
+These checks use the existing development environment rather than a clean release
+lock. Live SAM2/GPU, SLURM and all Docker profiles were not revalidated. Production
+promotion and browser verification evidence are kept separately on the deployment
+host, rather than claiming deployment from this candidate record.
+
 ## 2026-10-09 — documentation audit against main at `1c47b3b`
 
 The checkout branch `feature/measure-mito` matched freshly fetched `origin/main`

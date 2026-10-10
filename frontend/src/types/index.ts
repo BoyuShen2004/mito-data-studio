@@ -53,6 +53,9 @@ export interface CurrentUser {
   last_name: string;
   is_superuser: boolean;
   role: Role;
+  available_roles?: Exclude<Role, null>[];
+  is_assistant_manager?: boolean;
+  can_manage_assistant_managers?: boolean;
   institution_name: string;
   /** Short self-editable profile (People page); blank until they fill it in. */
   display_name: string;

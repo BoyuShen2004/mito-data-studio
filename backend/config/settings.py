@@ -734,7 +734,7 @@ MITO_SLURM_SCANCEL = os.getenv("MITO_SLURM_SCANCEL", "scancel")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "accounts.authentication.WorkspaceTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [

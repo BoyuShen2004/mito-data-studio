@@ -1,3 +1,4 @@
+import { useAuth } from "../auth/AuthContext";
 import { Link, useParams } from "react-router-dom";
 import { getPerson } from "../api/people";
 import { useAsync } from "../hooks/useAsync";
@@ -10,6 +11,7 @@ import { ProjectRef } from "./PeoplePage";
  * Shows nothing the `/people` overview doesn't already show — it just puts
  * one person on their own page so a link is shareable. */
 export default function PersonPage() {
+  const { isManager, isRequester } = useAuth();
   const { username } = useParams();
   const person = useAsync(() => getPerson(username as string), [username]);
 
@@ -42,7 +44,7 @@ export default function PersonPage() {
             </tr>
             <tr>
               <th>Role</th>
-              <td>{roleLabel(p.role)}</td>
+              <td>{p.is_assistant_manager ? "Annotator + Assistant manager" : roleLabel(p.role)}</td>
             </tr>
             <tr>
               <th>Lab / institution</th>
@@ -97,7 +99,7 @@ export default function PersonPage() {
         {/* The same drill-down as the roster, under this person's Projects
             list. Lazy for the same reason: opening someone's card should not
             cost a report they may not want. */}
-        <AnnotatorTimeSection username={p.username} />
+        {(isManager || isRequester) && <AnnotatorTimeSection username={p.username} />}
       </div>
     </>
   );

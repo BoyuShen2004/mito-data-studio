@@ -12,6 +12,7 @@ the names used by the application.
 | --- | --- | --- |
 | Join the project | [Getting started](getting-started/README.md) | [Glossary](getting-started/glossary.md) |
 | Learn to use the application | [User guide](user-guide.md) | Choose chapters for your role |
+| Manage dual roles | [Assistant managers and switching](user-guide/01-roles-and-navigation.md#assistant-managers-and-workspace-switching) | [Role/API design](engineering/roles-and-workspaces.md) |
 | Discover research tools | [Extensions](user-guide/extensions.md) | [Add or disable an extension](engineering/extensions.md) |
 | Understand Measurements | [Measurement workflow](user-guide/09-measurements.md) | [Method and implementation](engineering/measurements.md) |
 | Explore the code before developing | [Code map](engineering/code-map.md) | [Feature walkthrough](engineering/feature-walkthrough.md) |
@@ -44,10 +45,14 @@ only to its stated date and version.
 
 ## Reference topics
 
-- Engineering: [root files](engineering/root-files.md), [architecture](engineering/architecture.md), [data and storage](engineering/data-and-storage.md), [AI and algorithms](engineering/ai-and-algorithms.md), [measurements](engineering/measurements.md), [extensions](engineering/extensions.md), [software audit](engineering/software-audit.md).
+- Engineering: [root files](engineering/root-files.md), [architecture](engineering/architecture.md), [roles and workspaces](engineering/roles-and-workspaces.md), [data and storage](engineering/data-and-storage.md), [AI and algorithms](engineering/ai-and-algorithms.md), [measurements](engineering/measurements.md), [extensions](engineering/extensions.md), [software audit](engineering/software-audit.md).
 - Release: [dated validation history](release/validation-history.md), [third-party attribution](attribution.md).
 
 ## Current implementation audit
+
+See the [recent-changes audit](research/recent-changes-documentation-audit.md) for
+Extensions, dual roles, disclosure, navigation and current validation coverage.
+It supplements the original repository-wide audit below.
 
 The [documentation audit](research/documentation-audit.md) records differences
 between documentation and main, implementation/test evidence, and validation

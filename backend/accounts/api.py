@@ -14,8 +14,8 @@ from rest_framework.views import APIView
 from core.choices import UserRole
 from core.permissions import IsManager
 
-from .models import AnnotatorProfile
-from .roles import get_role, is_annotator, is_requester
+from .models import AnnotatorProfile, UserProfile, AuditEvent
+from .roles import get_role, is_annotator, is_requester, available_roles, is_primary_manager
 from .serializers import (
     CurrentUserSerializer,
     LoginSerializer,
@@ -221,3 +221,37 @@ class AnnotatorListView(APIView):
             if get_role(p.user) in (UserRole.ANNOTATOR,)
         ]
         return Response(data)
+
+
+class WorkspaceRoleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        role = request.data.get("role")
+        if role not in available_roles(request.user):
+            return Response({"detail": "This role is not available for your account."}, status=403)
+        request.user._active_role = role
+        return Response(CurrentUserSerializer(request.user).data)
+
+
+class AssistantManagerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, user_id):
+        from django.db import transaction
+        from core.choices import AuditVerb
+        if not is_primary_manager(request.user):
+            return Response({"detail": "Only a primary manager can change assistant-manager access."}, status=403)
+        enabled = request.data.get("enabled")
+        if type(enabled) is not bool:
+            return Response({"detail": "enabled must be a boolean."}, status=400)
+        with transaction.atomic():
+            profile = UserProfile.objects.select_for_update().select_related("user").filter(user_id=user_id, role=UserRole.ANNOTATOR, user__is_active=True).first()
+            if profile is None or profile.user.is_superuser:
+                return Response({"detail": "Choose an active annotator account."}, status=404)
+            if profile.is_assistant_manager != enabled:
+                profile.is_assistant_manager = enabled
+                profile.save(update_fields=["is_assistant_manager"])
+                AuditEvent.objects.create(actor=request.user, verb=AuditVerb.ASSISTANT_MANAGER_CHANGED,
+                    target_type="user", target_id=str(user_id), metadata={"enabled": enabled})
+            return Response({"id": user_id, "is_assistant_manager": profile.is_assistant_manager})

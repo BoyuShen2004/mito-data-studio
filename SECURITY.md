@@ -15,3 +15,11 @@ Only the current development branch and the active production release receive
 security fixes. Deployment secrets, TLS termination, host permissions, backups,
 and access to registered source data remain operator responsibilities.
 
+Assistant-manager access is a separate annotator capability, delegated only by
+existing manager identities or superusers. Manager workspace access is global;
+it does not grant Django staff/superuser status. Token-authenticated API requests
+validate `X-Mito-Role` against current database grants. A role header, hidden UI
+control or Extensions catalog entry cannot create permissions; revocation denies
+later manager requests. See [roles and workspaces](docs/engineering/roles-and-workspaces.md)
+for exact defaults and boundaries.
+

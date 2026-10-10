@@ -21,6 +21,38 @@ Pages and API results are permission-aware. Not seeing a button usually means
 the current role or project relationship does not permit the action; it is not
 necessarily a loading failure.
 
+## Assistant managers and workspace switching
+
+An existing manager (including an administrator) can grant an active annotator
+**assistant manager** access from **People → Annotators → Make assistant manager**.
+Confirm the grant: it permits the same project management actions as other
+managers across the application. Assistant managers cannot grant or revoke this
+access for anyone else. Public registration cannot request it.
+
+The account remains an annotator with its assignments, working labels and
+submissions intact. It appears in both **Annotators** and **Assistant managers**.
+To remove the extra access, a primary manager selects **Revoke assistant manager**
+and confirms; annotation work remains intact.
+
+If the annotator is already signed in when access is granted, reload the page
+to refresh the account menu. A dual-role account signs in as an annotator.
+Open the username dropdown and
+choose **Use Manager workspace** or **Use Annotator workspace**. The name's role
+suffix and all role-scoped pages change together. Save pending edits first: the
+switch requires confirmation, reloads the application and returns to **Home**;
+it does not save or submit work. Cancel keeps the current workspace.
+
+The choice lasts in the current browser tab, including reloads, until logout.
+Other tabs choose independently. Backend permissions enforce the selected role;
+an Annotator workspace does not retain manager actions. Revoked manager access
+is denied on subsequent requests; reload to recover to the default Annotator
+workspace. If switching fails, remain in the current workspace and retry or
+contact a primary manager.
+
+**Your profile** displays **Annotator + Assistant manager** in either workspace.
+Normal annotators see project collaborators and contact details in People,
+without Time report controls. Their own task timing continues unchanged.
+
 ## Sign-in and development accounts
 
 Choose the portal role on the sign-in page, enter credentials, and press **Sign
@@ -41,7 +73,7 @@ The navigation bar holds four entries, and every one of them is a *place*:
 - **Projects** — every project you can see. Server-scoped: managers see all,
   requesters their own, annotators the ones they work on.
 - **People** — role-scoped collaborators, project teams, and eligibility.
-- The username opens **Profile**; **Log out** ends the session.
+- The username opens an account dropdown with **Your profile** and, for dual-role users, workspace choices; **Log out** ends the session.
 
 `Register Data` is not in the bar, because it is an action rather than a place.
 It sits on the pages that own it: Home, the Projects list, and a project's

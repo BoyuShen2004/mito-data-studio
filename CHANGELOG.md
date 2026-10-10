@@ -5,6 +5,17 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add primary-manager-controlled assistant-manager grants, dual-role account
+  dropdown/workspace switching and a dedicated People roster. Preserve annotator
+  identity and enforce the selected role on backend requests. Keep ordinary
+  annotator People pages free of Time reports. Assistant managers has its own
+  collapsible roster without Time; person roles appear once, and account-access
+  controls sit last, separated from annotation time.
+- Align onboarding, terminology, user workflows, contribution/security guidance,
+  research methods and rollout documentation with Extensions and dual roles.
+  Record a history-backed documentation audit and validation limits.
+
+
 ### Changed
 
 - Added selective progressive disclosure for grouped People rosters, multiple

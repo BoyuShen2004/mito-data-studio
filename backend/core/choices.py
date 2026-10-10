@@ -35,6 +35,7 @@ class MembershipSource(models.TextChoices):
 class AuditVerb(models.TextChoices):
     """What happened, for the append-only audit log."""
 
+    ASSISTANT_MANAGER_CHANGED = "account.assistant_manager_changed", "Assistant manager access changed"
     TEAM_MEMBER_ADDED = "team.member_added", "Team member added"
     TEAM_MEMBER_REMOVED = "team.member_removed", "Team member removed"
     TEAM_ROLE_CHANGED = "team.role_changed", "Team role changed"

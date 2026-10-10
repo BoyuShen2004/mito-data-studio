@@ -2,6 +2,15 @@
 // localStorage and sent as `Authorization: Token <token>`.
 
 const TOKEN_KEY = "mito_token";
+const ROLE_KEY = "mito_workspace_role";
+export function getWorkspaceRole(): string | null { return sessionStorage.getItem(ROLE_KEY); }
+export function setWorkspaceRole(role: string | null): void {
+  if (role) sessionStorage.setItem(ROLE_KEY, role); else sessionStorage.removeItem(ROLE_KEY);
+}
+export function workspaceHeaders(): Record<string, string> {
+  const role = getWorkspaceRole();
+  return role ? { "X-Mito-Role": role } : {};
+}
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -9,7 +18,7 @@ export function getToken(): string | null {
 
 export function setToken(token: string | null): void {
   if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  else { localStorage.removeItem(TOKEN_KEY); setWorkspaceRole(null); }
 }
 
 /** Raw fetch with the same token contract as the decoded API client. */
@@ -17,7 +26,7 @@ export function authenticatedFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
-  const headers = new Headers(init.headers);
+  const headers = new Headers({ ...workspaceHeaders(), ...Object.fromEntries(new Headers(init.headers)) });
   const token = getToken();
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Token ${token}`);
@@ -74,7 +83,7 @@ export async function apiRequest<T>(
     responseType = "json",
   }: RequestOptions = {},
 ): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = workspaceHeaders();
   const token = getToken();
   if (token) headers["Authorization"] = `Token ${token}`;
 

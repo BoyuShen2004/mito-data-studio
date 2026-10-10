@@ -80,11 +80,17 @@ standalone measure of biological quality or worker performance.
 ## Profile and shortcuts
 
 On **People**, **Your profile** and Edit are directly visible. Multi-person
-rosters and records expand on demand; annotation time retains its drill-down. See
+rosters and records expand on demand. Ordinary annotators do not have Time
+report controls on People/person pages. Managers retain Time under Annotators;
+the separate Assistant managers section omits it. Grant/revoke controls sit in a
+separated final action area beneath the other contents. See
 [expandable sections](progressive-disclosure.md).
 
-Open the username in the navigation bar to edit personal information and
-contact details. Annotators and managers can customize the tool shortcuts that
+Open the username dropdown in the navigation bar and select **Your profile** to
+edit personal information and contact details. Dual-role users see **Annotator +
+Assistant manager** on Profile; workspace switching is a separate dropdown action
+with a save-first confirmation and reload to Home. See
+[roles and navigation](01-roles-and-navigation.md#assistant-managers-and-workspace-switching). Annotators and managers can customize the tool shortcuts that
 are pressed with `Ctrl` (`⌘` on macOS) plus a letter; the plain-letter keys in
 [Manual annotation tools](05-annotation-tools.md#keyboard-shortcuts) are not
 affected. Shortcuts are saved to the account and follow it between browsers;

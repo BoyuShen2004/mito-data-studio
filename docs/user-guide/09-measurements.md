@@ -5,8 +5,10 @@ The volume detail page's **Measurements** shortcut opens the same extension with
 that volume selected. Old project Measurements links also open this workspace.
 See [Extensions](extensions.md) for discovery and access.
 
-Managers can start a run;
-authenticated users with volume-view access can read results and export CSV.
+Managers can start a run, including assistant managers using the **Manager**
+workspace. In **Annotator** mode, the same dual-role account has ordinary read/
+export access to permitted volumes. Authenticated users with volume-view access
+can read results and export CSV.
 Public shares do not expose measurements.
 
 ## Run measurements

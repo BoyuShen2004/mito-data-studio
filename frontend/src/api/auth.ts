@@ -1,5 +1,5 @@
 import type { CurrentUser } from "../types";
-import { api, authenticatedFetch, setToken } from "./client";
+import { api, authenticatedFetch, setToken, setWorkspaceRole, ApiError } from "./client";
 
 interface AuthResponse {
   token: string;
@@ -69,6 +69,7 @@ export async function login(
   password: string,
   portal?: LoginPortal,
 ): Promise<CurrentUser> {
+  setWorkspaceRole(null);
   const res = await api.post<AuthResponse>("/auth/login/", {
     username,
     password,
@@ -100,6 +101,18 @@ export async function logout(): Promise<void> {
   }
 }
 
-export function fetchMe(): Promise<CurrentUser> {
-  return api.get<CurrentUser>("/auth/me/");
+export async function fetchMe(): Promise<CurrentUser> {
+  try { return await api.get<CurrentUser>("/auth/me/"); }
+  catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 403) throw error;
+    // Revoked grants must recover to the account's default role, not log out.
+    setWorkspaceRole(null);
+    return api.get<CurrentUser>("/auth/me/");
+  }
+}
+
+export async function switchWorkspace(role: string): Promise<CurrentUser> {
+  const user = await api.post<CurrentUser>("/auth/role/", { role });
+  setWorkspaceRole(role);
+  return user;
 }

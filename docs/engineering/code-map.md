@@ -70,6 +70,7 @@ these tables; see [data and storage](data-and-storage.md) for ownership and life
 | Question | Start with |
 | --- | --- |
 | How do Home tasks and Review controls work? | [HomePage](../../frontend/src/pages/HomePage.tsx), [WorkList](../../frontend/src/components/WorkList.tsx) |
+| How do dual roles and manager grants work? | [Roles and workspaces](roles-and-workspaces.md), [accounts/roles.py](../../backend/accounts/roles.py), [authentication.py](../../backend/accounts/authentication.py) |
 | How do I add or disable a research tool? | [Project extension guidelines](extensions.md) |
 | How do measurements use spacing? | [Measurements walkthrough](feature-walkthrough.md) |
 | What distinguishes working labels, snapshots and official labels? | [label_paths.py](../../backend/annotation/label_paths.py), [annotation services](../../backend/annotation/services.py), [review guide](../user-guide/07-submit-and-review.md) |

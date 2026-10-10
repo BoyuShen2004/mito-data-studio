@@ -86,7 +86,7 @@ export default function ProfilePage() {
     <div className="profile-page">
       <h1>Profile</h1>
       <p className="muted">
-        {user.username} · {roleLabel(user.role)}
+        {user.username} · {user.is_assistant_manager ? "Annotator + Assistant manager" : roleLabel(user.role)}
         {user.institution_name ? ` · ${user.institution_name}` : ""}
       </p>
 

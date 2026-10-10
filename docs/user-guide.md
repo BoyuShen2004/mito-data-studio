@@ -1,7 +1,7 @@
 # Mito Data Studio user guide
 
 This guide describes the current main-branch behavior of Mito Data Studio.
-Controls are permission-aware: a requester, manager, annotator, and public-link
+Controls follow the active workspace: a requester, manager, annotator, and public-link
 visitor can open the same data but see different actions.
 
 New to the lab? Start with the [onboarding guide](getting-started/README.md) and [glossary](getting-started/glossary.md).
@@ -12,9 +12,9 @@ For the common interaction pattern, see [expandable sections and records](user-g
 
 | Module | Use it to learn |
 | --- | --- |
-| [1. Roles, sign-in, and navigation](user-guide/01-roles-and-navigation.md) | What each role can do, how access differs from assignment, and where pages live |
+| [1. Roles, sign-in, and navigation](user-guide/01-roles-and-navigation.md) | Role permissions, assistant-manager grants/switching, access versus assignment, and navigation |
 | [2. Projects and data registration](user-guide/02-projects-and-data.md) | Create and approve projects; scan and register image, ROI, and label files |
-| [3. People, access, teams, and assignment](user-guide/03-people-and-assignment.md) | Make data visible, make annotators eligible, and assign one whole-volume task |
+| [3. People, access, teams, and assignment](user-guide/03-people-and-assignment.md) | Manage access and assistant grants, make annotators eligible, and explicitly save assignment plans |
 | [4. Viewer and volume inspection](user-guide/04-viewer.md) | Navigate 3-D data, adjust display layers, inspect labels, and use read-only mode |
 | [5. Manual annotation tools](user-guide/05-annotation-tools.md) | Select labels, paint, erase, merge, split, fill, watershed, interpolate, undo, and save |
 | [6. Region-only, assisted masks, and SAM2 Track](user-guide/06-assisted-and-track.md) | Protect content outside an ROI and review AI-assisted proposals safely |
@@ -35,6 +35,9 @@ For the common interaction pattern, see [expandable sections and records](user-g
    instance-specific feedback or approves it](user-guide/07-submit-and-review.md).
 5. Project members use [hard cases and controlled sharing](user-guide/08-collaboration-and-safety.md)
    when discussion or external read-only inspection is needed.
+
+6. For analysis, use **Project → Extensions → Measurements**. Read/export access
+   and run permissions depend on the active workspace; see [Extensions](user-guide/extensions.md).
 
 ## Core mental model
 

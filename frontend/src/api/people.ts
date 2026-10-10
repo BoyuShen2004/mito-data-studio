@@ -13,3 +13,6 @@ export const getPerson = (username: string) =>
 /** Edit your own short profile; returns the refreshed current user. */
 export const updateMyProfile = (data: ProfileUpdate) =>
   api.patch<CurrentUser>("/people/me/", data);
+
+export const setAssistantManager = (id: number, enabled: boolean) =>
+  api.patch<{ id: number; is_assistant_manager: boolean }>(`/people/${id}/assistant-manager/`, { enabled });

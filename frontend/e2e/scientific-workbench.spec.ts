@@ -559,3 +559,81 @@ test('saving voxel size retains the selected working measurement source', async 
   await page.getByRole('button', { name: 'Run measurements', exact: true }).click();
   await expect.poll(() => runs).toEqual(['working']);
 });
+
+
+test('assistant manager switches real workspace chrome and keeps both profile roles', async ({ page }) => {
+  await installScientificFixture(page, 'annotator');
+  await signInFixture(page);
+  const dual = { id: 7, username: 'researcher', role: 'annotator', is_assistant_manager: true,
+    available_roles: ['annotator', 'manager'], can_manage_assistant_managers: false,
+    display_name: 'Alice', institution_name: '', contact_note: '', email: '' };
+  await page.route('**/api/auth/me/', route => route.fulfill({ json: {
+    ...dual, role: route.request().headers()['x-mito-role'] || 'annotator',
+  } }));
+  await page.route('**/api/auth/role/', route => route.fulfill({ json: { ...dual, role: route.request().postDataJSON().role } }));
+  await page.route('**/api/collaboration/', route => route.fulfill({ json: { users: [], teams: [], institutions: [] } }));
+  await page.route('**/api/people/overview/', route => route.fulfill({ json: {
+    me: dual, role: route.request().headers()['x-mito-role'] || 'annotator', managers: [], peers: [dual],
+    annotators: [dual], assistant_managers: [dual], requesters: [], projects: [],
+  } }));
+  await page.goto('/people');
+  await expect(page.getByRole('heading', { name: /Assistant managers/ })).toHaveCount(0);
+  await expect(page.getByText('Time', { exact: true })).toHaveCount(0);
+  await page.locator('.account-dropdown summary').click();
+  await page.getByRole('link', { name: 'Your profile', exact: true }).click();
+  await expect(page.getByText(/researcher · Annotator \+ Assistant manager/)).toBeVisible();
+  await page.locator('.account-dropdown summary').click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Use Manager workspace' }).click();
+  await expect(page.locator('.account-dropdown summary')).toHaveText('researcher (Manager)');
+  await page.goto('/people');
+  await expect(page.getByRole('heading', { name: /Assistant managers/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Make assistant manager|Revoke assistant manager/ })).toHaveCount(0);
+  await page.locator('.account-dropdown summary').click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Use Annotator workspace' }).click();
+  await expect(page.locator('.account-dropdown summary')).toHaveText('researcher (Annotator)');
+});
+
+test('primary manager grants and revokes access through the two People rosters', async ({ page }) => {
+  await installScientificFixture(page);
+  await signInFixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  let enabled = false;
+  const person = () => ({ id: 8, username: 'alice', display_name: 'Alice', role: 'annotator',
+    is_assistant_manager: enabled, institution_name: '', contact_note: '', projects: [], stats: {} });
+  await page.route('**/api/auth/me/', route => route.fulfill({ json: { id: 7, username: 'researcher', role: 'manager', can_manage_assistant_managers: true } }));
+  await page.route('**/api/collaboration/', route => route.fulfill({ json: { users: [], teams: [], institutions: [] } }));
+  await page.route('**/api/people/overview/', route => route.fulfill({ json: {
+    me: { ...person(), id: 7, username: 'researcher', role: 'manager' }, role: 'manager',
+    managers: [], peers: [], annotators: [person()], assistant_managers: enabled ? [person()] : [], requesters: [], projects: [],
+  } }));
+  await page.route('**/api/people/8/assistant-manager/', route => {
+    enabled = route.request().postDataJSON().enabled;
+    return route.fulfill({ json: { id: 8, is_assistant_manager: enabled } });
+  });
+  await page.goto('/people');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Make assistant manager' }).click();
+  const annotators = page.getByRole('heading', { name: /^Annotators/ }).locator('..');
+  const timeBounds = await annotators.getByRole('button', { name: /Time/ }).boundingBox();
+  const accessBounds = await annotators.getByRole('button', { name: 'Revoke assistant manager', exact: true }).boundingBox();
+  expect(timeBounds).not.toBeNull();
+  expect(accessBounds).not.toBeNull();
+  expect(accessBounds!.y - (timeBounds!.y + timeBounds!.height)).toBeGreaterThanOrEqual(24);
+  const assistants = page.getByRole('heading', { name: /^Assistant managers/ }).locator('..');
+  const toggle = page.getByRole('button', { name: 'Assistant managers', exact: true });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(assistants.getByRole('link', { name: 'Alice', exact: true })).toBeVisible();
+  await expect(assistants.getByText('Time', { exact: true })).toHaveCount(0);
+  await expect(assistants.getByText('Annotator + Assistant manager', { exact: true })).toHaveCount(0);
+  await expect(assistants.locator('.disclosure-summary')).toContainText('Annotator + Assistant manager');
+  await expect(assistants.getByText('Annotator', { exact: true })).toHaveCount(0);
+  expect(await assistants.locator('.people-card .disclosure-body > :last-child').textContent()).toBe('Revoke assistant manager');
+  await expect(page.getByRole('button', { name: 'Revoke assistant manager', exact: true })).toHaveCount(2);
+  page.once('dialog', dialog => dialog.accept());
+  await assistants.getByRole('button', { name: 'Revoke assistant manager' }).click();
+  await expect(assistants.getByRole('link', { name: 'Alice', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Make assistant manager' })).toBeVisible();
+});

@@ -61,3 +61,17 @@ measured on.
   Explicit save/run controls retain their existing meaning.
 - Disabling a frontend extension preserves data and jobs. Core registration,
   assignment, annotation and review remain available.
+
+## Assistant-manager workspaces
+
+- An assistant manager remains an annotator and appears in both People rosters.
+  Grants do not replace assignments, labels or submissions.
+- Only existing primary manager identities or superusers grant/revoke access;
+  assistant managers cannot delegate their elevated access.
+- Backend authorization validates the active workspace on every token-authenticated
+  request. Annotator mode keeps ordinary annotator scope; revocation prevents
+  further manager requests.
+- Switching requires confirmation and reloads to Home. It never saves or submits
+  pending work. Profile shows both durable roles in either workspace.
+- Ordinary annotators' People/person pages omit Time report controls; automatic
+  timing of their own annotation work remains available.

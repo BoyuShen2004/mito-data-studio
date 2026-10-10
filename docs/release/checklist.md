@@ -40,6 +40,12 @@ as open source or granting reuse rights. Do not change that decision implicitly.
 
 ## Current implementation gaps to verify
 
+- Verify rightmost Extensions discovery, legacy Measurements URLs, disabled
+  entries, read/export versus explicit run permissions and lazy-load failures.
+- Verify assistant grants/revocation, no grant chaining, Annotator versus Manager
+  scope, profile identities and absence of development helpers in production.
+  Review `accounts/0014`; existing grants default false and no account is promoted
+  by the migration. Keep a database backup and record applied migrations.
 - Review unresolved Track-preview autosave persistence and working-team
   withdrawal promotion before making data-state guarantees.
 - Confirm the dispatcher is supervised and accepts the intended job types.

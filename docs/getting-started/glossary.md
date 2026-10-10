@@ -2,6 +2,14 @@
 
 | Term | Meaning in this application | Common distinction |
 | --- | --- | --- |
+| Primary manager | Existing base manager identity or superuser that can grant/revoke assistant-manager access | Not a separate singular lab-owner designation |
+| Assistant manager | An annotator with an additional authorized Manager workspace | Does not become a Django staff/superuser account or lose annotation assignments |
+| Active workspace | Selected Annotator or Manager role for a dual-role account's current browser tab | Backend permission checks use it; Profile still lists both durable identities |
+| Team manager | Standing within a team | Separate from application-wide assistant-manager access |
+| Extensions | Shared project catalog for enabled research tools, always the rightmost tab | Core annotation/review stay separate; only Measurements is currently built in |
+| Extension | Trusted repository-owned tool integrated through the typed project registry | Enabling/disabling the UI does not install/remove backend services or data |
+| Measurement source | Official label or saved working draft selected for a measurement run | Browser-only pending edits and selectable submission snapshots are excluded |
+| Save plan | Explicitly applies staged assignment/metadata changes | Choosing a team updates eligibility immediately but does not save the assignment plan |
 | Project | Related research work, members, data and tasks | A project is not an image file |
 | Dataset | A group of volumes within a project | One project can contain multiple datasets |
 | Volume | Microscopy image data with associated labels, ROI and metadata | A slice is one plane of a volume |

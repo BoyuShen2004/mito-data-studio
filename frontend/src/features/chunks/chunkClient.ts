@@ -1,4 +1,4 @@
-import { getToken } from "../../api/client";
+import { getToken, workspaceHeaders } from "../../api/client";
 import type {
   ChunkCapabilities,
   ChunkDType,
@@ -81,7 +81,7 @@ export interface ChunkTokenProviderOptions {
 }
 
 function authHeaders(): Headers {
-  const headers = new Headers({ "Content-Type": "application/json" });
+  const headers = new Headers({ "Content-Type": "application/json", ...workspaceHeaders() });
   const token = getToken();
   if (token) headers.set("Authorization", `Token ${token}`);
   return headers;

@@ -37,6 +37,7 @@ class UserProfile(models.Model):
     role = models.CharField(
         max_length=20, choices=UserRole.choices, default=UserRole.ANNOTATOR
     )
+    is_assistant_manager = models.BooleanField(default=False)
     institution = models.ForeignKey(
         Institution,
         on_delete=models.SET_NULL,

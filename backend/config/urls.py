@@ -15,6 +15,8 @@ from annotation.measurement_api import VolumeMeasurementsView, VolumeMeasurement
 from .views import index, spa_index
 from accounts.api import (
     AnnotatorListView,
+    WorkspaceRoleView,
+    AssistantManagerView,
     LoginView,
     MockLoginView,
     LogoutView,
@@ -176,6 +178,8 @@ urlpatterns = [
     path("api/auth/mock-login/", MockLoginView.as_view(), name="api-mock-login"),
     path("api/auth/development-reset/", DevelopmentResetView.as_view(), name="api-development-reset"),
     path("api/auth/logout/", LogoutView.as_view(), name="api-logout"),
+    path("api/auth/role/", WorkspaceRoleView.as_view(), name="api-workspace-role"),
+    path("api/people/<int:user_id>/assistant-manager/", AssistantManagerView.as_view(), name="api-assistant-manager"),
     path("api/auth/me/", MeView.as_view(), name="api-me"),
     path("api/admin/reset/status/", ResetStatusView.as_view(), name="api-reset-status"),
     path("api/admin/reset/confirm/", ResetConfirmView.as_view(), name="api-reset-confirm"),

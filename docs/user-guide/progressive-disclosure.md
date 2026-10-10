@@ -10,7 +10,11 @@ never saves data, changes permissions or applies an operation.
 **Your profile** and its Edit button are directly visible. People rosters with
 multiple people show a section summary first, then individual expandable records.
 A roster containing only one person displays that person's details directly.
-Empty rosters display their empty-state message without an extra click.
+Empty ordinary rosters display their empty-state message without an extra click.
+The **Assistant managers** group has its own collapse control even for a single
+person. It shows no Time report; the Annotators roster retains manager Time
+controls. Person headings display the role once, including both roles for dual
+accounts. Grant/revoke controls sit after the other record contents.
 
 Managers open **Teams & assignment eligibility** to manage existing teams.
 Within a multi-team list, expand a team for members, description/organization

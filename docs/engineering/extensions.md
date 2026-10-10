@@ -5,6 +5,21 @@ tab list. Measurements is the first registered example. Annotation, assignment
 and review remain core sections. This is a frontend composition contract, not
 a runtime plugin installer or automatic backend plugin framework.
 
+## Design intent
+
+Keep registration, assignment, editing and review as the stable core workflow.
+Research-specific analysis belongs behind a shared project catalog, so a new tool
+uses the same discovery, project context and navigation instead of requiring
+another core tab. Measurements is the implemented example; it is the only
+currently registered tool. Contributors can follow its adapter/API/job path for
+another domain while defining their own scientific inputs and limits.
+
+The registry supplies a uniform frontend composition boundary. Backend APIs,
+authorization, processing runners, cleanup and scientific validation remain
+explicit integrations. In particular, `isManager` reflects the active workspace,
+including authorized assistant managers; an assistant's Annotator mode remains
+read-only. See [roles and workspaces](roles-and-workspaces.md).
+
 ## Implementation boundaries
 
 | File | Responsibility |

@@ -11,9 +11,9 @@ Authenticated users who can view the project can open its catalog. Each card
 describes what their role can do. Opening a tool grants no additional data
 access or permissions. Public sharing pages do not expose the catalog.
 
-- Managers can select a volume and source, save voxel size, explicitly start
+- Managers, including assistants in the Manager workspace, can select a volume and source, save voxel size, explicitly start
   measurements, inspect results and export CSV.
-- Annotators and requesters with volume-view access can inspect results and
+- Annotators (including dual-role users in Annotator mode) and requesters with volume-view access can inspect results and
   export CSV. A manager must save voxel size or start a new run.
 - Select **All extensions** to return to the catalog, or choose a core project
   tab to continue registration, assignment or review.

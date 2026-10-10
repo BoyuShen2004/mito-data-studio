@@ -2820,6 +2820,11 @@ button.dev-reset-btn:hover:not(:disabled) {
   padding: 0.7rem 0.8rem;
   background: var(--card);
 }
+.people-access-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
 .people-stats {
   display: flex;
   flex-wrap: wrap;
@@ -3936,3 +3941,8 @@ input[type="checkbox"], input[type="radio"] {
 .disclosure-summary { color: var(--muted); font-size: 0.8rem; font-weight: 400; overflow-wrap: anywhere; }
 .disclosure-body:not([hidden]) { padding-top: 0.75rem; }
 .disclosure-body[hidden] { display: none; }
+
+.account-dropdown { position: relative; }
+.account-dropdown summary { cursor: pointer; }
+.account-dropdown-panel { position: absolute; right: 0; top: 100%; z-index: 1000; display: grid; gap: 8px; padding: 12px; background: white; border: 1px solid #cbd5e1; border-radius: 6px; width: 240px; max-width: calc(100vw - 32px); box-shadow: 0 6px 18px #0002; }
+.account-dropdown-panel button { white-space: normal; }

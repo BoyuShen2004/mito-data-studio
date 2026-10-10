@@ -18,6 +18,11 @@ Development accounts appear only when explicitly enabled. Selecting one fills
 the login form; the user must still press **Sign in**. Production deployments
 should disable mock login and the development reset surface.
 
+An annotator granted assistant-manager access can choose Annotator or Manager
+from the username dropdown. Save pending input before confirming a switch; it
+reloads to Home. Only primary manager identities/superusers grant or revoke that
+access. See [roles and switching](01-roles-and-navigation.md).
+
 ## 2. Create and approve a project
 
 1. A requester or manager opens **New project**.
@@ -37,7 +42,8 @@ assign them an annotation task.
 5. Review every proposed image/region/label match and resolve unmatched or
    ambiguous files.
 6. Select the correct label type: no label, partial label, or prediction.
-7. Register the reviewed rows.
+7. Register the reviewed rows. Successful registration opens the owning project's
+   **Data** tab, keeping project context rather than requiring another lookup.
 
 The three layers have different semantics:
 
@@ -70,7 +76,12 @@ replace or modify the source.
 1. A manager opens the project's **Tasks** tab and presses **Assign volumes**.
 2. Select one eligible annotator for each volume.
 3. Optionally set priority, difficulty, deadline, and instructions.
-4. The annotator opens the assigned task from Home → **Assigned to me**.
+4. Review the staged rows and press **Save plan** to apply assignments/metadata.
+5. The annotator opens the assigned task from Home → **Assigned to me**.
+
+Choose or create the working team inside **Assign volumes**. Saving the team
+updates eligibility while keeping the editor and staged instructions open;
+the assignment plan still needs **Save plan**.
 
 One volume corresponds to one active task and one assignee. Transfers preserve
 already recorded attribution and annotation time.
@@ -161,7 +172,15 @@ Approval promotes the chosen snapshot to the official label. Revision or
 rejection returns that channel for more work. Competing pending channels are
 handled explicitly; no submission overwrites registered source imagery.
 
-## 10. Safety checks before leaving a task
+## 10. Analyze saved labels through Extensions
+
+Open **Project → Extensions → Measurements**, select a volume and measurement
+source, confirm calibrated spacing, and explicitly run or read results according
+to the active workspace's permissions. Measurements reads official/saved drafts;
+it does not save labels, submit work or approve a review. See the
+[measurement guide](09-measurements.md) for units, limits, provenance and recovery.
+
+## 11. Safety checks before leaving a task
 
 - Confirm the editor reports no unsaved changes.
 - Resolve any pending Track preview with Confirm or Reject.

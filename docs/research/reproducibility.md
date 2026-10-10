@@ -57,7 +57,16 @@ For every manuscript figure/table or performance run, archive:
 9. raw `mito.ai.timing` / `mito.track.timing`, resource telemetry, and errors;
 10. analysis scripts, raw results, statistical outputs, and figure generation;
 11. test report and migration state;
-12. approvals for data, ethics, authorship, licensing, and public release.
+12. approvals for data, ethics, authorship, licensing, and public release;
+13. enabled extension registry entries and the exact frontend build, plus the
+    active workspace used for each UI operation and whether assistant-manager
+    access was enabled. Do not archive passwords/tokens or identifiable roster
+    exports as configuration evidence.
+
+The historical capture above predates Extensions and dual-role workspaces.
+For current architecture use the [extension contract](../engineering/extensions.md)
+and [role design](../engineering/roles-and-workspaces.md). Record the actual
+experiment commit rather than treating this dated record as the latest release.
 
 ## Suggested verification commands
 

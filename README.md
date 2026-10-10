@@ -81,6 +81,16 @@ Project policies remain at the root: [contributing](CONTRIBUTING.md),
 [security](SECURITY.md), [changelog](CHANGELOG.md), [license](LICENSE), and
 [third-party notices](THIRD_PARTY_NOTICES.md).
 
+## Core workflow and research extensions
+
+Registration, assignment, annotation and review form the core workflow.
+Research-specific tools use the rightmost project **Extensions** catalog;
+**Measurements** is the current built-in example. Contributors add a typed,
+repository-owned entry and integrate scoped backend services as needed. This
+keeps research tools separate from core tabs and lets deployments disable an
+entry without deleting its data or jobs. See the
+[extension contract](docs/engineering/extensions.md) for implementation limits.
+
 ## Roles at a glance
 
 - **Requester:** creates projects, registers datasets, and follows delivery.
@@ -89,6 +99,12 @@ Project policies remain at the root: [contributing](CONTRIBUTING.md),
 - **Annotator:** works on assigned volumes, explicitly saves draft edits, and
   submits results for review. Members with volume-view access can create volume
   shares; project/dataset shares remain manager-only.
+
+- **Assistant manager:** an annotator granted a second workspace by an existing
+  primary manager. The account remains in both People rosters and switches
+  between Annotator and Manager from the username dropdown. Manager mode has
+  global management scope; assistant managers cannot delegate this access.
+  Profile displays both identities. See [roles and switching](docs/user-guide/01-roles-and-navigation.md#assistant-managers-and-workspace-switching).
 
 Development accounts and the passwordless reset are disabled unless their
 explicit development-only flags are enabled. Selecting a development account

@@ -263,3 +263,40 @@ frontend declares React 18.3.1, TypeScript 5.5.4, Vite 6.4.3, Three.js 0.170,
 Vitest 4.1.10, and Playwright 1.62.1. Use lock files—not this prose—as the
 installation authority.
 
+
+## Dual-role workspaces
+
+For the API contract, defaults, denial/recovery behavior and contributor checks,
+see [roles and workspaces](roles-and-workspaces.md).
+
+`accounts.models.UserProfile.is_assistant_manager` adds a capability to an
+annotator without changing `profile.role`. Existing manager-role accounts and
+superusers are primary managers; only these identities can grant/revoke the
+capability via `PATCH /api/people/<id>/assistant-manager/` with a boolean
+`enabled`. The endpoint locks the profile row and writes an append-only
+`account.assistant_manager_changed` audit event when the value changes.
+
+`accounts.roles.base_role` and `available_roles` describe durable identity;
+`get_role` resolves the current request. `WorkspaceTokenAuthentication` validates
+`X-Mito-Role` against current database grants and attaches a request-local
+`_active_role` to the authenticated user. Existing permission predicates,
+querysets and services use that effective role. No header defaults to the base
+role. Session-authenticated admin access retains the base identity: granting
+assistant-manager access does not make someone staff or superuser.
+
+`POST /api/auth/role/` validates a requested workspace and returns the current-user
+shape; it does not update account identity or a shared token preference. The SPA
+stores the choice in sessionStorage, sends it through the shared API/raw-fetch
+clients and chunk authorization requests, then reloads to Home to discard stale
+role-scoped component state. Revoked grants are refused; `fetchMe` clears a stale
+workspace after 403 and retries the base role. Durable manager membership, rather
+than a transient workspace, identifies project managers and people rosters.
+
+Current-user payloads include `available_roles`, `is_assistant_manager` and
+`can_manage_assistant_managers`. The manager People overview includes
+`assistant_managers` while preserving dual users in `annotators`. The shared
+PeopleSection accepts an explicit collapse policy and a Time visibility flag;
+the assistant roster folds even singleton groups and omits Time. PersonCard
+renders one role summary and keeps account-access actions last. UI visibility
+never replaces backend authorization. Migration `accounts/0014` defaults all
+existing accounts to no extra grant.

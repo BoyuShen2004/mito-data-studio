@@ -40,6 +40,17 @@ mixing formatting-only work with behavioral changes.
   and known scaling limitations in engineering docs. Describe implemented
   behavior and distinguish it from proposals or unverified capacity claims.
 
+## Role-sensitive changes
+
+Use `accounts.roles.get_role`/`is_manager` for request authorization and existing
+scoped querysets. Use `base_role`, `available_roles` or `has_manager_role` when
+identifying durable account capabilities or roster membership. Assistant access
+is an additional annotator capability, not a replacement base role. Only primary
+manager identities may delegate it; never authorize grants through the active
+Manager workspace alone. Use the shared authenticated clients for workspace
+headers and test forged roles, revocation and both scopes. See
+[roles and workspaces](docs/engineering/roles-and-workspaces.md).
+
 ## Project conventions
 
 - Django apps and tests live under `backend/`; use the root `manage.py`.

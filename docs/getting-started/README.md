@@ -21,6 +21,16 @@ independent validation of annotations and measurements.
 | Manager | Open Review for a submitted task, inspect the submission and choose a review decision | [Assignment](../user-guide/03-people-and-assignment.md), [review](../user-guide/07-submit-and-review.md) |
 | Requester | Create a project, prepare data paths and learn registration and project approval | [Projects and data](../user-guide/02-projects-and-data.md) |
 
+If you also have assistant-manager access, start in Annotator mode for editing.
+Use the username dropdown to choose Manager mode for assignment/review; save
+pending work before confirming the switch. Profile shows both identities. A
+primary manager grants access in People; already signed-in users reload to see
+new workspace choices. Read [roles and switching](../user-guide/01-roles-and-navigation.md).
+
+For analysis, open **Project → Extensions → Measurements**. Managers (including
+assistants in Manager mode) can explicitly run measurements; other project
+participants can read results and export CSV. Opening the catalog queues nothing.
+
 Submit and Approve change task state even in practice. Agree on the exercise
 with the person responsible for the practice task. If a task is missing, check
 your role, project access and assignment separately.
@@ -53,7 +63,7 @@ Browser pending edits → successful save → working label
 
 ## Continue with your goal
 
-- Use the application: [complete workflow](../user-guide/workflows.md), [Measurements](../user-guide/09-measurements.md).
+- Use the application: [complete workflow](../user-guide/workflows.md), [Extensions](../user-guide/extensions.md) → [Measurements](../user-guide/09-measurements.md).
 - Understand the project: [product overview](../overview.md), [code map](../engineering/code-map.md).
 - Develop: [first contribution](first-contribution.md), then the [feature walkthrough](../engineering/feature-walkthrough.md).
 - Write a manuscript or report: [research materials](../research/README.md). Implemented features, passing tests and scientific validity require different evidence.

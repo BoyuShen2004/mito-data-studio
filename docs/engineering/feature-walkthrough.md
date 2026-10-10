@@ -32,7 +32,10 @@ asynchronous responses must not replace the newly selected volume's state.
 
 Find these routes in [config/urls.py](../../backend/config/urls.py), which leads to
 [measurement_api.py](../../backend/annotation/measurement_api.py). Read endpoints
-require authentication and volume-view access. Run requests require a manager.
+require authentication and volume-view access. Run requests require the active
+Manager workspace, including authorized assistants. See
+[roles and workspaces](roles-and-workspaces.md) for durable identity versus request
+role; use the shared client so the workspace header reaches permission checks.
 UI controls do not replace backend authorization.
 
 ## 3. Data and computation

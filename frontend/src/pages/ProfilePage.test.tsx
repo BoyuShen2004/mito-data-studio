@@ -57,6 +57,12 @@ describe("ProfilePage annotate shortcuts", () => {
     hoisted.user.current = makeUser();
   });
 
+  it("shows both durable roles in either workspace", () => {
+    hoisted.user.current = makeUser({ role: "manager", is_assistant_manager: true });
+    render(<ProfilePage />);
+    expect(screen.getByText(/Annotator \+ Assistant manager/)).toBeTruthy();
+  });
+
   it("shows the account's current binding for every tool", () => {
     render(<ProfilePage />);
     expect(letterBox("Brush").value).toBe("B");

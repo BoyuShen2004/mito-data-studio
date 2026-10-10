@@ -5,7 +5,7 @@ from rest_framework import serializers
 from core.choices import UserRole
 
 from .models import AnnotatorProfile, UserProfile
-from .roles import get_role
+from .roles import get_role, available_roles, is_primary_manager
 from .shortcuts import (
     ANNOTATE_SHORTCUT_TOOLS,
     DEFAULT_ANNOTATE_SHORTCUTS,
@@ -27,6 +27,19 @@ class CurrentUserSerializer(serializers.Serializer):
     last_name = serializers.CharField(allow_blank=True)
     is_superuser = serializers.BooleanField()
     role = serializers.SerializerMethodField()
+    available_roles = serializers.SerializerMethodField()
+    is_assistant_manager = serializers.SerializerMethodField()
+    can_manage_assistant_managers = serializers.SerializerMethodField()
+
+    def get_available_roles(self, user):
+        return available_roles(user)
+
+    def get_is_assistant_manager(self, user):
+        return "manager" in available_roles(user) and not is_primary_manager(user)
+
+    def get_can_manage_assistant_managers(self, user):
+        return is_primary_manager(user)
+
     institution_name = serializers.SerializerMethodField()
     display_name = serializers.SerializerMethodField()
     contact_note = serializers.SerializerMethodField()

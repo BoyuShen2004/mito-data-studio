@@ -86,6 +86,21 @@ venv/bin/python manage.py collectstatic --noinput
 Migrations must be additive and reviewed. Back up first; never reset or recreate
 the production database as an update shortcut.
 
+The assistant-manager rollout includes additive migration `accounts/0014`, adding
+`UserProfile.is_assistant_manager` with a false default and an audit verb. Back
+up the database with a client compatible with the server version before applying
+it. It does not promote existing accounts or change their base role. Preserve
+production secrets, feature settings and the no-demo build: never copy dev env
+files or dev accounts as part of promotion.
+
+After migration and reload, check grant permission with a primary manager,
+forged-role denial with an ordinary annotator, and both workspace scopes using
+isolated test fixtures. Do not grant a live participant access merely as a smoke
+test. Restart the dispatcher after backend Python changes. Rolling frontend code
+back does not revoke stored grants; coordinate any rollback of account behavior
+and schema separately, preserving audit records. See
+[role design](../engineering/roles-and-workspaces.md).
+
 If the frontend changed, build the profile that matches the production backend:
 
 ```bash
