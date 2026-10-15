@@ -48,6 +48,16 @@ publishing partial results. Ensure label saves have finished before retrying.
 - **Volume (µm³):** voxel count multiplied by calibrated voxel volume.
 - **Skeleton cable length (µm):** total length of skeleton edges, rather than
   the straight-line distance between the object's ends.
+- **Touches edge:** **Yes** when the object reaches a face of the volume. It is
+  probably cut off there, so its volume and length cover only the visible part;
+  decide whether to exclude such objects or report them separately. **—** means
+  the result was computed before this column existed; run again to fill it in.
+- **Skipped (too large)** in the length column: the object is too large for
+  web skeletonization. Its voxel count and volume are still reported; ask the
+  maintainer for an offline measurement of its length.
+
+The line above the table counts skipped lengths and objects touching the edge.
+Exported CSV includes both as `touches_edge` and `skipped_reason` columns.
 
 For example, with Z/Y/X spacing of 30/16/16 nm, 100 voxels occupy
 `100 × 0.03 × 0.016 × 0.016 = 0.000768 µm³`.
@@ -65,7 +75,7 @@ zero cable length does not necessarily mean zero volume.
 | Missing spacing or disabled Run | All three axes need real positive spacing; save manual changes and check that your account is a manager |
 | No label available | Check that the chosen source exists and the working draft has been saved |
 | Stays queued or Measurement failed | Ask the maintainer to check dispatcher job types and kimimaro dependencies. Current Docker images omit kimimaro and Compose starts no dispatcher. Repeatedly queueing work will not fix this |
-| Crop limit exceeded | Each padded object bounding box in the web path is limited to 8,000,000 voxels. Ask the maintainer to assess offline measurement |
+| Skipped (too large) in the length column | Each padded object bounding box in the web path is limited to 8,000,000 voxels. Other objects are still measured; ask the maintainer to measure the skipped lengths offline |
 | Outdated result | Labels or spacing changed. Verify the source and run again |
 
 For method limits, provenance and offline commands, see the

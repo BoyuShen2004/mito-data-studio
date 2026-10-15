@@ -19,6 +19,7 @@ from annotation.visualization.slice_io import open_label_volume_readonly
 
 CROP_PAD = 2
 DUST_SIZE = 100
+SKIPPED_CROP_LIMIT = "crop_limit"
 
 
 class MeasurementError(ValueError):
@@ -30,7 +31,9 @@ class MitoMeasurement:
     label_id: int
     voxel_count: int
     volume_um3: float
-    skeleton_length_um: float
+    skeleton_length_um: float | None
+    touches_edge: bool = False
+    skipped_reason: str | None = None
 
 
 def validate_voxel_size(voxel_size_zyx) -> tuple[float, float, float]:
@@ -56,7 +59,11 @@ def skeleton_length_nm(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
 
 
 def measure_label_volume(path, voxel_size_zyx, *, dust_size: int = DUST_SIZE, max_crop_voxels: int | None = None) -> list[MitoMeasurement]:
-    """Measure every nonzero instance in the label volume at ``path``."""
+    """Measure every nonzero instance in the label volume at ``path``.
+
+    Labels whose padded crop exceeds ``max_crop_voxels`` are reported with
+    ``skipped_reason`` set and no skeleton length, instead of failing the run.
+    """
     path = Path(path)
     if not path.exists():
         raise MeasurementError(f"label file not found: {path}")
@@ -73,25 +80,34 @@ def measure_label_volume(path, voxel_size_zyx, *, dust_size: int = DUST_SIZE, ma
         if lid == 0:
             continue
         count = int(entry["voxel_count"])
+        volume_um3 = count * voxel_nm3 / 1e9
         z1, z2, y1, y2, x1, x2 = summary["bboxes"][lid]
+        touches_edge = bool(z1 == 0 or y1 == 0 or x1 == 0 or z2 == nz or y2 == ny or x2 == nx)
         bounds = [(max(0, a - CROP_PAD), min(n, b + CROP_PAD))
                   for a, b, n in ((z1, z2, nz), (y1, y2, ny), (x1, x2, nx))]
+
         if max_crop_voxels is not None and math.prod(b - a for a, b in bounds) > max_crop_voxels:
-            raise MeasurementError(f"Label {lid} exceeds the web measurement limit of {max_crop_voxels:,} crop voxels. Use the offline measure_mito command for this volume.")
-        crop = np.asarray(
-            volume[
-                max(0, z1 - CROP_PAD) : min(nz, z2 + CROP_PAD),
-                max(0, y1 - CROP_PAD) : min(ny, y2 + CROP_PAD),
-                max(0, x1 - CROP_PAD) : min(nx, x2 + CROP_PAD),
-            ]
-        )
+            results.append(
+                MitoMeasurement(
+                    label_id=lid,
+                    voxel_count=count,
+                    volume_um3=volume_um3,
+                    skeleton_length_um=None,
+                    touches_edge=touches_edge,
+                    skipped_reason=SKIPPED_CROP_LIMIT,
+                )
+            )
+            continue
+
+        crop = np.asarray(volume[tuple(slice(a, b) for a, b in bounds)])
         length_nm = skeleton_length_nm(crop == lid, (vz, vy, vx), dust_size=dust_size)
         results.append(
             MitoMeasurement(
                 label_id=lid,
                 voxel_count=count,
-                volume_um3=count * voxel_nm3 / 1e9,
+                volume_um3=volume_um3,
                 skeleton_length_um=length_nm / 1000.0,
+                touches_edge=touches_edge,
             )
         )
     return results

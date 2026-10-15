@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MitoMeasurements from "./MitoMeasurements";
-import { getMeasurements, measurementCSV, runMeasurements, type MeasurementJob } from "../api/measurements";
+import { getMeasurements, measurementCSV, runMeasurements, type MeasurementJob, type MeasurementResult } from "../api/measurements";
 import type { Volume } from "../types/volume";
 
 vi.mock("../api/measurements", async importOriginal => ({
@@ -9,13 +9,26 @@ vi.mock("../api/measurements", async importOriginal => ({
   getMeasurements: vi.fn(), runMeasurements: vi.fn(),
 }));
 const volume = { id: 3, has_label: true, voxel_size_z: 30, voxel_size_y: 16, voxel_size_x: 16 } as Volume;
+// Saved before skip/edge reporting existed: rows have neither field.
+const doneResult: MeasurementResult = {
+  rows: [{ label_id: 5, voxel_count: 3600, volume_um3: 0.027648, skeleton_length_um: 1.6 }],
+  measured_at: "2026-10-02T00:01:00Z", source: "official", voxel_size_nm_zyx: [30, 16, 16],
+  dust_size_voxels: 100, method: "TEASAR (kimimaro)", scope: "Whole volume",
+};
 const done: MeasurementJob = {
   id: 4, source: "official", status: "succeeded", created_at: "2026-10-02T00:00:00Z",
   finished_at: "2026-10-02T00:01:00Z", error: "", is_current: true,
+  result: doneResult,
+};
+const mixed: MeasurementJob = {
+  ...done,
   result: {
-    rows: [{ label_id: 5, voxel_count: 3600, volume_um3: 0.027648, skeleton_length_um: 1.6 }],
-    measured_at: "2026-10-02T00:01:00Z", source: "official", voxel_size_nm_zyx: [30, 16, 16],
-    dust_size_voxels: 100, method: "TEASAR (kimimaro)", scope: "Whole volume",
+    ...doneResult,
+    rows: [
+      { label_id: 5, voxel_count: 3600, volume_um3: 0.027648, skeleton_length_um: 1.6, touches_edge: false, skipped_reason: null },
+      { label_id: 6, voxel_count: 40000000, volume_um3: 307.2, skeleton_length_um: null, touches_edge: true, skipped_reason: "crop_limit" },
+      { label_id: 7, voxel_count: 5000, volume_um3: 0.0384, skeleton_length_um: 2.25, touches_edge: true, skipped_reason: null },
+    ],
   },
 };
 beforeEach(() => {
@@ -46,6 +59,40 @@ describe("MitoMeasurements", () => {
     expect(screen.getByText(/Outdated result/)).toBeTruthy();
     expect(screen.getByText(/Zero length may indicate filtering/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Export CSV" })).toBeTruthy();
+  });
+
+  it("shows skipped lengths and edge flags without dropping measured rows", async () => {
+    vi.mocked(getMeasurements).mockResolvedValue({ job: mixed });
+    render(<MitoMeasurements volume={volume} canRun />);
+    await screen.findByRole("table");
+    expect(screen.getByText("Touches edge")).toBeTruthy();
+    expect(screen.getByText("Skipped (too large)")).toBeTruthy();
+    expect(screen.getByText("2.25")).toBeTruthy();
+    expect(screen.getAllByText("Yes")).toHaveLength(2);
+    expect(screen.getAllByText("No")).toHaveLength(1);
+    expect(screen.getByText(/1 skipped for length/)).toBeTruthy();
+    expect(screen.getByText(/2 touch the volume edge/)).toBeTruthy();
+  });
+
+  it("marks edge status unknown for results saved before edge detection", async () => {
+    vi.mocked(getMeasurements).mockResolvedValue({ job: done });
+    render(<MitoMeasurements volume={volume} canRun />);
+    await screen.findByRole("table");
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("Yes")).toBeNull();
+    expect(screen.queryByText("No")).toBeNull();
+    expect(screen.queryByText(/skipped for length/)).toBeNull();
+    expect(screen.queryByText(/touch the volume edge/)).toBeNull();
+  });
+
+  it("labels a skip with an unrecognised reason generically", async () => {
+    vi.mocked(getMeasurements).mockResolvedValue({ job: { ...done, result: { ...doneResult, rows: [
+      { label_id: 8, voxel_count: 900, volume_um3: 0.006912, skeleton_length_um: null, touches_edge: false, skipped_reason: "other" },
+    ] } } });
+    render(<MitoMeasurements volume={volume} canRun />);
+    await screen.findByRole("table");
+    expect(screen.getByText("Skipped")).toBeTruthy();
+    expect(screen.queryByText("Skipped (too large)")).toBeNull();
   });
 
   it("keeps unknown voxel spacing unknown and disables running", async () => {
@@ -93,6 +140,21 @@ describe("MitoMeasurements", () => {
     const csv = measurementCSV(3, done);
     expect(csv).toContain("volume_um3,skeleton_length_um");
     expect(csv).toContain("3,4,official,2026-10-02T00:01:00Z,30,16,16,100,5,3600,0.027648,1.6");
+  });
+
+  it("exports skip and edge columns, leaving a skipped length empty", () => {
+    const lines = measurementCSV(3, mixed).trimEnd().split("\n");
+    expect(lines[0].endsWith(",skeleton_length_um,touches_edge,skipped_reason")).toBe(true);
+    expect(lines.slice(1)).toEqual([
+      "3,4,official,2026-10-02T00:01:00Z,30,16,16,100,5,3600,0.027648,1.6,false,",
+      "3,4,official,2026-10-02T00:01:00Z,30,16,16,100,6,40000000,307.2,,true,crop_limit",
+      "3,4,official,2026-10-02T00:01:00Z,30,16,16,100,7,5000,0.0384,2.25,true,",
+    ]);
+  });
+
+  it("exports unknown edge status as empty for results saved before edge detection", () => {
+    const lines = measurementCSV(3, done).trimEnd().split("\n");
+    expect(lines[1]).toBe("3,4,official,2026-10-02T00:01:00Z,30,16,16,100,5,3600,0.027648,1.6,,");
   });
 });
 

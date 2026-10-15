@@ -23,8 +23,8 @@ are described in [frontend refresh and draft ownership](architecture.md#frontend
 Saving spacing preserves the source selection and refetches the backend's
 result freshness; it does not automatically rerun measurements.
 
-Each nonzero label ID produces a voxel count, volume in µm³, and TEASAR skeleton
-cable length in µm. The volume/header storage contract is µm; the UI and skeleton engine use nm.
+Each nonzero label ID produces a voxel count, volume in µm³, TEASAR skeleton
+cable length in µm, and an edge flag. The volume/header storage contract is µm; the UI and skeleton engine use nm.
 The measurement boundary converts µm to nm exactly once. Voxel spacing comes from
 registered values or supported source-file
 metadata in **Z, Y, X** order; missing, nonpositive or nonfinite spacing blocks
@@ -32,6 +32,13 @@ a run. Cable length is the sum of skeleton edge lengths, not end-to-end extent.
 The method excludes connected components smaller than 100 voxels from the
 skeleton, but counts them in volume. Zero cable length can therefore mean that
 no skeleton survived the threshold. Labels sharing an ID are measured together.
+
+`touches_edge` is true when a label's tight bounding box reaches any face of the
+volume, which means at least one of its voxels lies on the boundary. Because
+components sharing an ID are measured together, one boundary component flags the
+whole ID. Such objects are probably cut off by the volume edge, so their volume
+and cable length describe only the visible part. The flag marks rows; it never
+removes them or changes their values.
 
 Measurements cover the **whole label volume**, without task-range or ROI
 clipping. They neither change labels nor save/submit/approve annotations.
@@ -45,8 +52,13 @@ are marked historical when their inputs no longer match. CSV preserves the run,
 source, spacing, threshold, timestamp and full-precision values.
 
 Web runs limit each padded label crop to 8,000,000 voxels to bound skeletonization
-memory. A larger crop fails the run explicitly without partial results. Use the
-existing offline command for those volumes:
+memory. A label over the limit does not fail the run: its row keeps voxel count
+and volume, has no cable length (`null` in JSON, empty in CSV) and records
+`skipped_reason: "crop_limit"`. All other labels are measured normally, and the
+UI states how many lengths were skipped. This replaces the earlier behavior, in
+which one oversized crop failed the whole run; skipped rows are explicit, so a
+result is never silently incomplete. The offline command has no crop cap; use it
+for those lengths:
 
 ```sh
 python manage.py measure_mito --volume 12 --out mitochondria.csv
@@ -74,12 +86,14 @@ cache caveat does not supply missing physical calibration.
 Browser CSV columns, in order, are:
 
 ```text
-volume_id,run_id,source,measured_at,voxel_size_z_nm,voxel_size_y_nm,voxel_size_x_nm,dust_size_voxels,label_id,voxel_count,volume_um3,skeleton_length_um
+volume_id,run_id,source,measured_at,voxel_size_z_nm,voxel_size_y_nm,voxel_size_x_nm,dust_size_voxels,label_id,voxel_count,volume_um3,skeleton_length_um,touches_edge,skipped_reason
 ```
 
-Browser export uses unrounded numeric values from the result. The offline command
-exports only `label_id,voxel_count,volume_um3,skeleton_length_um`, with six
-significant digits for physical values. It runs synchronously without a
+Browser export uses unrounded numeric values from the result. `touches_edge` is
+`true`/`false`, or empty for results saved before edge reporting existed;
+`skipped_reason` is empty unless a length was skipped. The offline command
+exports `label_id,voxel_count,volume_um3,skeleton_length_um,touches_edge,skipped_reason`,
+with six significant digits for physical values. It runs synchronously without a
 ProcessingJob, web crop cap or before/after fingerprint check; keep inputs stable
 and archive spacing/source/command separately.
 

@@ -11,7 +11,6 @@ from rest_framework.test import APIClient
 
 from annotation.label_paths import working_label_rel_path
 from annotation.measurement_jobs import run_measurement
-from annotation.measurements import MeasurementError, measure_label_volume
 from annotation.visualization import slice_io
 from core.choices import LabelType
 from processing.models import ProcessingJob
@@ -62,8 +61,12 @@ class MeasurementAPITests(TestCase):
         self.assertTrue(data["is_current"])
         self.assertNotIn("path", data)
         self.assertEqual(data["result"]["voxel_size_nm_zyx"], [30, 16, 16])
-        self.assertEqual(data["result"]["rows"][0]["label_id"], 5)
-        self.assertEqual(data["result"]["rows"][0]["voxel_count"], 3600)
+        row = data["result"]["rows"][0]
+        self.assertEqual(row["label_id"], 5)
+        self.assertEqual(row["voxel_count"], 3600)
+        self.assertGreater(row["skeleton_length_um"], 1.5)
+        self.assertFalse(row["touches_edge"])
+        self.assertIsNone(row["skipped_reason"])
         self.assertEqual(before, hashlib.sha256((self.root / "labels.tif").read_bytes()).hexdigest())
         self.assertFalse((self.root / working_label_rel_path(self.volume)).exists())
         self.volume.refresh_from_db()
@@ -136,9 +139,19 @@ class MeasurementAPITests(TestCase):
         self.assertFalse(data["is_current"])
         self.assertEqual(data["result"]["voxel_size_nm_zyx"], [30, 16, 16])
 
-    def test_crop_limit_fails_instead_of_reporting_partial_measurements(self):
-        with self.assertRaisesMessage(MeasurementError, "web measurement limit"):
-            measure_label_volume(self.root / "labels.tif", [30, 16, 16], max_crop_voxels=1)
+    def test_label_over_web_crop_limit_is_reported_as_skipped(self):
+        # The tube's padded crop is 10 x 10 x 104 = 10,400 voxels, over this cap.
+        with patch("annotation.measurement_jobs.MAX_CROP_VOXELS", 5000):
+            self.queue()
+            run_dispatch_once(max_new=1, job_types=("measure_mito",))
+        data = self.client.get(self.url).data["job"]
+        self.assertEqual(data["status"], "succeeded")
+        (row,) = data["result"]["rows"]
+        self.assertEqual(row["label_id"], 5)
+        self.assertEqual(row["voxel_count"], 3600)
+        self.assertIsNone(row["skeleton_length_um"])
+        self.assertEqual(row["skipped_reason"], "crop_limit")
+        self.assertFalse(row["touches_edge"])
 
     def test_missing_result_is_explicit(self):
         job = self.queue()
