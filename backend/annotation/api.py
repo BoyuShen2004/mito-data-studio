@@ -11,6 +11,7 @@ from accounts.teams import is_eligible_project_assignee
 from core.choices import ACTIVE_TASK_STATUSES, TaskStatus
 from core.permissions import IsAnnotator, IsManager
 from projects.models import Project
+from rest_framework.exceptions import ValidationError
 
 from .models import (
     AssignmentWithdrawal,
@@ -897,8 +898,13 @@ def _slice_params(request):
         index = 0
     window = request.query_params.get("window")
     level = request.query_params.get("level")
-    window = float(window) if window not in (None, "") else None
-    level = float(level) if level not in (None, "") else None
+    try:
+        window = float(window) if window not in (None, "") else None
+        level = float(level) if level not in (None, "") else None
+    except (TypeError, ValueError):
+        raise ValidationError(
+            {"detail": "window and level must be valid numbers."}
+    )
     return axis, index, window, level
 
 
