@@ -5,7 +5,9 @@ export interface MitoMeasurement {
   label_id: number;
   voxel_count: number;
   volume_um3: number;
-  skeleton_length_um: number;
+  skeleton_length_um: number | null;
+  touches_edge?: boolean;
+  skipped_reason?: string | null;
 }
 export interface MeasurementResult {
   rows: MitoMeasurement[];
@@ -34,10 +36,11 @@ export const runMeasurements = (volume: number, source: MeasurementSource) =>
 export function measurementCSV(volume: number, job: MeasurementJob): string {
   const result = job.result;
   if (!result) return "";
-  const header = "volume_id,run_id,source,measured_at,voxel_size_z_nm,voxel_size_y_nm,voxel_size_x_nm,dust_size_voxels,label_id,voxel_count,volume_um3,skeleton_length_um";
+  const header = "volume_id,run_id,source,measured_at,voxel_size_z_nm,voxel_size_y_nm,voxel_size_x_nm,dust_size_voxels,label_id,voxel_count,volume_um3,skeleton_length_um,touches_edge,skipped_reason";
   return [header, ...result.rows.map(row => [
     volume, job.id, result.source, result.measured_at, ...result.voxel_size_nm_zyx,
-    result.dust_size_voxels, row.label_id, row.voxel_count, row.volume_um3, row.skeleton_length_um,
+    result.dust_size_voxels, row.label_id, row.voxel_count, row.volume_um3, row.skeleton_length_um ?? "",
+    row.touches_edge == null ? "" : String(row.touches_edge), row.skipped_reason ?? "",
   ].join(","))].join("\n") + "\n";
 }
 

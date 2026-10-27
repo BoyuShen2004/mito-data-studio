@@ -21,7 +21,7 @@ from annotation.measurements import MeasurementError, measure_label_volume
 from annotation.visualization.slice_io import resolve_path
 from volumes.models import Volume
 
-FIELDS = ("label_id", "voxel_count", "volume_um3", "skeleton_length_um")
+FIELDS = ("label_id", "voxel_count", "volume_um3", "skeleton_length_um", "touches_edge", "skipped_reason")
 
 
 class Command(BaseCommand):
@@ -70,7 +70,9 @@ class Command(BaseCommand):
                 r.label_id,
                 r.voxel_count,
                 f"{r.volume_um3:.6g}",
-                f"{r.skeleton_length_um:.6g}",
+                "" if r.skeleton_length_um is None else f"{r.skeleton_length_um:.6g}",
+                "true" if r.touches_edge else "false",
+                r.skipped_reason or "",
             ])
 
         if opts["out"]:

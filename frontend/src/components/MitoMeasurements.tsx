@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
-import { getMeasurements, measurementCSV, runMeasurements, type MeasurementJob, type MeasurementSource } from "../api/measurements";
+import { getMeasurements, measurementCSV, runMeasurements, type MeasurementJob, type MeasurementSource, type MitoMeasurement } from "../api/measurements";
 import type { Volume } from "../types/volume";
 
 const active = (job: MeasurementJob | null) =>
   job != null && ["queued", "submitted", "running"].includes(job.status);
 const PAGE_SIZE = 50;
+
+const formatLength = (row: MitoMeasurement) =>
+  row.skeleton_length_um == null
+    ? row.skipped_reason === "crop_limit" ? "Skipped (too large)" : "Skipped"
+    : Number(row.skeleton_length_um.toPrecision(6));
+// Results saved before edge detection existed have no touches_edge field.
+const formatEdge = (row: MitoMeasurement) =>
+  row.touches_edge == null ? "—" : row.touches_edge ? "Yes" : "No";
 
 export default function MitoMeasurements({ volume, canRun, runBlocked = false }: { volume: Volume; canRun: boolean; runBlocked?: boolean }) {
   const [source, setSource] = useState<MeasurementSource>("official");
@@ -89,6 +97,8 @@ function MeasurementRun({ volume, source, canRun, runBlocked }: { volume: Volume
   };
   const result = job?.result;
   const rows = result?.rows ?? [];
+  const skipped = rows.filter(row => row.skeleton_length_um == null).length;
+  const atEdge = rows.filter(row => row.touches_edge === true).length;
   return (
     <>
       <p className="muted">
@@ -119,17 +129,20 @@ function MeasurementRun({ volume, source, canRun, runBlocked }: { volume: Volume
             {result.method} · Voxel size (Z, Y, X): {result.voxel_size_nm_zyx.join(", ")} nm · {rows.length} labels.
             {" "}Components below {result.dust_size_voxels} voxels count toward volume, but not skeleton length.
             {" "}Zero length may indicate filtering, not zero volume.
+            {skipped > 0 && <>{" "}{skipped} skipped for length: too large to skeletonize here (volume still reported).</>}
+            {atEdge > 0 && <>{" "}{atEdge} touch the volume edge; their length may be cut off.</>}
           </p>
           {rows.length === 0 ? <p>No nonzero labels were found.</p> : (
             <>
               <div className="measurement-table">
                 <table>
                   <caption className="sr-only">Mitochondria measurements from {source} labels</caption>
-                  <thead><tr><th>Label ID</th><th>Voxel count</th><th>Volume (µm³)</th><th>Skeleton cable length (µm)</th></tr></thead>
+                  <thead><tr><th>Label ID</th><th>Voxel count</th><th>Volume (µm³)</th><th>Skeleton cable length (µm)</th><th>Touches edge</th></tr></thead>
                   <tbody>{rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(row => (
                     <tr key={row.label_id}>
                       <td>{row.label_id}</td><td>{row.voxel_count.toLocaleString()}</td>
-                      <td>{Number(row.volume_um3.toPrecision(6))}</td><td>{Number(row.skeleton_length_um.toPrecision(6))}</td>
+                      <td>{Number(row.volume_um3.toPrecision(6))}</td><td>{formatLength(row)}</td>
+                      <td>{formatEdge(row)}</td>
                     </tr>
                   ))}</tbody>
                 </table>
