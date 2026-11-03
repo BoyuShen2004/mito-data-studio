@@ -17,6 +17,7 @@ the names used by the application.
 | Understand Measurements | [Measurement workflow](user-guide/09-measurements.md) | [Method and implementation](engineering/measurements.md) |
 | Explore the code before developing | [Code map](engineering/code-map.md) | [Feature walkthrough](engineering/feature-walkthrough.md) |
 | Make a first contribution | [First contribution](getting-started/first-contribution.md) | [Development environment](development.md) |
+| Administer data with a coding agent | [Admin data skills](operations/admin-data-skills.md) | Preflight, archive, import and validate |
 | Install or maintain a service | [Operations](operations/README.md) | Choose Docker or the existing-host workflow |
 | Prepare a release or manuscript | [Release checklist](release/checklist.md) | [Research materials](research/README.md) |
 

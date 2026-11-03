@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mito Admin: Archive"
+  short_description: "Mito Data Studio archive workflow"
+  default_prompt: "Use $mito-admin-archive for the requested Mito Data Studio administration task."

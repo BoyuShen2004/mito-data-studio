@@ -9,6 +9,7 @@ Team members using an existing lab instance can start with
 | Develop locally with live reload | [Development environment](../development.md) |
 | Configure development deployment for CPU/GPU hardware | [Hardware-adaptive deployment](hardware-adaptive.md) |
 | Maintain the existing lab production host | [Production-host runbook](production-host.md) |
+| Inspect, archive, import or validate datasets with a coding agent | [Administrative data skills](admin-data-skills.md) |
 | Review previously used hardware | [Reference hardware](reference-hardware.md); this is not a minimum specification |
 
 `docker-compose.yml` runs the web application and database;

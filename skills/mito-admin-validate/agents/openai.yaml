@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mito Admin: Validate"
+  short_description: "Mito Data Studio validate workflow"
+  default_prompt: "Use $mito-admin-validate for the requested Mito Data Studio administration task."

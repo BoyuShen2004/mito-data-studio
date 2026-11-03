@@ -9,6 +9,7 @@ and React application.
 
 - **Learn the workflow:** [Getting started](docs/getting-started/README.md) → [Glossary](docs/getting-started/glossary.md) → [User guide](docs/user-guide.md).
 - **Prepare to develop:** [Code map](docs/engineering/code-map.md) → [Measurements feature walkthrough](docs/engineering/feature-walkthrough.md) → [First contribution](docs/getting-started/first-contribution.md). Research tools use the [project extension contract](docs/engineering/extensions.md); Measurements is the first example.
+- **Administer data with a coding agent:** [Admin data skills](docs/operations/admin-data-skills.md) for Codex, Claude Code, and Antigravity.
 - **Browse all documentation:** [Documentation index](docs/index.md). Team members using an existing lab service do not need to run the deployment commands below.
 
 ## Quick start with Docker
