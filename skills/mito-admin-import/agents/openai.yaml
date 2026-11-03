@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mito Admin: Import"
+  short_description: "Mito Data Studio import workflow"
+  default_prompt: "Use $mito-admin-import for the requested Mito Data Studio administration task."

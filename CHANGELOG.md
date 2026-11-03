@@ -5,6 +5,10 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add portable administrative data-operation skills for Codex, Claude Code and
+  Antigravity, with a verified installer, read-only manifest capacity checks,
+  isolated safety tests and an illustrated/prompt-based handoff guide.
+
 - Add primary-manager-controlled assistant-manager grants, dual-role account
   dropdown/workspace switching and a dedicated People roster. Preserve annotator
   identity and enforce the selected role on backend requests. Keep ordinary
