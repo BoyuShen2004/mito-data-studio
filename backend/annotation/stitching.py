@@ -46,6 +46,13 @@ TILE_IDS_FIELDS = ("tile", "id_offset", "max_local_id", "label_count", "labelled
 ID_MAP_FIELDS = ("tile", "local_id", "global_id", "voxel_count")
 CANDIDATES_FIELDS = ("seam", "axis", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
                      "contact_voxels", "area_a", "area_b", "frac_a", "frac_b")
+DECISION_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
+                   "decision", "reviewer", "decided_at")
+DECISION_VALUES = ("yes", "no", "unsure")
+OBJECTS_FIELDS = ("global_id", "object_id")
+OBJECTS_SUMMARY_FIELDS = ("object_id", "member_count", "tiles", "total_voxel_count", "seam_count")
+# How many problem rows a refusal lists before summarising the rest.
+MAX_LISTED = 50
 
 
 class StitchingError(Exception):
@@ -515,6 +522,154 @@ def seam_candidates(inventory: Inventory, tile_ids: dict[str, dict]) -> list[dic
     return rows
 
 
+# --- phase 5: objects --------------------------------------------------------
+
+def _pair_key(row: dict) -> tuple:
+    return (int(row["seam"]), row["tile_a"], int(row["label_a"]), row["tile_b"], int(row["label_b"]))
+
+
+def _listing(title: str, lines: list[str]) -> str:
+    shown = "\n".join(f"  {line}" for line in lines[:MAX_LISTED])
+    more = f"\n  ... and {len(lines) - MAX_LISTED} more" if len(lines) > MAX_LISTED else ""
+    return f"{title} ({len(lines)}):\n{shown}{more}"
+
+
+def read_decisions(paths) -> list[dict]:
+    """Rows from one or more decisions.csv files, each tagged with its source."""
+    rows = []
+    for path in paths:
+        path = Path(path)
+        file_rows = read_csv(path)
+        if file_rows:
+            missing = [f for f in DECISION_FIELDS if f not in file_rows[0]]
+            if missing:
+                raise StitchingError(f"{path}: missing column(s) {', '.join(missing)}")
+        for lineno, row in enumerate(file_rows, 2):
+            rows.append({**row, "_source": f"{path}:{lineno}"})
+    return rows
+
+
+def resolve_decisions(candidates: list[dict], decision_rows: list[dict]) -> dict[tuple, str]:
+    """``{candidate key: decision}`` for every decided candidate.
+
+    Blank decisions count as undecided. Refuses (listing every offender) rows
+    that match no candidates.csv row, invalid decision values, and pairs given
+    different decisions anywhere in the inputs.
+    """
+    by_key = {_pair_key(c): c for c in candidates}
+    unknown, invalid = [], []
+    seen: dict[tuple, dict[str, list[str]]] = {}
+    for row in decision_rows:
+        source = row["_source"]
+        decision = (row.get("decision") or "").strip().lower()
+        if not decision:
+            continue
+        if decision not in DECISION_VALUES:
+            invalid.append(f"{source}: decision {row['decision']!r} is not yes, no or unsure")
+            continue
+        try:
+            key = _pair_key(row)
+            globals_ = (int(row["global_a"]), int(row["global_b"]))
+        except (KeyError, ValueError):
+            unknown.append(f"{source}: seam, label or global id columns are not integers")
+            continue
+        candidate = by_key.get(key)
+        if candidate is None or globals_ != (int(candidate["global_a"]), int(candidate["global_b"])):
+            unknown.append(f"{source}: seam {key[0]} {key[1]}:{key[2]} -> {key[3]}:{key[4]} "
+                           f"(global {row.get('global_a')} -> {row.get('global_b')}) is not in candidates.csv")
+            continue
+        seen.setdefault(key, {}).setdefault(decision, []).append(source)
+
+    conflicts = [
+        f"seam {key[0]} {key[1]}:{key[2]} -> {key[3]}:{key[4]}: "
+        + "; ".join(f"{d} at {', '.join(srcs)}" for d, srcs in sorted(decisions.items()))
+        for key, decisions in seen.items() if len(decisions) > 1
+    ]
+    problems = []
+    if unknown:
+        problems.append(_listing("decisions that match no candidates.csv row", unknown))
+    if invalid:
+        problems.append(_listing("invalid decision values", invalid))
+    if conflicts:
+        problems.append(_listing("conflicting decisions for the same pair", conflicts))
+    if problems:
+        raise StitchingError("\n".join(problems))
+    return {key: next(iter(decisions)) for key, decisions in seen.items()}
+
+
+class UnionFind:
+    """Union-find whose root is always the smallest member."""
+
+    def __init__(self, items):
+        self.parent = {item: item for item in items}
+
+    def find(self, item):
+        root = item
+        while self.parent[root] != root:
+            root = self.parent[root]
+        while self.parent[item] != root:
+            self.parent[item], item = root, self.parent[item]
+        return root
+
+    def union(self, a, b) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            lo, hi = (ra, rb) if ra < rb else (rb, ra)
+            self.parent[hi] = lo
+
+
+@dataclass
+class ObjectsResult:
+    objects: list[dict]
+    summary: list[dict]
+    counts: dict[str, int]
+    repeated_tile_objects: list[int]  # objects holding two labels from one tile
+
+
+def build_objects(tiles: list[Tile], id_rows: list[dict], candidates: list[dict],
+                  decisions: dict[tuple, str]) -> ObjectsResult:
+    order = {t.name: i for i, t in enumerate(tiles)}
+    members = {int(r["global_id"]): (r["tile"], int(r["voxel_count"])) for r in id_rows}
+    uf = UnionFind(sorted(members))
+    counts = dict.fromkeys(DECISION_VALUES, 0)
+    counts["undecided"] = 0
+    merges = []
+    for candidate in candidates:
+        decision = decisions.get(_pair_key(candidate))
+        counts[decision or "undecided"] += 1
+        if decision != "yes":
+            continue
+        ga, gb = int(candidate["global_a"]), int(candidate["global_b"])
+        for g in (ga, gb):
+            if g not in members:
+                raise StitchingError(f"global id {g} from candidates.csv is not in id_map.csv; rerun stitch_ids")
+        uf.union(ga, gb)
+        merges.append((int(candidate["seam"]), ga))
+
+    objects = [{"global_id": g, "object_id": uf.find(g)} for g in sorted(members)]
+    groups: dict[int, list[int]] = {}
+    for row in objects:
+        groups.setdefault(row["object_id"], []).append(row["global_id"])
+    seams: dict[int, set[int]] = {}
+    for seam, g in merges:
+        seams.setdefault(uf.find(g), set()).add(seam)
+
+    summary, repeated = [], []
+    for object_id in sorted(groups):
+        tile_names = [members[g][0] for g in groups[object_id]]
+        distinct = sorted(set(tile_names), key=order.__getitem__)
+        if len(distinct) < len(tile_names):
+            repeated.append(object_id)
+        summary.append({
+            "object_id": object_id, "member_count": len(groups[object_id]), "tiles": ";".join(distinct),
+            "total_voxel_count": sum(members[g][1] for g in groups[object_id]),
+            "seam_count": len(seams.get(object_id, ())),
+        })
+    counts["objects"] = len(summary)
+    counts["merged_objects"] = sum(1 for row in summary if row["member_count"] > 1)
+    return ObjectsResult(objects, summary, counts, repeated)
+
+
 # --- CSV I/O -----------------------------------------------------------------
 
 def write_csv(path, fields, rows) -> None:
@@ -617,3 +772,20 @@ def run_candidates(work) -> list[dict]:
     rows = seam_candidates(inventory, load_tile_ids(work, inventory.tiles))
     write_csv(work / "candidates.csv", CANDIDATES_FIELDS, rows)
     return rows
+
+
+def run_objects(work, decision_paths, *, require_complete: bool = False) -> ObjectsResult:
+    work = Path(work)
+    if not decision_paths:
+        raise StitchingError("pass at least one decisions.csv")
+    tiles = load_tiles_csv(work)
+    candidates = read_csv(work / "candidates.csv")
+    decisions = resolve_decisions(candidates, read_decisions(decision_paths))
+    result = build_objects(sorted(tiles, key=lambda t: t.sort_key), read_csv(work / "id_map.csv"),
+                           candidates, decisions)
+    if require_complete and result.counts["undecided"]:
+        raise StitchingError(f"{result.counts['undecided']} of {len(candidates)} candidate(s) are undecided "
+                             "(--require-complete)")
+    write_csv(work / "objects.csv", OBJECTS_FIELDS, result.objects)
+    write_csv(work / "objects_summary.csv", OBJECTS_SUMMARY_FIELDS, result.summary)
+    return result
