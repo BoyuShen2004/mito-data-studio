@@ -45,7 +45,7 @@ only to its stated date and version.
 
 ## Reference topics
 
-- Engineering: [root files](engineering/root-files.md), [architecture](engineering/architecture.md), [roles and workspaces](engineering/roles-and-workspaces.md), [data and storage](engineering/data-and-storage.md), [AI and algorithms](engineering/ai-and-algorithms.md), [measurements](engineering/measurements.md), [extensions](engineering/extensions.md), [software audit](engineering/software-audit.md).
+- Engineering: [root files](engineering/root-files.md), [architecture](engineering/architecture.md), [roles and workspaces](engineering/roles-and-workspaces.md), [data and storage](engineering/data-and-storage.md), [AI and algorithms](engineering/ai-and-algorithms.md), [measurements](engineering/measurements.md), [cross-tile stitching](engineering/stitching.md), [extensions](engineering/extensions.md), [software audit](engineering/software-audit.md).
 - Release: [dated validation history](release/validation-history.md), [third-party attribution](attribution.md).
 
 ## Current implementation audit

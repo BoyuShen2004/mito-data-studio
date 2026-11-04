@@ -5,6 +5,12 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add offline cross-tile mitochondria stitching phases 1-3:
+  `stitch_inventory` (tiles, seams, overlaps, gaps, missing positions),
+  `stitch_ids` (deterministic uint64-range global IDs) and
+  `stitch_candidates` (label pairs touching across seams, read from the two
+  facing planes only). No database, API or UI changes. See
+  `docs/engineering/stitching.md`.
 - Add primary-manager-controlled assistant-manager grants, dual-role account
   dropdown/workspace switching and a dedicated People roster. Preserve annotator
   identity and enforce the selected role on backend requests. Keep ordinary
