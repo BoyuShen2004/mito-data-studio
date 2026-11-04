@@ -5,6 +5,11 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add offline cross-tile stitching phases 4-5: `stitch_review` builds a
+  self-contained yes/no review page (EM crops with both labels outlined,
+  keyboard controls, saved progress, decisions.csv export/import, `--shard`),
+  and `stitch_objects` joins accepted merges into objects with union-find.
+  No database, API or UI changes. See `docs/engineering/stitching.md`.
 - Add offline cross-tile mitochondria stitching phases 1-3:
   `stitch_inventory` (tiles, seams, overlaps, gaps, missing positions),
   `stitch_ids` (deterministic uint64-range global IDs) and
