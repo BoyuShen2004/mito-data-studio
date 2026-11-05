@@ -22,7 +22,8 @@ from django.core.management import CommandError, call_command
 from django.test import SimpleTestCase
 from PIL import Image
 
-from annotation import stitching, stitching_review
+from annotation import stitching, stitching_measure, stitching_review
+from annotation.measurements import measure_label_volume
 from annotation.stitching import StitchingError, Tile, parse_tile_name
 from annotation.visualization import slice_io
 
@@ -136,11 +137,18 @@ def _write_tiff(path, array, **kwargs):
 
 def build_grid(directory: Path, *, suffix=".tif", **write_kwargs) -> None:
     """Write the 2 x 2 x 2 grid tiles described by ``GRID_OBJECTS``."""
+    write_tiles(directory, GRID_TILES, GRID_OBJECTS, GRID_DTYPES, suffix=suffix, **write_kwargs)
+
+
+def write_tiles(directory: Path, names, objects, dtypes=None, *, suffix=".tif", **write_kwargs) -> None:
+    """Write label tiles ``names`` (shapes from their boxes), painting each
+    ``(name, region box, {tile: local id})`` object into the tiles it reaches."""
     arrays = {}
-    for name in GRID_TILES:
+    for name in names:
         _, box = parse_tile_name(name)
-        arrays[name] = (box, np.zeros((8, 32, 32), dtype=GRID_DTYPES.get(name, np.uint16)))
-    for obj, obox, local_ids in GRID_OBJECTS:
+        shape = tuple(box[2 * a + 1] - box[2 * a] for a in range(3))
+        arrays[name] = (box, np.zeros(shape, dtype=(dtypes or {}).get(name, np.uint16)))
+    for obj, obox, local_ids in objects:
         for name, (box, array) in arrays.items():
             spans = [(max(obox[2 * a], box[2 * a]), min(obox[2 * a + 1], box[2 * a + 1])) for a in range(3)]
             if any(hi <= lo for lo, hi in spans):
@@ -812,9 +820,15 @@ function makeEl(id) {
     blur() {}, remove() {} };
 }
 function el(id) { return elements[id] || (elements[id] = makeEl(id)); }
-const buttons = ["yes", "no", "unsure"].map(d => { const b = el("button-" + d); b.attrs["data-decision"] = d; return b; });
-JSON.parse(DATA).cards.forEach(c => { el(c.id).hidden = true; });
+const buttons = [];
 const docListeners = {};
+function reset() {  // a fresh page load; localStorage survives
+  for (const k of Object.keys(elements)) delete elements[k];
+  for (const k of Object.keys(docListeners)) delete docListeners[k];
+  buttons.length = 0;
+  ["yes", "no", "unsure"].forEach(d => { const b = el("button-" + d); b.attrs["data-decision"] = d; buttons.push(b); });
+  JSON.parse(DATA).cards.forEach(c => { el(c.id).hidden = true; });
+}
 let blob = null, download = null;
 global.document = {
   getElementById: id => id === "review-data" ? { textContent: DATA } : el(id),
@@ -834,7 +848,15 @@ function visible() { return Object.values(elements).filter(e => /^c\d+$/.test(e.
 const log = [];
 function snap(label) { log.push({ label, visible: visible(), progress: el("progress").textContent,
                                   position: el("position").textContent, message: el("message").textContent }); }
+function boot() {
+  reset();
 __SCRIPT__
+}
+boot();
+__SCENARIO__
+"""
+
+    SCENARIO = r"""
 snap("start");
 el("reviewer").value = "rv"; el("reviewer").fire("input");
 key("y"); snap("after y");
@@ -852,14 +874,17 @@ el("import").fire("change"); snap("import");
 console.log(JSON.stringify({ log, exported, download, stored: global.localStorage.store }));
 """
 
-    def run_page(self):
+    def run_page(self, scenario=None, **values):
         out = self.make_dir() / "review"
         stitching_review.build_review(self.work, [self.images()], out, crop=8)
         page = (out / "index.html").read_text()
         data = re.search(r'<script type="application/json" id="review-data">(.*?)</script>', page, re.S).group(1)
         script = re.search(r"<script>\n(.*?)</script>", page, re.S).group(1)
         harness = (self.HARNESS.replace("__DATA__", json.dumps(data)).replace("__SCRIPT__", script)
+                   .replace("__SCENARIO__", scenario or self.SCENARIO)
                    .replace("__T2__", T2).replace("__T6__", T6))
+        for name, value in values.items():
+            harness = harness.replace(f"__{name}__", json.dumps(value))
         path = out.parent / "harness.js"
         path.write_text(harness)
         check = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
@@ -867,6 +892,32 @@ console.log(JSON.stringify({ log, exported, download, stored: global.localStorag
         run = subprocess.run(["node", str(path)], capture_output=True, text=True, timeout=60)
         self.assertEqual(run.returncode, 0, run.stderr)
         return json.loads(run.stdout)
+
+    REVIEWER_SCENARIO = r"""
+el("import").files = [{ text: __AUTO__ }];
+el("import").fire("change");
+const imported = el("message").textContent;
+key("ArrowRight");                                   // card 1, not auto-accepted
+key("y");                                            // decided before a reviewer name was typed
+el("reviewer").value = "late"; el("reviewer").fire("input");
+el("export").fire("click");
+const exported = blob.text;
+boot();                                              // reload the page
+console.log(JSON.stringify({ imported, exported, reviewer: el("reviewer").value,
+                             progress: el("progress").textContent }));
+"""
+
+    def test_reviewer_field_with_auto_decisions(self):
+        auto = stitching.run_auto_decisions(self.work, min_contact=12, decided_at="2026-11-05T00:00:00Z")
+        result = self.run_page(self.REVIEWER_SCENARIO, AUTO=Path(auto["out"]).read_text())
+        self.assertEqual(result["imported"], "Imported 3 decision(s); skipped 0 row(s) not on this page.")
+        rule = "auto:one-to-one,min_frac=0.5,min_contact=12"
+        rows = list(csv.DictReader(io.StringIO(result["exported"])))
+        self.assertEqual([(r["seam"], r["decision"], r["reviewer"]) for r in rows], [
+            ("0", "yes", rule), ("1", "yes", "late"), ("2", "yes", rule), ("3", "yes", rule)])
+        self.assertEqual(rows[0]["decided_at"], "2026-11-05T00:00:00Z")
+        self.assertEqual(result["reviewer"], "late")          # saved with progress
+        self.assertEqual(result["progress"], "4 / 6 decided")
 
     def test_keys_filter_export_and_import(self):
         result = self.run_page()
@@ -1028,3 +1079,329 @@ class UnionFindTests(SimpleTestCase):
         uf.union(7, 5)
         self.assertEqual({uf.find(x) for x in (5, 7, 9, 2**64 - 1)}, {5})
         self.assertEqual(uf.find(2), 2)
+
+
+# --- phase 6: measurements, and auto decisions ----------------------------------
+
+VOXEL = (30.0, 8.0, 8.0)
+
+# Long objects on the same 2 x 2 x 2 layout, so skeletons are well above the dust size.
+LONG_OBJECTS = (
+    # L1: one tube through four tiles: X seam T0 -> T1, Y seam T1 -> T3, Z seam T3 -> T7.
+    ("L1x", (3, 6, 10, 13, 4, 60), {T0: 1, T1: 1}),
+    ("L1y", (3, 6, 10, 50, 57, 60), {T1: 1, T3: 1}),
+    ("L1z", (3, 14, 47, 50, 57, 60), {T3: 1, T7: 1}),
+    # L2: single-tile tube ending on T2's +x face; no partner in T3.
+    ("L2", (2, 5, 40, 43, 2, 32), {T2: 1}),
+    # L3: tube across the Z seam T0 -> T4, answered "no".
+    ("L3", (1, 15, 20, 24, 20, 24), {T0: 2, T4: 1}),
+    # L4: single-tile tube away from every face.
+    ("L4", (9, 14, 5, 8, 40, 60), {T5: 1}),
+)
+
+# A one-layer grid with an empty grid position (y 8-16, x 8-16) and a gap (x 16-20).
+E00, E01, E02 = "0-4_0-8_0-8_e", "0-4_0-8_8-16_e", "0-4_0-8_20-28_e"
+E10, E12 = "0-4_8-16_0-8_e", "0-4_8-16_20-28_e"
+EDGE_TILES = (E00, E01, E02, E10, E12)
+EDGE_OBJECTS = (
+    ("OUT", (1, 3, 0, 2, 2, 4), {E00: 1}),            # only the outer boundary (y=0)
+    ("EMPTY", (1, 3, 6, 8, 10, 12), {E01: 1}),        # face next to the empty grid position
+    ("GAP", (1, 3, 2, 4, 14, 16), {E01: 2}),          # face next to the gap
+    ("MERGED", (1, 3, 4, 6, 6, 10), {E00: 2, E01: 3}),  # across a seam, answered yes
+    ("NO", (1, 3, 6, 10, 2, 4), {E00: 3, E10: 1}),    # across a seam, answered no
+    ("UNS", (1, 3, 6, 10, 22, 24), {E02: 1, E12: 1}),  # answered unsure
+    ("UND", (1, 3, 6, 10, 25, 27), {E02: 2, E12: 2}),  # left undecided
+)
+
+
+class StitchRunMixin(TempDirMixin):
+    def stitch(self, tiles_dir, decide) -> Path:
+        """Phases 1-5 on ``tiles_dir``; ``decide(candidates)`` gives {index: decision}."""
+        work = self.make_dir() / "work"
+        self.call("stitch_inventory", "--tiles", str(tiles_dir), "--work", str(work))
+        self.call("stitch_ids", "--work", str(work))
+        self.call("stitch_candidates", "--work", str(work))
+        candidates = read_rows(work / "candidates.csv")
+        path = write_decisions(work / "decisions.csv", candidates, decide(candidates))
+        self.call("stitch_objects", "--work", str(work), "--decisions", str(path))
+        return work
+
+    def measure(self, work, *extra):
+        return self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", *map(str, VOXEL), *extra)
+
+    def measurements(self, work) -> dict[int, dict]:
+        return {int(r["object_id"]): r for r in read_rows(work / "measurements.csv")}
+
+    def object_of(self, work, tile, local_id) -> int:
+        (global_id,) = [int(r["global_id"]) for r in read_rows(work / "id_map.csv")
+                        if r["tile"] == tile and int(r["local_id"]) == local_id]
+        return {int(r["global_id"]): int(r["object_id"]) for r in read_rows(work / "objects.csv")}[global_id]
+
+    def untiled_measurements(self, tiles_dir, work):
+        """Per-volume measurements of the same objects in one untiled volume
+        (each voxel labelled with its object_id)."""
+        tiles = read_rows(work / "tiles.csv")
+        offsets = {r["tile"]: int(r["id_offset"]) for r in read_rows(work / "tile_ids.csv")}
+        object_of = {int(r["global_id"]): int(r["object_id"]) for r in read_rows(work / "objects.csv")}
+        shape = tuple(max(int(r[f"{a}1"]) for r in tiles) for a in "zyx")
+        volume = np.zeros(shape, np.uint32)
+        for row in tiles:
+            local = tifffile.imread(row["path"]).astype(np.int64)
+            lookup = np.zeros(int(local.max()) + 1, np.uint32)
+            for lid in np.unique(local[local > 0]).tolist():
+                lookup[lid] = object_of[offsets[row["tile"]] + lid]
+            box = tuple(slice(int(row[f"{a}0"]), int(row[f"{a}1"])) for a in "zyx")
+            volume[box] = lookup[local]
+        path = self.make_dir() / "untiled.tif"
+        _write_tiff(path, volume)
+        return {m.label_id: m for m in measure_label_volume(path, VOXEL)}
+
+
+def decide_all(decision="yes", overrides=None):
+    """Decide every candidate ``decision``, except ``overrides``:
+    {(tile_a, tile_b): decision} for the candidates between those tiles."""
+    return lambda candidates: {i: (overrides or {}).get((c["tile_a"], c["tile_b"]), decision)
+                               for i, c in enumerate(candidates)}
+
+
+class MeasureMatchesUntiledTests(StitchRunMixin, SimpleTestCase):
+    """Key property: stitched measurements equal the per-volume code on the
+    same objects in one untiled volume."""
+
+    def assert_matches_untiled(self, tiles_dir, work):
+        stitched = self.measurements(work)
+        untiled = self.untiled_measurements(tiles_dir, work)
+        self.assertEqual(set(stitched), set(untiled))
+        for object_id, row in stitched.items():
+            expected = untiled[object_id]
+            with self.subTest(object_id=object_id):
+                self.assertEqual(int(row["voxel_count"]), expected.voxel_count)
+                self.assertAlmostEqual(float(row["volume_um3"]), expected.volume_um3, places=12)
+                self.assertAlmostEqual(float(row["skeleton_length_um"]), expected.skeleton_length_um,
+                                       delta=1e-9 * max(1.0, expected.skeleton_length_um))
+        return stitched
+
+    def test_grid_objects(self):
+        tiles_dir = self.make_dir()
+        build_grid(tiles_dir)
+        decisions = {0: "yes", 1: "yes", 2: "yes", 3: "yes", 4: "yes", 5: "no"}
+        work = self.stitch(tiles_dir, lambda candidates: decisions)
+        self.measure(work)
+        stitched = self.assert_matches_untiled(tiles_dir, work)
+        # The three-tile object C and the G/H1 merge are above the dust size only once stitched.
+        self.assertEqual((stitched[3]["member_count"], stitched[3]["tiles"]), ("3", f"{T0};{T1};{T5}"))
+        self.assertEqual((stitched[6]["member_count"], stitched[6]["tiles"]), ("2", f"{T2};{T6}"))
+        self.assertGreater(float(stitched[3]["skeleton_length_um"]), 0)
+        self.assertGreater(float(stitched[6]["skeleton_length_um"]), 0)
+        self.assertEqual(stitched[70010]["member_count"], "1")   # H2 answered no
+
+    def test_long_objects(self):
+        tiles_dir = self.make_dir()
+        write_tiles(tiles_dir, GRID_TILES, LONG_OBJECTS)
+        work = self.stitch(tiles_dir, decide_all(overrides={(T0, T4): "no"}))
+        self.measure(work)
+        stitched = self.assert_matches_untiled(tiles_dir, work)
+        l1 = stitched[self.object_of(work, T0, 1)]
+        self.assertEqual((l1["member_count"], l1["tiles"]), ("4", f"{T0};{T1};{T3};{T7}"))
+        self.assertGreater(float(l1["skeleton_length_um"]), 0.5)
+        l3 = {self.object_of(work, T0, 2), self.object_of(work, T4, 1)}
+        self.assertEqual(len(l3), 2)
+        for object_id in (*l3, self.object_of(work, T2, 1), self.object_of(work, T5, 1)):
+            self.assertGreater(float(stitched[object_id]["skeleton_length_um"]), 0)
+        self.assertEqual({r["touches_edge"] for r in stitched.values()}, {"false"})
+
+
+class MeasureOutputTests(StitchRunMixin, SimpleTestCase):
+    def setUp(self):
+        self.tiles_dir = self.make_dir()
+        build_grid(self.tiles_dir)
+
+    def test_rows_and_progress_log(self):
+        work = self.stitch(self.tiles_dir, lambda c: ALL_DECIDED)
+        err = self.measure(work)
+        self.assertIn(f"tile 1/8 {T0}: 3 label(s), 0 single-tile object(s) measured", err)
+        self.assertIn(f"tile 4/8 {T3}: 1 label(s), 1 single-tile object(s) measured", err)
+        self.assertRegex(err, r"object 2/4 2: 2 label\(s\) in 2 tiles, crop 7x12x10, [\d.e+-]+ um")
+        self.assertIn("8 object(s) (4 multi-tile)", err)
+        rows = read_rows(work / "measurements.csv")
+        self.assertEqual(list(rows[0]), list(stitching_measure.MEASUREMENTS_FIELDS))
+        self.assertEqual([int(r["object_id"]) for r in rows], [1, 2, 3, 6, 7, 70010, 70011, 70012])
+        c = self.measurements(work)[3]
+        self.assertEqual({k: c[k] for k in ("member_count", "tiles", "voxel_count", "touches_edge", "edge_faces",
+                                            "skipped_reason", "unresolved_contacts", "unproofread_tiles")},
+                         {"member_count": "3", "tiles": f"{T0};{T1};{T5}", "voxel_count": "296",
+                          "touches_edge": "false", "edge_faces": "", "skipped_reason": "",
+                          "unresolved_contacts": "0", "unproofread_tiles": "0"})
+        self.assertEqual(float(c["volume_um3"]), 296 * 30 * 8 * 8 / 1e9)
+        # In the full grid only D reaches the outer boundary.
+        edges = {o: r["edge_faces"] for o, r in self.measurements(work).items() if r["touches_edge"] == "true"}
+        self.assertEqual(edges, {7: f"{T3}:-z;{T3}:+y;{T3}:+x"})
+
+    def test_crop_limit_skips_length_only(self):
+        work = self.stitch(self.tiles_dir, lambda c: ALL_DECIDED)
+        err = self.measure(work, "--max-crop-voxels", "1,000")
+        self.assertIn("crop 14x8x18 = 2016 voxels > 1000; skipped (crop_limit)", err)
+        rows = self.measurements(work)
+        skipped = {o for o, r in rows.items() if r["skipped_reason"]}
+        self.assertEqual(skipped, {3, 6})   # C: 14x8x18 = 2016, G+H1: 10x12x12 = 1440 padded voxels
+        for o in skipped:
+            self.assertEqual((rows[o]["skipped_reason"], rows[o]["skeleton_length_um"]), ("crop_limit", ""))
+            self.assertEqual(float(rows[o]["volume_um3"]), int(rows[o]["voxel_count"]) * 30 * 8 * 8 / 1e9)
+        self.assertEqual(rows[1]["skeleton_length_um"], "0.0")   # A: 640 padded voxels, under the cap
+        with self.assertRaisesMessage(CommandError, "--max-crop-voxels must be positive"):
+            self.measure(work, "--max-crop-voxels", "0")
+
+    def test_unresolved_contacts(self):
+        work = self.stitch(self.tiles_dir, lambda c: {0: "yes", 1: "unsure", 2: "yes", 4: "yes", 5: "no"})
+        self.measure(work)
+        unresolved = {o: int(r["unresolved_contacts"]) for o, r in self.measurements(work).items()}
+        self.assertEqual(unresolved, {1: 0, 2: 1, 5: 1, 3: 1, 70008: 1, 6: 0, 7: 0,
+                                      70010: 0, 70011: 0, 70012: 0})
+
+    def test_unproofread_tiles(self):
+        work = self.stitch(self.tiles_dir, lambda c: ALL_DECIDED)
+        listing = work / "unproofread.txt"
+        listing.write_text(f"# not proofread yet\n\n/links/8-16_0-32_32-64_prediction.h5\n{T0}\n")
+        self.measure(work, "--unproofread-tiles", str(listing))
+        counts = {o: int(r["unproofread_tiles"]) for o, r in self.measurements(work).items()}
+        self.assertEqual(counts, {1: 1, 2: 1, 3: 2, 6: 0, 7: 0, 70010: 0, 70011: 0, 70012: 0})
+        listing.write_text("99-100_0-32_0-32_proofread.tif\n")
+        with self.assertRaisesMessage(CommandError, "unproofread tiles not in tiles.csv"):
+            self.measure(work, "--unproofread-tiles", str(listing))
+
+    def test_refuses_bad_inputs(self):
+        work = self.stitch(self.tiles_dir, lambda c: ALL_DECIDED)
+        with self.assertRaisesMessage(CommandError, "voxel size must be positive"):
+            self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", "0", "8", "8")
+        objects = work / "objects.csv"
+        objects.write_text(objects.read_text().replace("\n8,1\n", "\n8,8\n"))
+        with self.assertRaisesMessage(CommandError, "rerun stitch_objects"):
+            self.measure(work)
+        (work / "decisions_resolved.csv").unlink()
+        with self.assertRaisesMessage(CommandError, "decisions_resolved.csv not found"):
+            self.measure(work)
+
+    def test_decisions_resolved_records_every_candidate(self):
+        work = self.stitch(self.tiles_dir, lambda c: {0: "yes", 1: "unsure", 5: "no"})
+        rows = read_rows(work / "decisions_resolved.csv")
+        self.assertEqual(list(rows[0]), list(stitching.RESOLVED_FIELDS))
+        self.assertEqual([r["decision"] for r in rows], ["yes", "unsure", "undecided", "undecided", "undecided", "no"])
+
+
+class EdgeRuleTests(StitchRunMixin, SimpleTestCase):
+    def test_faces_without_a_neighbouring_tile_are_edges(self):
+        tiles_dir = self.make_dir()
+        write_tiles(tiles_dir, EDGE_TILES, EDGE_OBJECTS)
+        decisions = {(E00, E01): "yes", (E00, E10): "no"}
+        work = self.stitch(tiles_dir, lambda candidates: {
+            i: decisions.get((c["tile_a"], c["tile_b"]), "unsure" if c["label_a"] == "1" else "")
+            for i, c in enumerate(candidates)})
+        issues = {r["kind"] for r in read_rows(work / "issues.csv")}
+        self.assertTrue({"gap", "missing_position"} <= issues)
+        self.measure(work)
+        rows = self.measurements(work)
+
+        def row(tile, local_id):
+            return rows[self.object_of(work, tile, local_id)]
+
+        expected = {
+            (E00, 1): ("true", f"{E00}:-y"),     # OUT: outer boundary
+            (E01, 1): ("true", f"{E01}:+y"),     # EMPTY: next to the empty grid position
+            (E01, 2): ("true", f"{E01}:+x"),     # GAP: next to the gap
+            (E00, 2): ("false", ""),             # MERGED across a seam
+            (E00, 3): ("false", ""),             # NO: seam face, pair answered no
+            (E10, 1): ("false", ""),
+            (E02, 1): ("false", ""), (E12, 1): ("false", ""),   # UNS
+            (E02, 2): ("false", ""), (E12, 2): ("false", ""),   # UND
+        }
+        for (tile, local_id), (touches, faces) in expected.items():
+            with self.subTest(tile=tile, local_id=local_id):
+                self.assertEqual((row(tile, local_id)["touches_edge"], row(tile, local_id)["edge_faces"]),
+                                 (touches, faces))
+        self.assertEqual(row(E00, 2)["member_count"], "2")
+        self.assertEqual({(t, l): row(t, l)["unresolved_contacts"] for t, l in
+                          ((E02, 1), (E12, 1), (E02, 2), (E12, 2), (E00, 3))},
+                         {(E02, 1): "1", (E12, 1): "1", (E02, 2): "1", (E12, 2): "1", (E00, 3): "0"})
+
+    def test_partly_covered_face(self):
+        tiles_dir = self.make_dir()
+        tall, short = "0-4_0-16_0-8_p", "0-4_0-8_8-16_p"
+        write_tiles(tiles_dir, (tall, short), (
+            ("COVERED", (1, 3, 2, 4, 6, 10), {tall: 1, short: 1}),   # +x face where the seam is
+            ("UNCOVERED", (1, 3, 10, 12, 6, 8), {tall: 2}),           # +x face beyond the short tile
+        ))
+        work = self.stitch(tiles_dir, lambda candidates: {0: "no"})
+        self.measure(work)
+        self.assertEqual(self.measurements(work)[self.object_of(work, tall, 1)]["edge_faces"], "")
+        self.assertEqual(self.measurements(work)[self.object_of(work, tall, 2)]["edge_faces"], f"{tall}:+x")
+
+
+class AutoDecisionTests(StitchedGridMixin, SimpleTestCase):
+    # Grid candidates: 0 A (16 voxels, 1/1), 1 B (6, .5/.5), 2 C (12, 1/1), 3 C (16, 1/1),
+    # 4 G-H1 (40, .625/1), 5 G-H2 (24, .375/.6); G has two partners on seam 5.
+
+    def accepted(self, **kwargs):
+        return stitching.auto_accept(self.candidates, **kwargs)
+
+    def test_thresholds_and_one_to_one(self):
+        self.assertEqual(self.accepted(min_frac=0.5, min_contact=50), [])
+        self.assertEqual(self.accepted(min_frac=0.5, min_contact=10), [0, 2, 3])
+        self.assertEqual(self.accepted(min_frac=0.5, min_contact=6), [0, 1, 2, 3])   # both bounds inclusive
+        self.assertEqual(self.accepted(min_frac=0.6, min_contact=1), [0, 2, 3])
+        self.assertEqual(self.accepted(min_frac=0.0, min_contact=0), [0, 1, 2, 3])   # G-H1/G-H2 never
+
+    def test_one_to_one_counts_both_sides(self):
+        rows = [{"seam": "0", "label_a": "1", "label_b": "1"}, {"seam": "0", "label_a": "2", "label_b": "1"},
+                {"seam": "0", "label_a": "3", "label_b": "3"}, {"seam": "1", "label_a": "3", "label_b": "3"}]
+        self.assertEqual(stitching.one_to_one(rows), [False, False, True, True])
+
+    def test_command_output_is_accepted_by_stitch_objects(self):
+        err = self.call("stitch_auto_decisions", "--work", str(self.work), "--min-contact", "10")
+        self.assertIn("3 of 6 candidate(s) accepted (auto:one-to-one,min_frac=0.5,min_contact=10)", err)
+        rows = read_rows(self.work / "decisions_auto.csv")
+        self.assertEqual(list(rows[0]), list(stitching.DECISION_FIELDS))
+        self.assertEqual([(r["seam"], r["label_a"], r["label_b"], r["decision"], r["reviewer"]) for r in rows], [
+            ("0", "1", "1", "yes", "auto:one-to-one,min_frac=0.5,min_contact=10"),
+            ("2", "3", "1", "yes", "auto:one-to-one,min_frac=0.5,min_contact=10"),
+            ("3", "1", "70000", "yes", "auto:one-to-one,min_frac=0.5,min_contact=10")])
+        self.assertRegex(rows[0]["decided_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        human = write_decisions(self.work / "human.csv", self.candidates, {1: "yes", 4: "yes", 5: "no"})
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(self.work / "decisions_auto.csv"),
+                  "--decisions", str(human), "--require-complete")
+        self.assertEqual(as_tuples(read_rows(self.work / "objects_summary.csv"), stitching.OBJECTS_SUMMARY_FIELDS),
+                         EXPECTED_SUMMARY)
+        # A spot check that disagrees with the rule is a conflict, not a silent override.
+        check = write_decisions(self.work / "check.csv", self.candidates, {2: "no"})
+        with self.assertRaisesMessage(CommandError, "conflicting decisions for the same pair (1)"):
+            self.call("stitch_objects", "--work", str(self.work), "--decisions",
+                      str(self.work / "decisions_auto.csv"), "--decisions", str(check))
+
+    def test_sample_is_reproducible_and_reviewable(self):
+        args = ("stitch_auto_decisions", "--work", str(self.work), "--min-contact", "6", "--sample", "2", "--seed", "7")
+        err = self.call(*args)
+        sample = self.work / "auto_sample_2_seed7.csv"
+        self.assertIn(f"sample of 2 (seed 7) -> {sample}", err)
+        first = sample.read_text()
+        self.call(*args)
+        self.assertEqual(sample.read_text(), first)
+        rows = read_rows(sample)
+        self.assertEqual(list(rows[0]), list(stitching.AUTO_SAMPLE_FIELDS))
+        indices = [next(i for i, c in enumerate(self.candidates) if (c["seam"], c["label_a"], c["label_b"]) ==
+                        (r["seam"], r["label_a"], r["label_b"])) for r in rows]
+        self.assertEqual(indices, sorted(indices))
+        self.assertTrue(set(indices) <= {0, 1, 2, 3})
+        everything = stitching.run_auto_decisions(self.work, min_contact=6, sample=10, seed=1)
+        self.assertEqual(everything["sample"], 4)
+
+        images = self.images()
+        self.call("stitch_review", "--work", str(self.work), "--images", str(images), "--crop", "8",
+                  "--only", str(sample))
+        page = (self.work / "review_auto_sample_2_seed7" / "index.html").read_text()
+        data = json.loads(re.search(r'<script type="application/json" id="review-data">(.*?)</script>',
+                                    page, re.S).group(1))
+        self.assertEqual([c["id"] for c in data["cards"]], [f"c{i:06d}" for i in indices])
+        self.assertEqual(data["export_name"], "decisions_auto_sample_2_seed7.csv")
+        bad = self.work / "bad_sample.csv"
+        bad.write_text(sample.read_text().replace(f",{T0},1,{T4},1,", f",{T0},1,{T4},9,"))
+        with self.assertRaisesMessage(CommandError, "--only rows that match no candidates.csv row"):
+            self.call("stitch_review", "--work", str(self.work), "--images", str(images), "--only", str(bad))
