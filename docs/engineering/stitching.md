@@ -1,8 +1,9 @@
 # Cross-tile mitochondria stitching
 
-Status: phases 1-5 are implemented (offline management commands). Phases 6-7
-are planned and described here so a later session can continue from this file.
-Keep it current when behavior changes.
+Status: phases 1-6 are implemented (offline management commands), plus
+auto-accepting clear-cut merges (`stitch_auto_decisions`). Phase 7 is planned
+and described here so a later session can continue from this file. Keep it
+current when behavior changes.
 
 ## Goal
 
@@ -21,6 +22,33 @@ Reference dataset `nag_p10`:
 - The tiles sit on a sparse 4 x 11 x 10 grid: 80 of 440 positions are present.
   The z slab 864-1120 is missing entirely.
 - Phase 1 finds 121 seams: 54 x, 53 y and 14 z.
+
+The real tiles live only on the lab server. Development and tests use synthetic
+tiles only.
+
+### Real runs
+
+**First run (phases 1-4) used the 80 nag_p10 prediction tiles:**
+
+- 4,413 candidates on 121 seams.
+- 2,704 candidates are one-to-one on their seam with both fractions ≥ 0.5 and
+  contact ≥ 50. That is the default `stitch_auto_decisions` rule.
+- 113 have contact < 10, or a larger fraction < 0.05.
+- The review page had 4,413 cards and 9,842 PNGs, and worked opened from disk
+  in Safari and Chrome.
+
+**Input going forward is the proofread labels:**
+
+- 76 tiles are proofread snapshots: uncompressed TIFF, about 2.1 GB each.
+- 4 tiles are not proofread yet and use their predictions. List them in
+  `--unproofread-tiles` for phase 6.
+- Tiles are fed in through a folder of symlinks named by box, for example
+  `96-352_..._proofread.tif` and `..._prediction.h5`. Phase 1 reads that folder
+  like any tile directory, and the suffixes only become part of the tile names.
+- Final runs should use the approved official labels.
+
+Changing the label source changes the label IDs, so rerun every phase from 1.
+Decisions from one set of tiles do not carry over to another.
 
 ## Decisions
 
@@ -57,9 +85,9 @@ Reference dataset `nag_p10`:
 | 1 | Inventory tiles and seams | done | `tiles.csv`, `seams.csv`, `issues.csv` |
 | 2 | Globally unique IDs | done | `tile_ids.csv`, `id_map.csv` |
 | 3 | Merge candidates at seams | done | `candidates.csv` |
-| 4 | Human yes/no proofreading | done | `review/` (offline HTML page) → `decisions.csv`; `image_pairing.csv` |
-| 5 | Union-find global object IDs | done | `objects.csv`, `objects_summary.csv` |
-| 6 | Measure stitched objects | planned | `measurements.csv` |
+| 4 | Human yes/no proofreading | done | `review/` (offline HTML page) → `decisions.csv`; `image_pairing.csv`; optional `decisions_auto.csv`, `auto_sample_*.csv` |
+| 5 | Union-find global object IDs | done | `objects.csv`, `objects_summary.csv`, `decisions_resolved.csv` |
+| 6 | Measure stitched objects | done | `measurements.csv` |
 | 7 | Validation and delivery | planned | report + archived work directory |
 
 ### 1. Inventory
@@ -197,6 +225,55 @@ folder is `review_<i>of<n>` and the export is named
 `decisions_<i>of<n>.csv`. Card IDs (`c000123`) are the candidate's row index
 in `candidates.csv`, so they are the same in every shard.
 
+**Subset pages.** `--only FILE` builds a page with only the candidates listed
+in `FILE`: any CSV with `seam, tile_a, label_a, tile_b, label_b` columns, such
+as an auto-accept sample.
+
+- Rows matching no candidate are refused.
+- The default output folder is `review_<file stem>`, and the export is named
+  `decisions_<file stem>.csv`.
+- `--only` combines with `--shard`; shards split the subset.
+
+**Reviewer name.** The toolbar has a reviewer field. Its value is saved with
+progress and stored with each decision. On export, a decision made before a
+name was typed gets the current name. Imported decisions keep their own
+reviewer, for example the auto rule's name.
+
+### 4a. Auto-accepting clear-cut merges
+
+`stitch_auto_decisions` writes `decisions_auto.csv` in the `decisions.csv`
+format. It marks `yes` only for candidates that pass all three tests:
+
+- **one-to-one on their seam:** `label_a` has no other partner on that seam,
+  and neither has `label_b`;
+- `min(frac_a, frac_b) >= --min-frac` (default 0.5);
+- `contact_voxels >= --min-contact` (default 50).
+
+Both bounds are inclusive. Every other candidate is left out, so it stays
+undecided. The `reviewer` column records the rule, for example
+`auto:one-to-one,min_frac=0.5,min_contact=50`.
+
+**Spot checks.** `--sample N --seed S` also writes
+`auto_sample_<n>_seed<S>.csv`, a random sample of the accepted pairs in
+candidate order. The same seed and inputs always give the same sample. To check
+it:
+
+1. Build a page for just the sample:
+   `stitch_review --work W --images I --only W/auto_sample_100_seed1.csv`.
+2. Have a reviewer answer it blind. **Do not import `decisions_auto.csv` into
+   that page.**
+3. Export the answers (`decisions_auto_sample_100_seed1.csv`).
+4. Pass both files to `stitch_objects`. Every pair the reviewer answered `no`
+   or `unsure` appears as a conflict and stops the run. The conflicts give the
+   rule's disagreement count on the sample. Fix them (or tighten the
+   thresholds) before continuing.
+
+**Normal use.** To review only what the rule did not accept, import
+`decisions_auto.csv` into the full review page, then tick "Undecided only".
+Reviewers' exports then include the auto rows with their `auto:` reviewer. Or
+pass `decisions_auto.csv` and the reviewers' files to `stitch_objects`
+together; agreeing duplicates are fine.
+
 ### 5. Objects
 
 `stitch_objects` reads `candidates.csv`, `id_map.csv` and one or more
@@ -219,26 +296,84 @@ in `candidates.csv`, so they are the same in every shard.
   deterministic and an unmerged label keeps its own ID.
 - Objects holding two labels from the same tile are listed as a warning. They
   are legitimate only if the object really leaves the tile and comes back.
+- It also writes `decisions_resolved.csv`, the decision it used for every
+  candidate (`undecided` where none was given). Phase 6 reads it, so phase 6
+  needs no decision files.
 
-### 6. Measurement (planned)
+### 6. Measurement
 
-Measure each stitched object: voxel count and volume summed across its
-pieces, cable length with the existing measurement code
-(`annotation.measurements` / `annotation.third_party.em_erl_skel`: call
-`vol_to_skel(res=...)` once, then `skel_to_length(..., res=[1, 1, 1])`; voxel
-size `(30, 8, 8)` nm in `(vz, vy, vx)`). Cable length needs one skeleton of the
-whole object, so the object's pieces must be assembled into one global crop
-(the object's union bounding box) before skeletonising; summing per-tile
-lengths would miss the edges across seams. Oversized crops are skipped and
-flagged with `skipped_reason="crop_limit"`, never fail the run.
+`stitch_measure` writes `measurements.csv`, one row per object.
 
-`touches_edge` means the object touches the **outer boundary of the tiled
+**Inputs.** It reads `tiles.csv`, `seams.csv`, `tile_ids.csv`, `id_map.csv`,
+`candidates.csv`, `objects.csv` and `decisions_resolved.csv` from the work
+directory. It refuses to run if any of these disagree:
+
+- tiles changed since `stitch_ids` (file fingerprint);
+- a tile's labels no longer match `id_map.csv` (IDs or voxel counts);
+- `objects.csv` does not match the resolved decisions.
+
+**Volume.** `voxel_count` is the sum of the members' `id_map.csv` counts, and
+`volume_um3` is `voxel_count · vz·vy·vx / 1e9`. No reading is needed.
+
+**Cable length** reuses the per-volume code unchanged:
+
+- each label's bounding box comes from `label_summary`'s scan
+  (`_scan_stats`/`_derive_summary`);
+- the crop is that box padded by `CROP_PAD` (2);
+- `annotation.measurements.skeleton_length_nm` measures it, with the same
+  TEASAR parameters in `em_erl_skel.vol_to_skel`, dust threshold `DUST_SIZE`
+  (100), voxel size passed once in (Z, Y, X) nm, and `skel_to_length(...,
+  res=[1, 1, 1])`.
+
+No parameter is copied or re-tuned.
+
+Crops are built in **region coordinates**: padded, clipped to the region's
+bounding box, and zero outside the object's own voxels. Every object therefore
+gets exactly the mask the per-volume code would give it in one untiled volume
+of the region. This matters: TEASAR's border handling depends on where the crop
+edge is, so a crop clipped at a tile face gives a different length. The tests
+check stitched results against `measure_label_volume` on the untiled synthetic
+volume.
+
+- **Single-tile objects** (one member; most objects): each tile is read once,
+  and every one of its single-tile objects is measured from that read.
+- **Multi-tile objects:** after the tile pass, each object's window is the
+  union of its members' boxes, padded and clipped. The mask is assembled from
+  one read per member tile (the part of the window inside it) and skeletonised
+  once as a whole. Summing per-tile lengths would miss the path across seams.
+- **Crop limit:** `--max-crop-voxels` (default 512,000,000) caps the padded
+  window, for both kinds. An object over the cap keeps `voxel_count` and
+  `volume_um3`, but `skeleton_length_um` is empty and `skipped_reason` is
+  `crop_limit` (as in the per-volume code).
+
+**Edges.** `touches_edge` means the object touches the **edge of the tiled
 volume**, not a seam. **Any tile face with no neighbouring tile counts as a
-volume edge.** That includes faces on the region's bounding box, faces next to
-missing grid positions, and both faces of the missing z slab 864-1120 in
-`nag_p10`. An object touching any such face is flagged. A tile face is
-interior only where `seams.csv` lists it, and only within that seam's face
-rectangle.
+volume edge.** That includes:
+
+- faces on the region's bounding box;
+- faces next to missing grid positions;
+- faces next to gaps;
+- both faces of the missing z slab 864-1120 in `nag_p10`.
+
+A member label touches an edge when it has a voxel on a tile face at a
+position no seam covers. Coverage comes from `seams.csv` face rectangles, so a
+partly covered face is checked against the label's own footprint on that face.
+Touching a seam face is never an edge, whatever the decision for that pair:
+with "no", the neighbour is a different object, not the volume edge.
+`edge_faces` lists each `tile:face` (faces `-z`, `+z`, `-y`, `+y`, `-x`, `+x`).
+
+**Other columns.**
+
+- `unresolved_contacts` counts the object's candidates (either side is a
+  member) whose decision is `unsure` or `undecided`. A candidate between two
+  unmerged objects counts for both.
+- `unproofread_tiles` counts how many of the object's tiles are listed in
+  `--unproofread-tiles`: a text file of tile names or paths, matched by box, so
+  suffixes may differ.
+
+**Progress** is logged per tile (labels, objects measured and skipped,
+seconds) and per multi-tile object (members, tiles, crop size, length,
+seconds). Then come totals.
 
 ### 7. Validation and delivery (planned)
 
@@ -260,6 +395,9 @@ python manage.py stitch_ids --work /scratch/stitch_p10
 python manage.py stitch_candidates --work /scratch/stitch_p10
 python manage.py stitch_review --work /scratch/stitch_p10 --images /data/nag_p10/images
 python manage.py stitch_review --work /scratch/stitch_p10 --images /data/nag_p10/images --shard 2/3
+python manage.py stitch_auto_decisions --work /scratch/stitch_p10 --sample 100 --seed 1
+python manage.py stitch_review --work /scratch/stitch_p10 --images /data/nag_p10/images \
+    --only /scratch/stitch_p10/auto_sample_100_seed1.csv
 python manage.py stitch_objects --work /scratch/stitch_p10 --decisions decisions_1of3.csv \
     --decisions decisions_2of3.csv --decisions decisions_3of3.csv --require-complete
 ```
@@ -292,8 +430,27 @@ box.
 
 `stitch_objects` reads `tiles.csv`, `candidates.csv` and `id_map.csv`, plus
 the files given with `--decisions` (repeatable). Add `--require-complete` to
-refuse undecided candidates. It writes `objects.csv` and
-`objects_summary.csv`.
+refuse undecided candidates. It writes `objects.csv`, `objects_summary.csv`
+and `decisions_resolved.csv`.
+
+`stitch_auto_decisions` reads `candidates.csv`. Its options:
+
+- `--min-frac` (default 0.5) and `--min-contact` (default 50);
+- `--out` (default `<work>/decisions_auto.csv`);
+- `--sample N --seed S` (default seed 0) and `--sample-out`.
+
+`stitch_measure` reads the work directory and takes:
+
+- `--voxel-size-zyx Z Y X`, in nm and required (nag_p10: `30 8 8`);
+- `--unproofread-tiles FILE`;
+- `--max-crop-voxels N` (default 512,000,000; commas allowed).
+
+It writes `measurements.csv`. A run looks like:
+
+```bash
+python manage.py stitch_measure --work /scratch/stitch_p10 --voxel-size-zyx 30 8 8 \
+    --unproofread-tiles unproofread.txt 2>&1 | tee /scratch/stitch_p10/measure.log
+```
 
 ## File formats
 
@@ -393,21 +550,64 @@ object_id,member_count,tiles,total_voxel_count,seam_count
 number of distinct seams with at least one accepted (`yes`) merge inside the
 object.
 
+`decisions_resolved.csv` — from `stitch_objects`, one row per candidate in
+`candidates.csv` order:
+
+```text
+seam,tile_a,label_a,tile_b,label_b,global_a,global_b,decision
+```
+
+`decision` is `yes`, `no`, `unsure` or `undecided`.
+
+`decisions_auto.csv` — `decisions.csv` format, one `yes` row per
+auto-accepted candidate. `reviewer` is the rule (quoted in CSV, since it
+contains commas), and `decided_at` is when the command ran (UTC).
+
+`auto_sample_<n>_seed<S>.csv` — sampled accepted pairs in candidate order:
+
+```text
+seam,tile_a,label_a,tile_b,label_b,global_a,global_b,contact_voxels,frac_a,frac_b
+```
+
+It has no `decision` column, so importing it into a page decides nothing.
+
+`measurements.csv` — one row per object, sorted by `object_id`:
+
+```text
+object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles
+```
+
+- `tiles` and `edge_faces` are `;`-separated, in tile order;
+  `edge_faces` entries are `tile:face`.
+- `volume_um3` and `skeleton_length_um` are full-precision floats (Python
+  `repr`). `skeleton_length_um` is empty when `skipped_reason` is
+  `crop_limit`.
+- `touches_edge` is `true` or `false`.
+
 ## Code
 
 - `backend/annotation/stitching.py` — parsing, inventory, ID assignment, plane
-  reads, candidates, decisions, union-find, objects, CSV I/O.
+  reads, candidates, decisions, union-find, objects, auto-accept, CSV I/O.
+- `backend/annotation/stitching_measure.py` — phase 6: face coverage, edges,
+  crops in region coordinates, cable length through `annotation.measurements`.
 - `backend/annotation/stitching_review.py` — image pairing, card geometry, PNG
   rendering (Pillow), and the review page (HTML, CSS and a small script inlined
   in one template).
 - `backend/annotation/management/commands/stitch_inventory.py`,
   `stitch_ids.py`, `stitch_candidates.py`, `stitch_review.py`,
-  `stitch_objects.py` — thin CLI wrappers.
+  `stitch_objects.py`, `stitch_auto_decisions.py`, `stitch_measure.py` — thin
+  CLI wrappers.
 - `backend/annotation/test_stitching.py` — synthetic 2 x 2 x 2 grid built in a
   temporary directory, with matching uint8 raw image tiles; no data is
   committed.
   - The page script runs under `node` against a minimal stand-in DOM, covering
-    keys, filter, export and import. It is skipped where `node` is missing.
+    keys, filter, export and import, and the reviewer field across a reload.
+    It is skipped where `node` is missing.
+  - Phase 6 is checked against `measure_label_volume` on the same objects in
+    the untiled synthetic volume, for the grid (including the three-tile
+    object C and the G/H1 merge) and a grid of long tubes.
+  - Separate small grids cover the edge rule: an empty grid position, a gap
+    and a partly covered face.
 
 ```bash
 python manage.py test annotation.test_stitching
@@ -431,3 +631,14 @@ python manage.py test annotation.test_stitching
 - All cards are in one HTML file; images load lazily, only for the card shown.
   Very large candidate lists (tens of thousands) may make the page slow to
   open; use `--shard`.
+- **Phase 6 cost.** It reads every tile once in full (label scan for bounding
+  boxes), like the per-volume code, then each multi-tile object's window
+  again. The default crop cap allows a 512 M-voxel window: about 1 GB of uint16
+  labels plus a 512 MB mask in memory for one object. Lower
+  `--max-crop-voxels` on smaller machines.
+- **Single-object skeletons.** Objects are skeletonised one at a time, single
+  threaded (the per-volume code's `num_thread=1`).
+- **Sparse label IDs.** The label scan reuses the per-volume code's
+  `scipy.ndimage.find_objects`, whose memory grows with a slice's largest
+  label ID. Tiles with very sparse IDs in the billions would need a different
+  scan. Check `tile_ids.csv` `max_local_id` before a phase 6 run.

@@ -5,6 +5,13 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add offline cross-tile stitching phase 6, `stitch_measure`: per-object volume,
+  TEASAR cable length from the existing measurement code on masks assembled
+  across tiles, and edge flags where any tile face without a neighbouring tile
+  is a volume edge. Add `stitch_auto_decisions` (one-to-one rule with
+  thresholds, reproducible spot-check samples) and `stitch_review --only`.
+  `stitch_objects` now also writes `decisions_resolved.csv`. No database, API
+  or UI changes. See `docs/engineering/stitching.md`.
 - Add offline cross-tile stitching phases 4-5: `stitch_review` builds a
   self-contained yes/no review page (EM crops with both labels outlined,
   keyboard controls, saved progress, decisions.csv export/import, `--shard`),

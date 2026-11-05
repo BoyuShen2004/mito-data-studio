@@ -288,8 +288,27 @@ class ReviewResult:
     pairing: list[dict]
 
 
+def read_only_keys(path, candidates: list[dict]) -> set[str]:
+    """Candidate keys listed in ``path`` (any CSV with seam, tile and label
+    columns, such as an auto-accept sample); rows matching no candidate are refused."""
+    rows = read_csv(path)
+    known = {candidate_key(c): (c["tile_a"], c["tile_b"]) for c in candidates}
+    keys, unknown = set(), []
+    for lineno, row in enumerate(rows, 2):
+        try:
+            key = candidate_key(row)
+        except KeyError as exc:
+            raise StitchingError(f"{path}: missing column {exc}") from None
+        if known.get(key) != (row.get("tile_a"), row.get("tile_b")):
+            unknown.append(f"{path}:{lineno}: seam {row['seam']} labels {row['label_a']}/{row['label_b']}")
+        keys.add(key)
+    if unknown:
+        raise StitchingError("--only rows that match no candidates.csv row:\n" + "\n".join(f"  {u}" for u in unknown))
+    return keys
+
+
 def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard: str | None = None,
-                 overwrite: bool = False) -> ReviewResult:
+                 overwrite: bool = False, only=None) -> ReviewResult:
     work = Path(work)
     if crop < 2:
         raise StitchingError("--crop must be at least 2 pixels")
@@ -304,13 +323,18 @@ def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard:
     write_csv(work / "image_pairing.csv", PAIRING_FIELDS, pair_rows)
 
     if out is None:
-        out = work / ("review" if shard_n is None else f"review_{shard_n[0]}of{shard_n[1]}")
+        stem = "review" if only is None else f"review_{Path(only).stem}"
+        out = work / (stem if shard_n is None else f"{stem}_{shard_n[0]}of{shard_n[1]}")
     out = Path(out)
     _prepare_out(out, overwrite)
 
     tiles = {t.name: t for t in inventory.tiles}
     seams = {s.seam: s for s in inventory.seams}
-    selected = [(index, candidates[index]) for index in shard_range(len(candidates), shard_n)]
+    indices = list(range(len(candidates)))
+    if only is not None:
+        keys = read_only_keys(only, candidates)
+        indices = [i for i in indices if candidate_key(candidates[i]) in keys]
+    selected = [(indices[k], candidates[indices[k]]) for k in shard_range(len(indices), shard_n)]
     by_seam: dict[int, list] = {}
     for index, row in selected:
         by_seam.setdefault(int(row["seam"]), []).append((index, row))
@@ -334,9 +358,12 @@ def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard:
                 cards.append(_render_card(out, index, row, seam, plane_a, plane_b, sources, uint8_source, crop))
 
     cards.sort(key=lambda c: c["index"])
-    store = hashlib.sha256((work / "candidates.csv").read_bytes() + (shard or "").encode()).hexdigest()[:16]
-    export_name = "decisions.csv" if shard_n is None else f"decisions_{shard_n[0]}of{shard_n[1]}.csv"
-    title = "Seam review" + ("" if shard_n is None else f" (shard {shard_n[0]} of {shard_n[1]})")
+    only_bytes = Path(only).read_bytes() if only is not None else b""
+    store = hashlib.sha256((work / "candidates.csv").read_bytes() + (shard or "").encode() + only_bytes).hexdigest()[:16]
+    export_stem = "decisions" if only is None else f"decisions_{Path(only).stem}"
+    export_name = f"{export_stem}.csv" if shard_n is None else f"{export_stem}_{shard_n[0]}of{shard_n[1]}.csv"
+    title = "Seam review" + ("" if only is None else f" ({Path(only).name})") \
+        + ("" if shard_n is None else f" (shard {shard_n[0]} of {shard_n[1]})")
     (out / "index.html").write_text(render_html(cards, store=store, export_name=export_name, title=title,
                                                 crop=crop, missing_images=[r["tile"] for r in pair_rows
                                                                 if r["status"] == "no_image"]))
@@ -609,7 +636,10 @@ figcaption { color: var(--muted); margin-top: 4px; }
     cards.forEach(function (c) {
       var d = state.decisions[c.key];
       if (!d) return;
-      lines.push(data.fields.map(function (f) { return csvField(f in d ? d[f] : c[f]); }).join(","));
+      lines.push(data.fields.map(function (f) {
+        if (f === "reviewer") return csvField(d.reviewer || $("reviewer").value);
+        return csvField(f in d ? d[f] : c[f]);
+      }).join(","));
     });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([lines.join("\\n") + "\\n"], { type: "text/csv" }));

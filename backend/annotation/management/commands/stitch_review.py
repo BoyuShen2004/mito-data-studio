@@ -8,6 +8,8 @@ image_pairing.csv to the work directory. See docs/engineering/stitching.md.
 
     python manage.py stitch_review --work stitch_p10 --images /data/nag_p10/images
     python manage.py stitch_review --work stitch_p10 --images /data/nag_p10/images --shard 2/3
+    python manage.py stitch_review --work stitch_p10 --images /data/nag_p10/images \
+        --only stitch_p10/auto_sample_100_seed1.csv
 """
 
 from collections import Counter
@@ -43,6 +45,11 @@ class Command(BaseCommand):
             help="Only shard i of n, e.g. 2/3: a contiguous, deterministic share of candidates.csv.",
         )
         parser.add_argument(
+            "--only", default=None,
+            help="Only the candidates listed in this CSV (e.g. a stitch_auto_decisions sample); "
+                 "default output <work>/review_<file stem>.",
+        )
+        parser.add_argument(
             "--overwrite", action="store_true",
             help="Replace index.html and crops/ in an existing output folder.",
         )
@@ -50,7 +57,7 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         try:
             result = build_review(opts["work"], opts["images"], opts["out"], crop=opts["crop"],
-                                  shard=opts["shard"], overwrite=opts["overwrite"])
+                                  shard=opts["shard"], overwrite=opts["overwrite"], only=opts["only"])
         except StitchingError as exc:
             raise CommandError(str(exc))
 

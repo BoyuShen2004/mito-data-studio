@@ -18,9 +18,12 @@ from __future__ import annotations
 import csv
 import itertools
 import os
+import random
 import re
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -49,7 +52,10 @@ CANDIDATES_FIELDS = ("seam", "axis", "tile_a", "label_a", "tile_b", "label_b", "
 DECISION_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
                    "decision", "reviewer", "decided_at")
 DECISION_VALUES = ("yes", "no", "unsure")
+RESOLVED_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b", "decision")
 OBJECTS_FIELDS = ("global_id", "object_id")
+AUTO_SAMPLE_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
+                      "contact_voxels", "frac_a", "frac_b")
 OBJECTS_SUMMARY_FIELDS = ("object_id", "member_count", "tiles", "total_voxel_count", "seam_count")
 # How many problem rows a refusal lists before summarising the rest.
 MAX_LISTED = 50
@@ -788,4 +794,56 @@ def run_objects(work, decision_paths, *, require_complete: bool = False) -> Obje
                              "(--require-complete)")
     write_csv(work / "objects.csv", OBJECTS_FIELDS, result.objects)
     write_csv(work / "objects_summary.csv", OBJECTS_SUMMARY_FIELDS, result.summary)
+    write_csv(work / "decisions_resolved.csv", RESOLVED_FIELDS,
+              [{**{f: c[f] for f in RESOLVED_FIELDS[:-1]}, "decision": decisions.get(_pair_key(c), "undecided")}
+               for c in candidates])
+    return result
+
+
+def one_to_one(candidates: list[dict]) -> list[bool]:
+    """Per candidate row: is it the only row on its seam for both its labels?"""
+    seen = Counter()
+    for c in candidates:
+        seen[(c["seam"], "a", c["label_a"])] += 1
+        seen[(c["seam"], "b", c["label_b"])] += 1
+    return [seen[(c["seam"], "a", c["label_a"])] == 1 and seen[(c["seam"], "b", c["label_b"])] == 1
+            for c in candidates]
+
+
+def auto_accept(candidates: list[dict], *, min_frac: float, min_contact: int) -> list[int]:
+    """Indices of candidates accepted by the auto rule: one-to-one on their
+    seam, ``min(frac_a, frac_b) >= min_frac`` and ``contact_voxels >= min_contact``."""
+    return [i for i, (c, single) in enumerate(zip(candidates, one_to_one(candidates)))
+            if single and min(float(c["frac_a"]), float(c["frac_b"])) >= min_frac
+            and int(c["contact_voxels"]) >= min_contact]
+
+
+def auto_rule_name(min_frac: float, min_contact: int) -> str:
+    return f"auto:one-to-one,min_frac={min_frac:g},min_contact={min_contact}"
+
+
+def run_auto_decisions(work, out=None, *, min_frac: float = 0.5, min_contact: int = 50,
+                       sample: int = 0, seed: int = 0, sample_out=None, decided_at: str | None = None) -> dict:
+    """Write decisions.csv rows ("yes") for auto-accepted candidates and,
+    with ``sample``, a reproducible random sample of them for spot checks."""
+    work = Path(work)
+    if not 0 <= min_frac <= 1:
+        raise StitchingError("--min-frac must be between 0 and 1")
+    if min_contact < 0 or sample < 0:
+        raise StitchingError("--min-contact and --sample must not be negative")
+    candidates = read_csv(work / "candidates.csv")
+    accepted = auto_accept(candidates, min_frac=min_frac, min_contact=min_contact)
+    reviewer = auto_rule_name(min_frac, min_contact)
+    decided_at = decided_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = Path(out) if out else work / "decisions_auto.csv"
+    write_csv(out, DECISION_FIELDS, [
+        {**{f: candidates[i][f] for f in DECISION_FIELDS[:7]}, "decision": "yes", "reviewer": reviewer,
+         "decided_at": decided_at} for i in accepted])
+    result = {"candidates": len(candidates), "accepted": len(accepted), "out": out, "reviewer": reviewer,
+              "sample": 0, "sample_out": None}
+    if sample:
+        picked = sorted(random.Random(seed).sample(accepted, min(sample, len(accepted))))
+        sample_out = Path(sample_out) if sample_out else work / f"auto_sample_{len(picked)}_seed{seed}.csv"
+        write_csv(sample_out, AUTO_SAMPLE_FIELDS, [{f: candidates[i][f] for f in AUTO_SAMPLE_FIELDS} for i in picked])
+        result.update(sample=len(picked), sample_out=sample_out)
     return result
