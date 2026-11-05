@@ -32,12 +32,15 @@ class Command(BaseCommand):
         parser.add_argument("--seed", type=int, default=0, help="Random seed for --sample (default 0).")
         parser.add_argument("--sample-out", default=None,
                             help="Sample path (default <work>/auto_sample_<n>_seed<seed>.csv).")
+        parser.add_argument("--region-only", action="store_true",
+                            help="Accept only candidates with in_region true (needs stitch_ids --regions).")
 
     def handle(self, *args, **opts):
         try:
             result = run_auto_decisions(opts["work"], opts["out"], min_frac=opts["min_frac"],
                                         min_contact=opts["min_contact"], sample=opts["sample"],
-                                        seed=opts["seed"], sample_out=opts["sample_out"])
+                                        seed=opts["seed"], sample_out=opts["sample_out"],
+                                        region_only=opts["region_only"])
         except StitchingError as exc:
             raise CommandError(str(exc))
 

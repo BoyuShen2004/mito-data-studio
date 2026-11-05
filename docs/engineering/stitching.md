@@ -1,9 +1,10 @@
 # Cross-tile mitochondria stitching
 
 Status: phases 1-6 are implemented (offline management commands), plus
-auto-accepting clear-cut merges (`stitch_auto_decisions`). Phase 7 is planned
-and described here so a later session can continue from this file. Keep it
-current when behavior changes.
+auto-accepting clear-cut merges (`stitch_auto_decisions`) and optional region
+(ROI) awareness (see [Regions](#regions-roi)). Phase 7 is planned and described
+here so a later session can continue from this file. Keep it current when
+behavior changes.
 
 ## Goal
 
@@ -383,6 +384,85 @@ labels from the same tile unless a decision chain links them. Spot-check a
 sample of stitched objects visually. Deliver the CSVs with the command lines,
 code revision and voxel size used.
 
+## Regions (ROI)
+
+**Why.** Annotators proofread mitochondria only inside each tile's region
+mask, an ROI of roughly one cell; nonzero means inside. Labels outside the
+region are unverified predictions. For now the analysis is region-only: only
+mitochondria that reach into the region matter.
+
+Real region files are HDF5 named by box, for example
+`96-352_8192-10240_19456-21504_mask_pc2.h5`. They sit in their own
+directories, apart from the labels.
+
+Everything below is optional. Without `--regions` every command behaves, and
+writes, exactly as before: no new columns or files. This was checked byte for
+byte on the synthetic grid, covering every CSV, the review page and its PNGs.
+
+**Pairing (phase 2).** `stitch_ids --regions DIR` (repeatable) pairs region
+files to tiles by the leading `z0-z1_y0-y1_x0-x1` box, exactly as
+`stitch_review` pairs images.
+
+- Tiles without a region file are reported on stderr and in
+  `region_pairing.csv` (`no_region`), and count as entirely outside the region.
+- Region files without a tile are reported too (`no_tile`).
+- Two region files with one box, or a region whose shape differs from its tile,
+  are errors.
+- Rerunning `stitch_ids` without `--regions` drops the region columns and
+  removes `region_pairing.csv`.
+
+`--regions` exists only on `stitch_ids`. It is the only phase that reads the
+masks. Later phases take region data from `id_map.csv`, and `stitch_review`,
+`stitch_auto_decisions` and `stitch_measure` take `--region-only` instead.
+
+**Counting (phase 2).** During the existing full read of each tile, the
+region mask is read in the same Z blocks as the labels (about 64 MB each),
+so neither is held whole and no two tiles are ever in memory at once.
+
+- `id_map.csv` gains `region_voxels`: each label's voxels inside the region.
+- `tile_ids.csv` gains `region_voxels`: the size of the region mask in that
+  tile (0 without a region file). Per-label sums are already in `id_map.csv`;
+  the region size is not derivable elsewhere and is what densities need.
+
+**Candidates (phase 3).** When `id_map.csv` has `region_voxels`,
+`candidates.csv` gains `in_region`: `true` if either label has
+`region_voxels > 0`. Without region data the column is left out.
+
+**Region-only review and auto-accept.** `stitch_review --region-only` and
+`stitch_auto_decisions --region-only` use only `in_region` candidates. Both
+refuse if `candidates.csv` has no `in_region` column.
+
+- **Review page:** default folder `review_region`, export
+  `decisions_region.csv`, title "(region only)". Card IDs remain row indices.
+- **Auto-accept:** one-to-one is still judged against **all** candidates on
+  the seam, and only then restricted to `in_region`. A partner outside the
+  region therefore still disqualifies a pair. The rule name gains
+  `,region_only`, for example
+  `auto:one-to-one,min_frac=0.5,min_contact=50,region_only`.
+
+**Objects (phase 5).** The rules are unchanged. Candidates outside the region
+are simply never reviewed and stay undecided, so they never merge.
+
+**Measurement (phase 6).** When `id_map.csv` has `region_voxels`,
+`measurements.csv` gains three columns:
+
+- `region_voxels`: the sum over members;
+- `frac_in_region`: `region_voxels / voxel_count`;
+- `crosses_region_boundary`: `true` when the object has voxels both inside and
+  outside the region.
+
+Without region data the columns are left out. `stitch_measure --region-only`
+changes three things:
+
+- only objects with `region_voxels > 0` are listed and skeletonised;
+- `unresolved_contacts` counts only `in_region` candidates (either label
+  inside), so an out-of-region object left undecided neither appears nor
+  counts against an in-region object;
+- `in_region` is derived from `id_map.csv`, so it always matches
+  `candidates.csv`.
+
+Every other column of a listed object is identical to the full run.
+
 ## CLI
 
 All commands are offline, read-only for inputs, and write into a work
@@ -443,7 +523,8 @@ and `decisions_resolved.csv`.
 
 - `--voxel-size-zyx Z Y X`, in nm and required (nag_p10: `30 8 8`);
 - `--unproofread-tiles FILE`;
-- `--max-crop-voxels N` (default 512,000,000; commas allowed).
+- `--max-crop-voxels N` (default 512,000,000; commas allowed);
+- `--region-only` (see [Regions](#regions-roi)).
 
 It writes `measurements.csv`. A run looks like:
 
@@ -451,6 +532,22 @@ It writes `measurements.csv`. A run looks like:
 python manage.py stitch_measure --work /scratch/stitch_p10 --voxel-size-zyx 30 8 8 \
     --unproofread-tiles unproofread.txt 2>&1 | tee /scratch/stitch_p10/measure.log
 ```
+
+A region-only run passes `--regions` to phase 2 and `--region-only` to the
+later commands:
+
+```bash
+python manage.py stitch_ids --work /scratch/stitch_p10 --regions /data/nag_p10/regions
+python manage.py stitch_candidates --work /scratch/stitch_p10
+python manage.py stitch_auto_decisions --work /scratch/stitch_p10 --region-only
+python manage.py stitch_review --work /scratch/stitch_p10 --images /data/nag_p10/images --region-only
+python manage.py stitch_objects --work /scratch/stitch_p10 --decisions decisions_auto.csv \
+    --decisions decisions_region.csv
+python manage.py stitch_measure --work /scratch/stitch_p10 --voxel-size-zyx 30 8 8 --region-only
+```
+
+Do not pass `--require-complete` to `stitch_objects` in a region-only run:
+candidates outside the region are expected to stay undecided.
 
 ## File formats
 
@@ -510,6 +607,25 @@ seam,axis,tile_a,label_a,tile_b,label_b,global_a,global_b,contact_voxels,area_a,
 ```
 
 Fractions are written with six decimals.
+
+With region data (`stitch_ids --regions`), these columns are appended:
+
+- `tile_ids.csv`: `region_voxels` (the region's size in the tile);
+- `id_map.csv`: `region_voxels` (the label's voxels inside);
+- `candidates.csv`: `in_region` (`true`/`false`);
+- `measurements.csv`: `region_voxels,frac_in_region,crosses_region_boundary`.
+
+`frac_in_region` is a full-precision float. `crosses_region_boundary` is
+`true`/`false`.
+
+`region_pairing.csv` — written by `stitch_ids --regions`, one row per tile,
+then one per unused region file:
+
+```text
+tile,region_tile,region_path,status
+```
+
+`status` is `matched`, `no_region` or `no_tile`.
 
 `image_pairing.csv` — one row per prediction tile, then one per unused image
 tile:
@@ -608,6 +724,9 @@ object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_e
     object C and the G/H1 merge) and a grid of long tubes.
   - Separate small grids cover the edge rule: an empty grid position, a gap
     and a partly covered face.
+  - Region masks over part of the grid (one tile without a file) cover the
+    region rules. One test checks that a run without `--regions` writes the
+    same bytes as before.
 
 ```bash
 python manage.py test annotation.test_stitching
@@ -621,6 +740,9 @@ python manage.py test annotation.test_stitching
   intersect the plane.
 - Phase 2 reads every voxel of every tile once (required to count labels).
 - Seam detection is O(tiles²), which is negligible at 80 tiles.
+- With `--regions`, phase 2 also reads every region mask once in full, in the
+  label blocks. Region masks are not fingerprinted: if one changes, rerun
+  `stitch_ids --regions` and every later phase.
 - The review page is checked in tests (structure, files, embedded data, and the
   script under node with a stand-in DOM), not in a real browser. Before handing
   pages to reviewers, open one from disk in Safari and in Chrome. Check that a

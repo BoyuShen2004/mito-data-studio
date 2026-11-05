@@ -21,7 +21,7 @@ import os
 import random
 import re
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +57,10 @@ OBJECTS_FIELDS = ("global_id", "object_id")
 AUTO_SAMPLE_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
                       "contact_voxels", "frac_a", "frac_b")
 OBJECTS_SUMMARY_FIELDS = ("object_id", "member_count", "tiles", "total_voxel_count", "seam_count")
+# Region (ROI) columns, present only when stitch_ids ran with --regions.
+REGION_VOXELS = "region_voxels"
+IN_REGION = "in_region"
+REGION_PAIRING_FIELDS = ("tile", "region_tile", "region_path", "status")
 # How many problem rows a refusal lists before summarising the rest.
 MAX_LISTED = 50
 
@@ -425,10 +429,26 @@ def _check_label_dtype(dtype, where: str) -> None:
 
 def count_labels(volume, *, where: str = "tile") -> dict[int, int]:
     """``{label: voxel_count}`` for every nonzero label, streaming Z blocks."""
+    return _count_blocks(volume, None, where)[0]
+
+
+def count_labels_in_region(volume, region, *, where: str = "tile") -> tuple[dict[int, int], dict[int, int], int]:
+    """``(counts, inside, region_size)``: per-label voxel counts, per-label
+    voxels where ``region`` (same shape, nonzero = inside) is set, and the
+    region's size. Labels and region are read in the same Z blocks, so neither
+    is ever held whole."""
+    if tuple(region.shape) != tuple(volume.shape):
+        raise StitchingError(f"{where}: region shape {tuple(region.shape)} differs from tile shape {tuple(volume.shape)}")
+    return _count_blocks(volume, region, where)
+
+
+def _count_blocks(volume, region, where: str):
     _check_label_dtype(volume.dtype, where)
     nz, ny, nx = volume.shape
     block = max(1, Z_BLOCK_BYTES // max(1, ny * nx * np.dtype(volume.dtype).itemsize))
     counts: dict[int, int] = {}
+    inside: dict[int, int] = {}
+    region_size = 0
     for z0 in range(0, nz, block):
         data = np.asarray(volume[z0 : z0 + block])
         if data.size and np.issubdtype(data.dtype, np.signedinteger) and data.min() < 0:
@@ -437,7 +457,64 @@ def count_labels(volume, *, where: str = "tile") -> dict[int, int]:
         for lid, c in zip(ids.tolist(), n.tolist()):
             if lid:
                 counts[lid] = counts.get(lid, 0) + c
-    return counts
+        if region is not None:
+            mask = np.asarray(region[z0 : z0 + block]) != 0
+            region_size += int(mask.sum())
+            ids, n = np.unique(data[mask], return_counts=True)
+            for lid, c in zip(ids.tolist(), n.tolist()):
+                if lid:
+                    inside[lid] = inside.get(lid, 0) + c
+    return counts, inside, region_size
+
+
+# --- pairing companion files by box ------------------------------------------
+
+def pair_by_box(tiles: list[Tile], directories, *, what: str) -> tuple[dict[str, Tile | None], list[Tile]]:
+    """Match each tile to the file in ``directories`` with the same box.
+
+    Returns ``({tile name: matching file or None}, files matching no tile)``.
+    Suffixes after the box are ignored (``..._im_xy.h5`` pairs with
+    ``..._mask_pc2.h5``). Two files with one box, or a file whose shape differs
+    from its tile, are errors.
+    """
+    by_box: dict[tuple, Tile] = {}
+    for directory in directories:
+        directory = Path(directory)
+        if not directory.is_dir():
+            raise StitchingError(f"{what} directory not found: {directory}")
+        found, _ = collect_tiles(directory)
+        for item in found:
+            if item.box in by_box:
+                raise StitchingError(
+                    "two {} tiles share box {}-{}_{}-{}_{}-{}: ".format(what, *item.box)
+                    + f"{by_box[item.box].path} and {item.path}")
+            by_box[item.box] = item
+    pairing = {t.name: by_box.get(t.box) for t in tiles}
+    boxes = {t.box for t in tiles}
+    unused = sorted((item for item in by_box.values() if item.box not in boxes), key=lambda t: t.sort_key)
+    for tile in tiles:
+        item = pairing[tile.name]
+        if item is None:
+            continue
+        shape = tile_shape(item.path)
+        if shape != tile.shape:
+            raise StitchingError(
+                f"{what} {item.path} has shape {'x'.join(map(str, shape))} "
+                f"but tile {tile.name} is {'x'.join(map(str, tile.shape))}")
+    return pairing, unused
+
+
+def pairing_rows(tiles: list[Tile], pairing: dict[str, Tile | None], unused: list[Tile], *, what: str,
+                 unused_status: str) -> list[dict]:
+    """One row per tile (``matched`` / ``no_<what>``), then one per unused file."""
+    rows = []
+    for t in tiles:
+        item = pairing[t.name]
+        rows.append({"tile": t.name, f"{what}_tile": item.name if item else "",
+                     f"{what}_path": item.path if item else "", "status": "matched" if item else f"no_{what}"})
+    rows += [{"tile": "", f"{what}_tile": item.name, f"{what}_path": item.path, "status": unused_status}
+             for item in unused]
+    return rows
 
 
 # --- phase 2: global IDs -----------------------------------------------------
@@ -447,15 +524,26 @@ def _file_fingerprint(path) -> tuple[int, int]:
     return st.st_size, st.st_mtime_ns
 
 
-def assign_global_ids(inventory: Inventory) -> tuple[list[dict], list[dict]]:
+def assign_global_ids(inventory: Inventory, regions: dict[str, Tile | None] | None = None) -> tuple[list[dict], list[dict]]:
     """Return ``(tile_ids_rows, id_map_rows)``: per-tile offsets, then one row per
-    (tile, nonzero local label). See docs/engineering/stitching.md, phase 2."""
+    (tile, nonzero local label). See docs/engineering/stitching.md, phase 2.
+
+    With ``regions`` ({tile name: paired region file or None}), both also get
+    ``region_voxels``: per label, its voxels inside the region; per tile, the
+    region's size. A tile without a region file is entirely outside."""
     require_stitchable(inventory)
     tile_rows, id_rows = [], []
     offset = 0
     for tile in inventory.tiles:
-        with open_tile(tile.path) as volume:
-            counts = count_labels(volume, where=tile.name)
+        inside, region_size = {}, 0
+        with ExitStack() as stack:
+            volume = stack.enter_context(open_tile(tile.path))
+            region = regions.get(tile.name) if regions is not None else None
+            if region is not None:
+                counts, inside, region_size = count_labels_in_region(
+                    volume, stack.enter_context(open_tile(region.path)), where=tile.name)
+            else:
+                counts = count_labels(volume, where=tile.name)
             dtype = np.dtype(volume.dtype).name
         max_local = max(counts, default=0)
         if offset + max_local > MAX_GLOBAL_ID:
@@ -465,10 +553,12 @@ def assign_global_ids(inventory: Inventory) -> tuple[list[dict], list[dict]]:
             "tile": tile.name, "id_offset": offset, "max_local_id": max_local,
             "label_count": len(counts), "labelled_voxels": sum(counts.values()),
             "dtype": dtype, "file_size": size, "file_mtime_ns": mtime_ns,
+            **({REGION_VOXELS: region_size} if regions is not None else {}),
         })
         for lid in sorted(counts):
             id_rows.append({"tile": tile.name, "local_id": lid, "global_id": offset + lid,
-                            "voxel_count": counts[lid]})
+                            "voxel_count": counts[lid],
+                            **({REGION_VOXELS: inside.get(lid, 0)} if regions is not None else {})})
         offset += max_local
     return tile_rows, id_rows
 
@@ -495,8 +585,12 @@ def plane_contacts(plane_a: np.ndarray, plane_b: np.ndarray) -> list[tuple[int, 
             for (a, b), c in zip(uniq.tolist(), contact.tolist())]
 
 
-def seam_candidates(inventory: Inventory, tile_ids: dict[str, dict]) -> list[dict]:
-    """Candidate merges for every seam, sorted by seam, then contact descending."""
+def seam_candidates(inventory: Inventory, tile_ids: dict[str, dict],
+                    region_voxels: dict[int, int] | None = None) -> list[dict]:
+    """Candidate merges for every seam, sorted by seam, then contact descending.
+
+    With ``region_voxels`` ({global id: voxels inside the region}), each row
+    also gets ``in_region``: true if either label reaches into the region."""
     require_stitchable(inventory)
     by_name = {t.name: t for t in inventory.tiles}
     rows = []
@@ -523,6 +617,9 @@ def seam_candidates(inventory: Inventory, tile_ids: dict[str, dict]) -> list[dic
                 "contact_voxels": contact, "area_a": area_a, "area_b": area_b,
                 "frac_a": f"{contact / area_a:.6f}", "frac_b": f"{contact / area_b:.6f}",
             })
+            if region_voxels is not None:
+                inside = any(region_voxels.get(found[-1][g], 0) > 0 for g in ("global_a", "global_b"))
+                found[-1][IN_REGION] = "true" if inside else "false"
         found.sort(key=lambda r: (-r["contact_voxels"], r["label_a"], r["label_b"]))
         rows += found
     return rows
@@ -761,13 +858,48 @@ def run_inventory(source, work) -> Inventory:
     return inventory
 
 
-def run_ids(work) -> tuple[list[dict], list[dict]]:
+def run_ids(work, region_dirs=None) -> tuple[list[dict], list[dict], list[dict] | None]:
+    """Phase 2. With ``region_dirs``, also count voxels inside each tile's
+    region mask and write region_pairing.csv; returns its rows as the third item."""
     work = Path(work)
     inventory = build_inventory(load_tiles_csv(work))
-    tile_rows, id_rows = assign_global_ids(inventory)
-    write_csv(work / "tile_ids.csv", TILE_IDS_FIELDS, tile_rows)
-    write_csv(work / "id_map.csv", ID_MAP_FIELDS, id_rows)
-    return tile_rows, id_rows
+    require_stitchable(inventory)
+    regions = pair_rows = None
+    if region_dirs:
+        regions, unused = pair_by_box(inventory.tiles, region_dirs, what="region")
+        pair_rows = pairing_rows(inventory.tiles, regions, unused, what="region", unused_status="no_tile")
+    tile_rows, id_rows = assign_global_ids(inventory, regions)
+    extra = (REGION_VOXELS,) if regions is not None else ()
+    write_csv(work / "tile_ids.csv", TILE_IDS_FIELDS + extra, tile_rows)
+    write_csv(work / "id_map.csv", ID_MAP_FIELDS + extra, id_rows)
+    if pair_rows is None:
+        (work / "region_pairing.csv").unlink(missing_ok=True)  # stale from an earlier --regions run
+    else:
+        write_csv(work / "region_pairing.csv", REGION_PAIRING_FIELDS, pair_rows)
+    return tile_rows, id_rows, pair_rows
+
+
+def csv_fields(path) -> list[str]:
+    """Header of a CSV file (rows may be empty)."""
+    path = Path(path)
+    if not path.exists():
+        raise StitchingError(f"{path} not found; run the earlier stitching phase first")
+    with open(path, newline="") as fh:
+        return next(csv.reader(fh), [])
+
+
+def load_region_voxels(work) -> dict[int, int] | None:
+    """``{global id: region_voxels}`` from id_map.csv, or None without region data."""
+    path = Path(work) / "id_map.csv"
+    if REGION_VOXELS not in csv_fields(path):
+        return None
+    return {int(r["global_id"]): int(r[REGION_VOXELS]) for r in read_csv(path)}
+
+
+def require_in_region(work) -> None:
+    if IN_REGION not in csv_fields(Path(work) / "candidates.csv"):
+        raise StitchingError("candidates.csv has no in_region column; run stitch_ids --regions, "
+                             "then stitch_candidates")
 
 
 def run_candidates(work) -> list[dict]:
@@ -775,8 +907,10 @@ def run_candidates(work) -> list[dict]:
     inventory = build_inventory(load_tiles_csv(work))
     require_stitchable(inventory)
     check_seams_csv(work, inventory)
-    rows = seam_candidates(inventory, load_tile_ids(work, inventory.tiles))
-    write_csv(work / "candidates.csv", CANDIDATES_FIELDS, rows)
+    tile_ids = load_tile_ids(work, inventory.tiles)
+    region_voxels = load_region_voxels(work)
+    rows = seam_candidates(inventory, tile_ids, region_voxels)
+    write_csv(work / "candidates.csv", CANDIDATES_FIELDS + ((IN_REGION,) if region_voxels is not None else ()), rows)
     return rows
 
 
@@ -810,20 +944,27 @@ def one_to_one(candidates: list[dict]) -> list[bool]:
             for c in candidates]
 
 
-def auto_accept(candidates: list[dict], *, min_frac: float, min_contact: int) -> list[int]:
+def auto_accept(candidates: list[dict], *, min_frac: float, min_contact: int,
+                region_only: bool = False) -> list[int]:
     """Indices of candidates accepted by the auto rule: one-to-one on their
-    seam, ``min(frac_a, frac_b) >= min_frac`` and ``contact_voxels >= min_contact``."""
+    seam, ``min(frac_a, frac_b) >= min_frac`` and ``contact_voxels >= min_contact``.
+
+    One-to-one is judged against every candidate on the seam; ``region_only``
+    then keeps only ``in_region`` rows, so a partner outside the region still
+    disqualifies a pair."""
     return [i for i, (c, single) in enumerate(zip(candidates, one_to_one(candidates)))
             if single and min(float(c["frac_a"]), float(c["frac_b"])) >= min_frac
-            and int(c["contact_voxels"]) >= min_contact]
+            and int(c["contact_voxels"]) >= min_contact
+            and (not region_only or c[IN_REGION] == "true")]
 
 
-def auto_rule_name(min_frac: float, min_contact: int) -> str:
-    return f"auto:one-to-one,min_frac={min_frac:g},min_contact={min_contact}"
+def auto_rule_name(min_frac: float, min_contact: int, region_only: bool = False) -> str:
+    return f"auto:one-to-one,min_frac={min_frac:g},min_contact={min_contact}" + (",region_only" if region_only else "")
 
 
 def run_auto_decisions(work, out=None, *, min_frac: float = 0.5, min_contact: int = 50,
-                       sample: int = 0, seed: int = 0, sample_out=None, decided_at: str | None = None) -> dict:
+                       sample: int = 0, seed: int = 0, sample_out=None, decided_at: str | None = None,
+                       region_only: bool = False) -> dict:
     """Write decisions.csv rows ("yes") for auto-accepted candidates and,
     with ``sample``, a reproducible random sample of them for spot checks."""
     work = Path(work)
@@ -831,9 +972,11 @@ def run_auto_decisions(work, out=None, *, min_frac: float = 0.5, min_contact: in
         raise StitchingError("--min-frac must be between 0 and 1")
     if min_contact < 0 or sample < 0:
         raise StitchingError("--min-contact and --sample must not be negative")
+    if region_only:
+        require_in_region(work)
     candidates = read_csv(work / "candidates.csv")
-    accepted = auto_accept(candidates, min_frac=min_frac, min_contact=min_contact)
-    reviewer = auto_rule_name(min_frac, min_contact)
+    accepted = auto_accept(candidates, min_frac=min_frac, min_contact=min_contact, region_only=region_only)
+    reviewer = auto_rule_name(min_frac, min_contact, region_only)
     decided_at = decided_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     out = Path(out) if out else work / "decisions_auto.csv"
     write_csv(out, DECISION_FIELDS, [

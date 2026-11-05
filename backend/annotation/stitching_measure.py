@@ -37,10 +37,12 @@ from annotation.measurements import (
     validate_voxel_size,
 )
 from annotation.stitching import (
+    REGION_VOXELS,
     StitchingError,
     Tile,
     build_inventory,
     check_seams_csv,
+    load_region_voxels,
     load_tile_ids,
     load_tiles_csv,
     open_tile,
@@ -54,6 +56,7 @@ DEFAULT_MAX_CROP_VOXELS = 512_000_000
 FACES = ("-z", "+z", "-y", "+y", "-x", "+x")  # index = 2 * axis + (1 for the upper face)
 MEASUREMENTS_FIELDS = ("object_id", "member_count", "tiles", "voxel_count", "volume_um3", "skeleton_length_um",
                        "touches_edge", "edge_faces", "skipped_reason", "unresolved_contacts", "unproofread_tiles")
+REGION_FIELDS = (REGION_VOXELS, "frac_in_region", "crosses_region_boundary")
 UNRESOLVED = ("unsure", "undecided")
 
 
@@ -68,8 +71,14 @@ class StitchedObject:
     edge_faces: set = field(default_factory=set)   # {(tile order, face index, tile name)}
     unresolved_contacts: int = 0
     unproofread_tiles: int = 0
+    region_voxels: int | None = None                # None without region data
 
     def row(self, voxel_nm3: float) -> dict:
+        region = {} if self.region_voxels is None else {
+            REGION_VOXELS: self.region_voxels,
+            "frac_in_region": repr(self.region_voxels / self.voxel_count),
+            "crosses_region_boundary": "true" if 0 < self.region_voxels < self.voxel_count else "false",
+        }
         return {
             "object_id": self.object_id, "member_count": len(self.members), "tiles": ";".join(self.tiles),
             "voxel_count": self.voxel_count, "volume_um3": repr(self.voxel_count * voxel_nm3 / 1e9),
@@ -77,7 +86,7 @@ class StitchedObject:
             "touches_edge": "true" if self.edge_faces else "false",
             "edge_faces": ";".join(f"{name}:{FACES[face]}" for _, face, name in sorted(self.edge_faces)),
             "skipped_reason": self.skipped_reason, "unresolved_contacts": self.unresolved_contacts,
-            "unproofread_tiles": self.unproofread_tiles,
+            "unproofread_tiles": self.unproofread_tiles, **region,
         }
 
 
@@ -189,10 +198,13 @@ class MeasureResult:
     objects: list[StitchedObject]
     rows: list[dict]
     counts: dict[str, int]
+    fields: tuple[str, ...] = MEASUREMENTS_FIELDS
 
 
 def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS,
-                    log=lambda message: None) -> MeasureResult:
+                    region_only: bool = False, log=lambda message: None) -> MeasureResult:
+    """Measure every object, or with ``region_only`` only objects reaching into
+    the region (total ``region_voxels`` > 0; needs ``stitch_ids --regions``)."""
     work = Path(work)
     try:
         voxel_size = validate_voxel_size(voxel_size_zyx)
@@ -211,6 +223,9 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
     resolved = load_resolved(work, candidates)
     object_of = load_objects(work, id_rows, resolved)
     unproofread_names = read_unproofread(unproofread, tiles) if unproofread else set()
+    region_voxels = load_region_voxels(work)
+    if region_only and region_voxels is None:
+        raise StitchingError("--region-only needs region data; run stitch_ids --regions and the later phases")
 
     member = {int(r["global_id"]): (r["tile"], int(r["local_id"]), int(r["voxel_count"])) for r in id_rows}
     members_in: dict[str, set[int]] = {}
@@ -222,12 +237,19 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
     objects = {}
     for object_id, members in sorted(groups.items()):
         names = sorted({member[g][0] for g in members}, key=order.__getitem__)
-        objects[object_id] = StitchedObject(object_id, members, names, sum(member[g][2] for g in members),
-                                            unproofread_tiles=sum(n in unproofread_names for n in names))
+        objects[object_id] = StitchedObject(
+            object_id, members, names, sum(member[g][2] for g in members),
+            unproofread_tiles=sum(n in unproofread_names for n in names),
+            region_voxels=None if region_voxels is None else sum(region_voxels[g] for g in members))
     for row in resolved:
+        pair = (int(row["global_a"]), int(row["global_b"]))
+        if region_only and not any(region_voxels[g] > 0 for g in pair):
+            continue  # out-of-region candidates are not part of a region-only analysis
         if row["decision"] in UNRESOLVED:
-            for o in {object_of[int(row["global_a"])], object_of[int(row["global_b"])]}:
+            for o in {object_of[g] for g in pair}:
                 objects[o].unresolved_contacts += 1
+    if region_only:
+        objects = {o: obj for o, obj in objects.items() if obj.region_voxels > 0}
 
     region = region_box(tiles)
     boxes: dict[int, tuple[int, ...]] = {}
@@ -252,7 +274,8 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
                     raise StitchingError(f"{tile.name}: label {lid} does not match id_map.csv; rerun stitch_ids")
                 boxes[g] = tuple(v + tile.lo(a // 2) for a, v in enumerate(local))
                 for face in range(6):
-                    if _touches_uncovered(volume, tile, int(lid), local, face, cover[face], planes):
+                    if object_of[g] in objects and _touches_uncovered(volume, tile, int(lid), local, face,
+                                                                      cover[face], planes):
                         objects[object_of[g]].edge_faces.add((order[tile.name], face, tile.name))
             if any(g not in boxes for g in members_in.get(tile.name, ())):
                 raise StitchingError(f"{tile.name}: id_map.csv lists labels the tile lacks; rerun stitch_ids")
@@ -298,14 +321,17 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
     voxel_nm3 = voxel_size[0] * voxel_size[1] * voxel_size[2]
     ordered = [objects[o] for o in sorted(objects)]
     counts = {
+        "region_only": region_only,
         "objects": len(ordered), "multi_tile": len(multi),
         "touches_edge": sum(1 for o in ordered if o.edge_faces),
         "skipped": sum(1 for o in ordered if o.skipped_reason),
         "unresolved": sum(1 for o in ordered if o.unresolved_contacts),
         "unproofread": sum(1 for o in ordered if o.unproofread_tiles),
+        "crosses_region": sum(1 for o in ordered if o.region_voxels and o.region_voxels < o.voxel_count),
         "seconds": round(time.monotonic() - started),
     }
-    return MeasureResult(ordered, [o.row(voxel_nm3) for o in ordered], counts)
+    fields = MEASUREMENTS_FIELDS + (REGION_FIELDS if region_voxels is not None else ())
+    return MeasureResult(ordered, [o.row(voxel_nm3) for o in ordered], counts, fields)
 
 
 def _touches_uncovered(volume, tile: Tile, lid: int, local_box, face: int, covered: np.ndarray, planes) -> bool:
@@ -324,8 +350,8 @@ def _touches_uncovered(volume, tile: Tile, lid: int, local_box, face: int, cover
 
 
 def run_measure(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS,
-                log=lambda message: None) -> MeasureResult:
+                region_only: bool = False, log=lambda message: None) -> MeasureResult:
     result = measure_objects(work, voxel_size_zyx, unproofread=unproofread, max_crop_voxels=max_crop_voxels,
-                             log=log)
-    write_csv(Path(work) / "measurements.csv", MEASUREMENTS_FIELDS, result.rows)
+                             region_only=region_only, log=log)
+    write_csv(Path(work) / "measurements.csv", result.fields, result.rows)
     return result

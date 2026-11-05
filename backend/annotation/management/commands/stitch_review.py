@@ -53,11 +53,16 @@ class Command(BaseCommand):
             "--overwrite", action="store_true",
             help="Replace index.html and crops/ in an existing output folder.",
         )
+        parser.add_argument(
+            "--region-only", action="store_true",
+            help="Only candidates with in_region true (needs stitch_ids --regions); default output <work>/review_region.",
+        )
 
     def handle(self, *args, **opts):
         try:
             result = build_review(opts["work"], opts["images"], opts["out"], crop=opts["crop"],
-                                  shard=opts["shard"], overwrite=opts["overwrite"], only=opts["only"])
+                                  shard=opts["shard"], overwrite=opts["overwrite"], only=opts["only"],
+                                  region_only=opts["region_only"])
         except StitchingError as exc:
             raise CommandError(str(exc))
 

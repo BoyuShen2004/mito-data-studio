@@ -5,6 +5,12 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Make offline stitching region-aware (optional): `stitch_ids --regions` pairs ROI
+  masks to tiles by box and counts each label's voxels inside; candidates gain
+  `in_region`; `--region-only` on `stitch_review`, `stitch_auto_decisions` and
+  `stitch_measure`; measurements gain `region_voxels`, `frac_in_region` and
+  `crosses_region_boundary`. Outputs without `--regions` are unchanged. See
+  `docs/engineering/stitching.md`.
 - Add offline cross-tile stitching phase 6, `stitch_measure`: per-object volume,
   TEASAR cable length from the existing measurement code on masks assembled
   across tiles, and edge flags where any tile face without a neighbouring tile
