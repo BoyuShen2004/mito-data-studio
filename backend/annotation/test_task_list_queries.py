@@ -115,3 +115,24 @@ class TaskListQueryCountTests(APITestCase):
             count(8),
             "my-tasks query count grew with the number of tasks",
         )
+    def test_my_tasks_only_returns_assigned_tasks(self):
+        other_annotator = User.objects.create_user(
+            "other_ann", password="x"
+        )
+
+        task_a = self._make_task_with_history(rounds=0)
+
+        task_b = self._make_task_with_history(rounds=0)
+        task_b.assigned_to = other_annotator
+        task_b.save(update_fields=["assigned_to"])
+
+        self.client.force_authenticate(user=self.annotator)
+
+        response = self.client.get(reverse("api-my-tasks"))
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = [task["id"] for task in response.data]
+
+        self.assertIn(task_a.id, returned_ids)
+        self.assertNotIn(task_b.id, returned_ids)
