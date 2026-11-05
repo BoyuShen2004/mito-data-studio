@@ -1186,6 +1186,14 @@ class RoleGatingApiTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp["Content-Type"], "image/png")
 
+    def test_slice_rejects_invalid_window_and_level(self):
+        c = self._client(self.requester)
+        url = f"/api/volumes/{self.volume.id}/slice/"
+
+        for param in ("window", "level"):
+            with self.subTest(param=param):
+                resp = c.get(url, {param: "hello"})
+                self.assertEqual(resp.status_code, 400, resp.content)
 
 class LabelPathLayoutTests(TestCase):
     """Unit tests for the project/dataset-nested working-copy path scheme —
