@@ -1257,6 +1257,9 @@ class MeasureOutputTests(StitchRunMixin, SimpleTestCase):
         unresolved = {o: int(r["unresolved_contacts"]) for o, r in self.measurements(work).items()}
         self.assertEqual(unresolved, {1: 0, 2: 1, 5: 1, 3: 1, 70008: 1, 6: 0, 7: 0,
                                       70010: 0, 70011: 0, 70012: 0})
+        listed = read_rows(work / "unresolved_candidates.csv")
+        self.assertEqual([(r["seam"], r["current_decision"], r["object_a"], r["object_b"]) for r in listed],
+                         [("1", "unsure", "2", "5"), ("3", "undecided", "3", "70008")])
 
     def test_unproofread_tiles(self):
         work = self.stitch(self.tiles_dir, lambda c: ALL_DECIDED)
@@ -1634,27 +1637,49 @@ class RegionTests(StitchedGridMixin, SimpleTestCase):
         # B is outside and undecided: not listed, and not counted as unresolved anywhere.
         # G-H2 is undecided but in the region (G is inside): it still counts for object 6.
         self.assertEqual({o: r["unresolved_contacts"] for o, r in rows.items()}, {1: "0", 3: "0", 6: "1"})
+        self.assertEqual([(r["seam"], r["object_a"], r["object_b"])
+                          for r in read_rows(self.work / "unresolved_candidates.csv")], [("5", "6", "70010")])
         for object_id, row in rows.items():
             with self.subTest(object_id=object_id):
                 self.assertEqual({k: v for k, v in row.items() if k != "unresolved_contacts"},
                                  {k: v for k, v in everything[object_id].items() if k != "unresolved_contacts"})
 
-    def test_out_of_region_contact_of_an_in_region_object_is_not_unresolved(self):
-        # Only T5 has a region (all of it): C's T5 piece is inside, its T0 and T1 pieces are not.
+    def test_truncated_object_in_the_region_counts_its_undecided_contact(self):
+        # A/B/C: only T5 has a region (all of it). A = C's T5 piece (inside), B = its T1 piece
+        # (no region voxels), merged with A at seam 3; C = its T0 piece, with B-C (seam 2)
+        # left undecided. Neither B nor C reaches into the region, but A+B does, so the
+        # undecided contact means A+B may be truncated: it counts and is listed.
         directory = self.make_dir()
         build_regions(directory, {T5: [(8, 16, 0, 32, 32, 64)]})
         self.with_regions(directory)
         self.assertEqual([c["in_region"] for c in self.candidates], ["false", "false", "false", "true", "false", "false"])
-        path = write_decisions(self.work / "d.csv", self.candidates, {3: "yes"})   # C's X seam (T0-T1) undecided
+        path = write_decisions(self.work / "d.csv", self.candidates, {3: "yes"})
         self.call("stitch_objects", "--work", str(self.work), "--decisions", str(path))
         measure = ("stitch_measure", "--work", str(self.work), "--voxel-size-zyx", "30", "8", "8")
         self.call(*measure)
-        self.assertEqual(self.measurements_row(4)["unresolved_contacts"], "1")   # all candidates count
-        self.call(*measure, "--region-only")
+        self.assertEqual(self.measurements_row(4)["unresolved_contacts"], "1")
+        self.assertEqual([r["seam"] for r in read_rows(self.work / "unresolved_candidates.csv")],
+                         ["0", "1", "2", "5", "5"])                    # every unsure/undecided candidate
+
+        err = self.call(*measure, "--region-only")
+        self.assertIn("1 unresolved candidate(s) -> unresolved_candidates.csv", err)
         rows = {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}
-        self.assertEqual(sorted(rows), [4])                      # T1 + T5 pieces of C: 64 of 224 inside
+        self.assertEqual(sorted(rows), [4])                      # A+B: 64 of 224 voxels inside
         self.assertEqual((rows[4]["region_voxels"], rows[4]["crosses_region_boundary"]), ("64", "true"))
-        self.assertEqual(rows[4]["unresolved_contacts"], "0")    # its undecided contact is outside the region
+        self.assertEqual(rows[4]["unresolved_contacts"], "1")    # B-C is undecided
+        unresolved = read_rows(self.work / "unresolved_candidates.csv")
+        self.assertEqual(list(unresolved[0]), list(stitching_measure.UNRESOLVED_FIELDS))
+        self.assertEqual([tuple(r.values()) for r in unresolved], [
+            ("2", T0, "3", T1, "1", "3", "4", "3", "4", "undecided", "12", "1.000000", "1.000000")])
+
+        # A second review round covers exactly that candidate.
+        self.call("stitch_review", "--work", str(self.work), "--images", str(self.images()), "--crop", "8",
+                  "--only", str(self.work / "unresolved_candidates.csv"))
+        page = (self.work / "review_unresolved_candidates" / "index.html").read_text()
+        data = json.loads(re.search(r'<script type="application/json" id="review-data">(.*?)</script>',
+                                    page, re.S).group(1))
+        self.assertEqual([c["id"] for c in data["cards"]], ["c000002"])
+        self.assertEqual(data["export_name"], "decisions_unresolved_candidates.csv")
 
     def measurements_row(self, object_id):
         return {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}[object_id]

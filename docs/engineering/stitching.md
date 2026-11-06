@@ -367,10 +367,21 @@ with "no", the neighbour is a different object, not the volume edge.
 
 - `unresolved_contacts` counts the object's candidates (either side is a
   member) whose decision is `unsure` or `undecided`. A candidate between two
-  unmerged objects counts for both.
+  unmerged objects counts for both. Every counted candidate is listed in
+  `unresolved_candidates.csv` (see below).
 - `unproofread_tiles` counts how many of the object's tiles are listed in
   `--unproofread-tiles`: a text file of tile names or paths, matched by box, so
   suffixes may differ.
+
+**Second review round.** `stitch_measure` also writes
+`unresolved_candidates.csv`: the candidates counted in `unresolved_contacts`,
+in candidate order, with the objects they join. Feed it to
+`stitch_review --only` to get a page for exactly those cards. The output goes
+to `review_unresolved_candidates/` and exports
+`decisions_unresolved_candidates.csv`. Then rerun `stitch_objects` with the
+earlier decision files plus the new one, and `stitch_measure` again. The file
+has no `decision` column (its `current_decision` is `unsure` or `undecided`),
+so importing it into a page decides nothing.
 
 **Progress** is logged per tile (labels, objects measured and skipped,
 seconds) and per multi-tile object (members, tiles, crop size, length,
@@ -398,6 +409,7 @@ directories, apart from the labels.
 Everything below is optional. Without `--regions` every command behaves, and
 writes, exactly as before: no new columns or files. This was checked byte for
 byte on the synthetic grid, covering every CSV, the review page and its PNGs.
+`unresolved_candidates.csv` (phase 6) is written with or without regions.
 
 **Pairing (phase 2).** `stitch_ids --regions DIR` (repeatable) pairs region
 files to tiles by the leading `z0-z1_y0-y1_x0-x1` box, exactly as
@@ -455,11 +467,16 @@ Without region data the columns are left out. `stitch_measure --region-only`
 changes three things:
 
 - only objects with `region_voxels > 0` are listed and skeletonised;
-- `unresolved_contacts` counts only `in_region` candidates (either label
-  inside), so an out-of-region object left undecided neither appears nor
-  counts against an in-region object;
-- `in_region` is derived from `id_map.csv`, so it always matches
-  `candidates.csv`.
+- `unresolved_contacts`, and `unresolved_candidates.csv`, count an
+  unsure/undecided candidate only if either label's **object** (after the
+  phase 5 merges) reaches into the region. Labels alone are not enough.
+
+  Example: A (inside) merged with B (no region voxels) is truncated if B's
+  pair with C is undecided, even though neither B nor C is inside. That
+  candidate counts for A+B and is listed for review.
+
+  A candidate between two objects that are both entirely outside neither
+  counts nor is listed.
 
 Every other column of a listed object is identical to the full run.
 
@@ -548,6 +565,17 @@ python manage.py stitch_measure --work /scratch/stitch_p10 --voxel-size-zyx 30 8
 
 Do not pass `--require-complete` to `stitch_objects` in a region-only run:
 candidates outside the region are expected to stay undecided.
+
+`in_region` (candidates, review, auto-accept) is about labels: either label has
+region voxels. `stitch_measure --region-only` decides by objects instead, so it
+can list unresolved candidates that the first region-only review page did not
+include. That happens when a merge pulls an out-of-region label into an
+in-region object. Review them with the second round:
+
+```bash
+python manage.py stitch_review --work /scratch/stitch_p10 --images /data/nag_p10/images \
+    --only /scratch/stitch_p10/unresolved_candidates.csv
+```
 
 ## File formats
 
@@ -699,6 +727,20 @@ object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_e
   `repr`). `skeleton_length_um` is empty when `skipped_reason` is
   `crop_limit`.
 - `touches_edge` is `true` or `false`.
+
+`unresolved_candidates.csv` — from `stitch_measure`, the candidates counted in
+`unresolved_contacts`, in `candidates.csv` order:
+
+```text
+seam,tile_a,label_a,tile_b,label_b,global_a,global_b,object_a,object_b,current_decision,contact_voxels,frac_a,frac_b
+```
+
+- `object_a` and `object_b` are the objects the two labels belong to after
+  phase 5.
+- `current_decision` is `unsure` or `undecided`.
+- With `--region-only`, only candidates where either object reaches into the
+  region are listed.
+- `stitch_review --only` accepts the file.
 
 ## Code
 

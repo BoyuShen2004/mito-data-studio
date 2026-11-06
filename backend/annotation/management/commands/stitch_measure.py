@@ -4,7 +4,10 @@ Reads the work directory (tiles.csv, seams.csv, tile_ids.csv, id_map.csv,
 candidates.csv, objects.csv and decisions_resolved.csv from stitch_objects)
 and writes measurements.csv: one row per object with volume, TEASAR cable
 length from the per-volume measurement code, and the edge flag for the whole
-tiled volume. Progress is logged per tile and per multi-tile object.
+tiled volume. Also writes unresolved_candidates.csv, the unsure/undecided
+candidates counted in unresolved_contacts, which stitch_review --only turns
+into a page for a second review round. Progress is logged per tile and per
+multi-tile object.
 See docs/engineering/stitching.md.
 
     python manage.py stitch_measure --work stitch_p10 --voxel-size-zyx 30 8 8
@@ -67,5 +70,9 @@ class Command(BaseCommand):
             f"{c['touches_edge']} touch the volume edge, {c['skipped']} skipped (crop_limit), "
             f"{c['unresolved']} with unresolved contacts, {c['unproofread']} in unproofread tiles"
             + (f"; region only, {c['crosses_region']} cross the region boundary" if c["region_only"] else "")
+        )
+        self.stderr.write(
+            f"{len(result.unresolved)} unresolved candidate(s) -> unresolved_candidates.csv "
+            "(stitch_review --only builds a page for them)"
         )
         self.stderr.write(self.style.SUCCESS("ok"))

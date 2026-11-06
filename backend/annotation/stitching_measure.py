@@ -58,6 +58,10 @@ MEASUREMENTS_FIELDS = ("object_id", "member_count", "tiles", "voxel_count", "vol
                        "touches_edge", "edge_faces", "skipped_reason", "unresolved_contacts", "unproofread_tiles")
 REGION_FIELDS = (REGION_VOXELS, "frac_in_region", "crosses_region_boundary")
 UNRESOLVED = ("unsure", "undecided")
+# Candidates counted in unresolved_contacts; stitch_review --only reads the key columns.
+# No "decision" column, so importing the file into a review page decides nothing.
+UNRESOLVED_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
+                     "object_a", "object_b", "current_decision", "contact_voxels", "frac_a", "frac_b")
 
 
 @dataclass
@@ -199,6 +203,7 @@ class MeasureResult:
     rows: list[dict]
     counts: dict[str, int]
     fields: tuple[str, ...] = MEASUREMENTS_FIELDS
+    unresolved: list[dict] = field(default_factory=list)   # rows for unresolved_candidates.csv
 
 
 def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS,
@@ -241,13 +246,23 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
             object_id, members, names, sum(member[g][2] for g in members),
             unproofread_tiles=sum(n in unproofread_names for n in names),
             region_voxels=None if region_voxels is None else sum(region_voxels[g] for g in members))
-    for row in resolved:
-        pair = (int(row["global_a"]), int(row["global_b"]))
-        if region_only and not any(region_voxels[g] > 0 for g in pair):
-            continue  # out-of-region candidates are not part of a region-only analysis
-        if row["decision"] in UNRESOLVED:
-            for o in {object_of[g] for g in pair}:
-                objects[o].unresolved_contacts += 1
+    # An unsure/undecided candidate is unresolved for both objects it joins. In
+    # region-only mode it counts when either *object* (after phase 5 merges)
+    # reaches into the region: a merged A+B with A inside is truncated if its
+    # B-C pair is undecided, even though neither B nor C has region voxels.
+    decision_of = {(r["seam"], r["label_a"], r["label_b"]): r["decision"] for r in resolved}
+    unresolved_rows = []
+    for c in candidates:
+        decision = decision_of[(c["seam"], c["label_a"], c["label_b"])]
+        if decision not in UNRESOLVED:
+            continue
+        object_a, object_b = object_of[int(c["global_a"])], object_of[int(c["global_b"])]
+        if region_only and not (objects[object_a].region_voxels or objects[object_b].region_voxels):
+            continue
+        for o in {object_a, object_b}:
+            objects[o].unresolved_contacts += 1
+        unresolved_rows.append({**{f: c[f] for f in UNRESOLVED_FIELDS if f in c}, "object_a": object_a,
+                                "object_b": object_b, "current_decision": decision})
     if region_only:
         objects = {o: obj for o, obj in objects.items() if obj.region_voxels > 0}
 
@@ -331,7 +346,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
         "seconds": round(time.monotonic() - started),
     }
     fields = MEASUREMENTS_FIELDS + (REGION_FIELDS if region_voxels is not None else ())
-    return MeasureResult(ordered, [o.row(voxel_nm3) for o in ordered], counts, fields)
+    return MeasureResult(ordered, [o.row(voxel_nm3) for o in ordered], counts, fields, unresolved_rows)
 
 
 def _touches_uncovered(volume, tile: Tile, lid: int, local_box, face: int, covered: np.ndarray, planes) -> bool:
@@ -354,4 +369,5 @@ def run_measure(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int 
     result = measure_objects(work, voxel_size_zyx, unproofread=unproofread, max_crop_voxels=max_crop_voxels,
                              region_only=region_only, log=log)
     write_csv(Path(work) / "measurements.csv", result.fields, result.rows)
+    write_csv(Path(work) / "unresolved_candidates.csv", UNRESOLVED_FIELDS, result.unresolved)
     return result
