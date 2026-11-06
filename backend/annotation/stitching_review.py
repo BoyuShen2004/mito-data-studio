@@ -30,18 +30,20 @@ from annotation.stitching import (
     DECISION_FIELDS,
     StitchingError,
     Tile,
+    IN_REGION,
     build_inventory,
     check_seams_csv,
-    collect_tiles,
     face_plane,
     load_tile_ids,
     load_tiles_csv,
     open_tile,
+    pair_by_box,
     read_csv,
+    require_in_region,
     require_stitchable,
-    tile_shape,
     write_csv,
 )
+from annotation.stitching import pairing_rows as stitching_pairing_rows
 
 DEFAULT_CROP = 160
 COLOR_A = (255, 140, 0)     # label_a outline
@@ -60,42 +62,11 @@ def pair_images(tiles: list[Tile], image_dirs) -> tuple[dict[str, Tile | None], 
     Returns ``({tile name: image tile or None}, image tiles with no prediction)``.
     Suffixes after the box are ignored (``..._im_xy.h5`` pairs with ``..._im.h5``).
     """
-    by_box: dict[tuple, Tile] = {}
-    for directory in image_dirs:
-        directory = Path(directory)
-        if not directory.is_dir():
-            raise StitchingError(f"image directory not found: {directory}")
-        found, _ = collect_tiles(directory)
-        for image in found:
-            if image.box in by_box:
-                raise StitchingError(
-                    "two image tiles share box {}-{}_{}-{}_{}-{}: ".format(*image.box)
-                    + f"{by_box[image.box].path} and {image.path}")
-            by_box[image.box] = image
-    pairing = {t.name: by_box.get(t.box) for t in tiles}
-    boxes = {t.box for t in tiles}
-    unused = sorted((img for img in by_box.values() if img.box not in boxes), key=lambda t: t.sort_key)
-    for tile in tiles:
-        image = pairing[tile.name]
-        if image is None:
-            continue
-        shape = tile_shape(image.path)
-        if shape != tile.shape:
-            raise StitchingError(
-                f"image {image.path} has shape {'x'.join(map(str, shape))} "
-                f"but tile {tile.name} is {'x'.join(map(str, tile.shape))}")
-    return pairing, unused
+    return pair_by_box(tiles, image_dirs, what="image")
 
 
 def pairing_rows(tiles: list[Tile], pairing: dict[str, Tile | None], unused: list[Tile]) -> list[dict]:
-    rows = []
-    for t in tiles:
-        image = pairing[t.name]
-        rows.append({"tile": t.name, "image_tile": image.name if image else "",
-                     "image_path": image.path if image else "", "status": "matched" if image else "no_image"})
-    rows += [{"tile": "", "image_tile": img.name, "image_path": img.path, "status": "no_prediction"}
-             for img in unused]
-    return rows
+    return stitching_pairing_rows(tiles, pairing, unused, what="image", unused_status="no_prediction")
 
 
 # --- geometry ----------------------------------------------------------------
@@ -308,8 +279,10 @@ def read_only_keys(path, candidates: list[dict]) -> set[str]:
 
 
 def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard: str | None = None,
-                 overwrite: bool = False, only=None) -> ReviewResult:
+                 overwrite: bool = False, only=None, region_only: bool = False) -> ReviewResult:
     work = Path(work)
+    if region_only:
+        require_in_region(work)
     if crop < 2:
         raise StitchingError("--crop must be at least 2 pixels")
     shard_n = parse_shard(shard)
@@ -323,7 +296,7 @@ def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard:
     write_csv(work / "image_pairing.csv", PAIRING_FIELDS, pair_rows)
 
     if out is None:
-        stem = "review" if only is None else f"review_{Path(only).stem}"
+        stem = ("review" if only is None else f"review_{Path(only).stem}") + ("_region" if region_only else "")
         out = work / (stem if shard_n is None else f"{stem}_{shard_n[0]}of{shard_n[1]}")
     out = Path(out)
     _prepare_out(out, overwrite)
@@ -334,6 +307,8 @@ def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard:
     if only is not None:
         keys = read_only_keys(only, candidates)
         indices = [i for i in indices if candidate_key(candidates[i]) in keys]
+    if region_only:
+        indices = [i for i in indices if candidates[i][IN_REGION] == "true"]
     selected = [(indices[k], candidates[indices[k]]) for k in shard_range(len(indices), shard_n)]
     by_seam: dict[int, list] = {}
     for index, row in selected:
@@ -359,10 +334,13 @@ def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard:
 
     cards.sort(key=lambda c: c["index"])
     only_bytes = Path(only).read_bytes() if only is not None else b""
-    store = hashlib.sha256((work / "candidates.csv").read_bytes() + (shard or "").encode() + only_bytes).hexdigest()[:16]
-    export_stem = "decisions" if only is None else f"decisions_{Path(only).stem}"
+    region_bytes = b"|region_only" if region_only else b""
+    store = hashlib.sha256((work / "candidates.csv").read_bytes() + (shard or "").encode() + only_bytes
+                           + region_bytes).hexdigest()[:16]
+    export_stem = ("decisions" if only is None else f"decisions_{Path(only).stem}") + ("_region" if region_only else "")
     export_name = f"{export_stem}.csv" if shard_n is None else f"{export_stem}_{shard_n[0]}of{shard_n[1]}.csv"
     title = "Seam review" + ("" if only is None else f" ({Path(only).name})") \
+        + (" (region only)" if region_only else "") \
         + ("" if shard_n is None else f" (shard {shard_n[0]} of {shard_n[1]})")
     (out / "index.html").write_text(render_html(cards, store=store, export_name=export_name, title=title,
                                                 crop=crop, missing_images=[r["tile"] for r in pair_rows

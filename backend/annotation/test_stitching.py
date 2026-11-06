@@ -1257,6 +1257,9 @@ class MeasureOutputTests(StitchRunMixin, SimpleTestCase):
         unresolved = {o: int(r["unresolved_contacts"]) for o, r in self.measurements(work).items()}
         self.assertEqual(unresolved, {1: 0, 2: 1, 5: 1, 3: 1, 70008: 1, 6: 0, 7: 0,
                                       70010: 0, 70011: 0, 70012: 0})
+        listed = read_rows(work / "unresolved_candidates.csv")
+        self.assertEqual([(r["seam"], r["current_decision"], r["object_a"], r["object_b"]) for r in listed],
+                         [("1", "unsure", "2", "5"), ("3", "undecided", "3", "70008")])
 
     def test_unproofread_tiles(self):
         work = self.stitch(self.tiles_dir, lambda c: ALL_DECIDED)
@@ -1405,3 +1408,278 @@ class AutoDecisionTests(StitchedGridMixin, SimpleTestCase):
         bad.write_text(sample.read_text().replace(f",{T0},1,{T4},1,", f",{T0},1,{T4},9,"))
         with self.assertRaisesMessage(CommandError, "--only rows that match no candidates.csv row"):
             self.call("stitch_review", "--work", str(self.work), "--images", str(images), "--only", str(bad))
+
+
+# --- region masks (ROI) -----------------------------------------------------------
+
+# Region boxes painted 255 (nonzero = inside), in region coordinates. T4 has no
+# region file at all; T3 and T5-T7 have files that are entirely outside.
+GRID_REGIONS = {
+    T0: [(0, 8, 0, 6, 0, 32)],      # y < 6: cuts A (24 of its 48 voxels in T0)
+    T1: [(0, 8, 0, 32, 32, 64)],    # the whole tile: C's 160 voxels there
+    T2: [(0, 8, 40, 64, 0, 32)],    # y >= 40: all of G, none of B
+    T3: [], T5: [], T6: [], T7: [],
+}
+EXTRA_REGION = "16-24_0-32_0-32"    # a region file with no tile
+
+EXPECTED_REGION_ID_MAP = [
+    # tile, local_id, global_id, voxel_count, region_voxels
+    (T0, 1, 1, 48, 24), (T0, 2, 2, 48, 0), (T0, 3, 3, 72, 0), (T1, 1, 4, 160, 160),
+    (T2, 1, 5, 48, 0), (T2, 2, 6, 256, 256), (T3, 1, 7, 48, 0), (T4, 1, 8, 48, 0),
+    (T5, 70000, 70008, 64, 0), (T6, 1, 70009, 80, 0), (T6, 2, 70010, 80, 0), (T6, 3, 70011, 72, 0),
+    (T7, 1, 70012, 48, 0),
+]
+# Region size per tile: T0 8x6x32, T1 8x32x32, T2 8x24x32; others none.
+EXPECTED_TILE_REGION_VOXELS = [(T0, 1536), (T1, 8192), (T2, 6144), (T3, 0), (T4, 0), (T5, 0), (T6, 0), (T7, 0)]
+# Candidates 0 A, 1 B, 2 C, 3 C, 4 G-H1, 5 G-H2: only B lies wholly outside.
+EXPECTED_IN_REGION = ["true", "false", "true", "true", "true", "true"]
+
+
+def build_regions(directory: Path, regions=GRID_REGIONS, *, suffix="_mask_pc2.tif", hdf5=False, shapes=None):
+    for name, boxes in regions.items():
+        _, box = parse_tile_name(name)
+        shape = (shapes or {}).get(name) or tuple(box[2 * a + 1] - box[2 * a] for a in range(3))
+        mask = np.zeros(shape, np.uint8)
+        for r in boxes:
+            mask[tuple(slice(r[2 * a] - box[2 * a], r[2 * a + 1] - box[2 * a]) for a in range(3))] = 255
+        stem = name[:-len("_im")]
+        if hdf5:
+            with h5py.File(directory / f"{stem}{suffix}", "w") as fh:
+                fh.create_dataset("mask", data=mask, chunks=(1,) + shape[1:])
+        else:
+            _write_tiff(directory / f"{stem}{suffix}", mask)
+
+
+def expected_csv(fields, rows) -> str:
+    return "".join(",".join(map(str, row)) + "\r\n" for row in [fields, *rows])
+
+
+class RegionTests(StitchedGridMixin, SimpleTestCase):
+    def regions(self, **kwargs) -> Path:
+        directory = self.make_dir()
+        build_regions(directory, **kwargs)
+        _write_tiff(directory / f"{EXTRA_REGION}_mask_pc2.tif", np.zeros((8, 32, 32), np.uint8))
+        return directory
+
+    def with_regions(self, regions=None) -> str:
+        err = self.call("stitch_ids", "--work", str(self.work), "--regions", str(regions or self.regions()))
+        self.call("stitch_candidates", "--work", str(self.work))
+        self.candidates = read_rows(self.work / "candidates.csv")
+        return err
+
+    def test_region_voxels_per_label_and_tile(self):
+        err = self.with_regions()
+        self.assertIn(f"no region file for tile {T4}; counted as outside", err)
+        self.assertIn("matches no tile", err)
+        self.assertIn("7 tile(s) with a region, 1 without, 1 region file(s) without a tile; "
+                      "3 label(s) reach into the region", err)
+        id_map = read_rows(self.work / "id_map.csv")
+        self.assertEqual(list(id_map[0]), [*stitching.ID_MAP_FIELDS, "region_voxels"])
+        self.assertEqual(as_tuples(id_map, (*stitching.ID_MAP_FIELDS, "region_voxels")), EXPECTED_REGION_ID_MAP)
+        tile_ids = read_rows(self.work / "tile_ids.csv")
+        self.assertEqual(list(tile_ids[0]), [*stitching.TILE_IDS_FIELDS, "region_voxels"])
+        self.assertEqual(as_tuples(tile_ids, ("tile", "region_voxels")), EXPECTED_TILE_REGION_VOXELS)
+        # Everything phase 2 wrote before is unchanged.
+        self.assertEqual(as_tuples(id_map, ("tile", "local_id", "global_id", "voxel_count")), EXPECTED_ID_MAP)
+        pairing = read_rows(self.work / "region_pairing.csv")
+        self.assertEqual([(r["tile"], r["region_tile"], r["status"]) for r in pairing], [
+            *[(t, t[:-len("_im")] + "_mask_pc2", "matched") for t in (T0, T1, T2, T3)],
+            (T4, "", "no_region"),
+            *[(t, t[:-len("_im")] + "_mask_pc2", "matched") for t in (T5, T6, T7)],
+            ("", f"{EXTRA_REGION}_mask_pc2", "no_tile"),
+        ])
+
+    def test_region_is_read_in_the_label_blocks(self):
+        reads = []
+        real = stitching._count_blocks
+
+        class Watch:
+            def __init__(self, region):
+                self.region, self.shape, self.dtype = region, region.shape, region.dtype
+
+            def __getitem__(self, key):
+                reads.append((key.start, key.stop))
+                return self.region[key]
+
+        def spy(volume, region, where):
+            return real(volume, None if region is None else Watch(region), where)
+
+        # Blocks of 3 planes for the uint16 tiles, 1 plane for the uint32 tile T5.
+        with mock.patch.object(stitching, "Z_BLOCK_BYTES", 3 * 32 * 32 * 2), \
+                mock.patch.object(stitching, "_count_blocks", spy):
+            self.with_regions()
+        self.assertEqual(set(reads), {(0, 3), (3, 6), (6, 9)} | {(z, z + 1) for z in range(8)})
+        self.assertEqual(as_tuples(read_rows(self.work / "id_map.csv"), (*stitching.ID_MAP_FIELDS, "region_voxels")),
+                         EXPECTED_REGION_ID_MAP)
+
+    @skipUnless(h5py is not None, "h5py is not installed")
+    def test_hdf5_region_masks(self):
+        directory = self.make_dir()
+        build_regions(directory, suffix="_mask_pc2.h5", hdf5=True)
+        self.with_regions(directory)
+        self.assertEqual(as_tuples(read_rows(self.work / "id_map.csv"), (*stitching.ID_MAP_FIELDS, "region_voxels")),
+                         EXPECTED_REGION_ID_MAP)
+
+    def test_region_shape_mismatch_is_refused(self):
+        directory = self.make_dir()
+        build_regions(directory, shapes={T2: (8, 32, 31)})
+        with self.assertRaisesMessage(CommandError, "has shape 8x32x31 but tile 0-8_32-64_0-32_im is 8x32x32"):
+            self.call("stitch_ids", "--work", str(self.work), "--regions", str(directory))
+
+    def test_in_region(self):
+        self.with_regions()
+        self.assertEqual(list(self.candidates[0]), [*stitching.CANDIDATES_FIELDS, "in_region"])
+        self.assertEqual([c["in_region"] for c in self.candidates], EXPECTED_IN_REGION)
+        self.assertEqual(as_tuples(self.candidates, stitching.CANDIDATES_FIELDS), EXPECTED_CANDIDATES)
+
+    def test_without_regions_outputs_are_unchanged(self):
+        def raw(name):
+            with open(self.work / name, newline="") as fh:
+                return fh.read()
+
+        def check_plain():
+            self.assertEqual(raw("candidates.csv"), expected_csv(stitching.CANDIDATES_FIELDS, EXPECTED_CANDIDATES))
+            self.assertEqual(raw("id_map.csv"), expected_csv(stitching.ID_MAP_FIELDS, EXPECTED_ID_MAP))
+            self.assertEqual(stitching.csv_fields(self.work / "tile_ids.csv"), list(stitching.TILE_IDS_FIELDS))
+            self.assertFalse((self.work / "region_pairing.csv").exists())
+
+        check_plain()
+        self.with_regions()
+        self.call("stitch_ids", "--work", str(self.work))          # rerun without --regions
+        self.call("stitch_candidates", "--work", str(self.work))
+        check_plain()
+
+    def test_region_only_review_cards(self):
+        self.with_regions()
+        images = self.images()
+        self.call("stitch_review", "--work", str(self.work), "--images", str(images), "--crop", "8", "--region-only")
+        page = (self.work / "review_region" / "index.html").read_text()
+        data = json.loads(re.search(r'<script type="application/json" id="review-data">(.*?)</script>',
+                                    page, re.S).group(1))
+        self.assertEqual([c["id"] for c in data["cards"]], ["c000000", "c000002", "c000003", "c000004", "c000005"])
+        self.assertEqual(data["export_name"], "decisions_region.csv")
+        self.assertIn("<title>Seam review (region only)</title>", page)
+        everything = stitching_review.build_review(self.work, [images], self.make_dir() / "r", crop=8)
+        self.assertEqual(len(everything.cards), 6)
+
+    def test_region_only_needs_region_data(self):
+        images = self.images()
+        message = "candidates.csv has no in_region column; run stitch_ids --regions"
+        with self.assertRaisesMessage(CommandError, message):
+            self.call("stitch_review", "--work", str(self.work), "--images", str(images), "--region-only")
+        with self.assertRaisesMessage(CommandError, message):
+            self.call("stitch_auto_decisions", "--work", str(self.work), "--region-only")
+        write_decisions(self.work / "d.csv", self.candidates, ALL_DECIDED)
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(self.work / "d.csv"))
+        with self.assertRaisesMessage(CommandError, "--region-only needs region data"):
+            self.call("stitch_measure", "--work", str(self.work), "--voxel-size-zyx", "30", "8", "8", "--region-only")
+
+    def test_region_only_auto_decisions(self):
+        self.with_regions()
+        self.assertEqual(stitching.auto_accept(self.candidates, min_frac=0.5, min_contact=6), [0, 1, 2, 3])
+        self.assertEqual(stitching.auto_accept(self.candidates, min_frac=0.5, min_contact=6, region_only=True),
+                         [0, 2, 3])
+        err = self.call("stitch_auto_decisions", "--work", str(self.work), "--min-contact", "6", "--region-only")
+        self.assertIn("3 of 6 candidate(s) accepted (auto:one-to-one,min_frac=0.5,min_contact=6,region_only)", err)
+        rows = read_rows(self.work / "decisions_auto.csv")
+        self.assertEqual([r["seam"] for r in rows], ["0", "2", "3"])
+        self.assertEqual({r["reviewer"] for r in rows}, {"auto:one-to-one,min_frac=0.5,min_contact=6,region_only"})
+
+    def test_partner_outside_the_region_still_breaks_one_to_one(self):
+        rows = [
+            {"seam": "0", "label_a": "1", "label_b": "5", "frac_a": "1.0", "frac_b": "0.9", "contact_voxels": "80",
+             "in_region": "true"},
+            {"seam": "0", "label_a": "2", "label_b": "5", "frac_a": "1.0", "frac_b": "0.1", "contact_voxels": "9",
+             "in_region": "false"},
+        ]
+        self.assertEqual(stitching.auto_accept(rows, min_frac=0.5, min_contact=50, region_only=True), [])
+
+    # Decisions: A, C (both seams) yes; G-H1 no; B and G-H2 left undecided.
+    DECISIONS = {0: "yes", 2: "yes", 3: "yes", 4: "no"}
+    REGION_COLUMNS = {
+        # object: (region_voxels, frac_in_region, crosses_region_boundary)
+        1: ("24", "0.25", "true"),                       # A: 24 of 96 inside
+        3: ("160", repr(160 / 296), "true"),             # C: its T1 piece inside
+        6: ("256", "1.0", "false"),                      # G alone, entirely inside
+    }
+
+    def test_region_columns_on_all_objects(self):
+        self.with_regions()
+        path = write_decisions(self.work / "d.csv", self.candidates, self.DECISIONS)
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(path))
+        self.call("stitch_measure", "--work", str(self.work), "--voxel-size-zyx", "30", "8", "8")
+        rows = {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}
+        self.assertEqual(stitching.csv_fields(self.work / "measurements.csv"),
+                         [*stitching_measure.MEASUREMENTS_FIELDS, "region_voxels", "frac_in_region",
+                          "crosses_region_boundary"])
+        self.assertEqual(sorted(rows), [1, 2, 3, 5, 6, 7, 70009, 70010, 70011, 70012])
+        for object_id, row in rows.items():
+            expected = self.REGION_COLUMNS.get(object_id, ("0", "0.0", "false"))
+            with self.subTest(object_id=object_id):
+                self.assertEqual((row["region_voxels"], row["frac_in_region"], row["crosses_region_boundary"]),
+                                 expected)
+        unresolved = {o: r["unresolved_contacts"] for o, r in rows.items() if r["unresolved_contacts"] != "0"}
+        self.assertEqual(unresolved, {2: "1", 5: "1", 6: "1", 70010: "1"})   # B and G-H2 undecided
+
+    def test_region_only_measurements(self):
+        self.with_regions()
+        path = write_decisions(self.work / "d.csv", self.candidates, self.DECISIONS)
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(path))
+        measure = ("stitch_measure", "--work", str(self.work), "--voxel-size-zyx", "30", "8", "8")
+        self.call(*measure)
+        everything = {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}
+        err = self.call(*measure, "--region-only")
+        self.assertIn(f"tile 4/8 {T3}: 1 label(s), 0 single-tile object(s) measured", err)   # D is outside
+        self.assertIn("3 object(s) (2 multi-tile)", err)
+        self.assertIn("region only, 2 cross the region boundary", err)
+        rows = {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}
+        self.assertEqual(sorted(rows), [1, 3, 6])
+        # B is outside and undecided: not listed, and not counted as unresolved anywhere.
+        # G-H2 is undecided but in the region (G is inside): it still counts for object 6.
+        self.assertEqual({o: r["unresolved_contacts"] for o, r in rows.items()}, {1: "0", 3: "0", 6: "1"})
+        self.assertEqual([(r["seam"], r["object_a"], r["object_b"])
+                          for r in read_rows(self.work / "unresolved_candidates.csv")], [("5", "6", "70010")])
+        for object_id, row in rows.items():
+            with self.subTest(object_id=object_id):
+                self.assertEqual({k: v for k, v in row.items() if k != "unresolved_contacts"},
+                                 {k: v for k, v in everything[object_id].items() if k != "unresolved_contacts"})
+
+    def test_truncated_object_in_the_region_counts_its_undecided_contact(self):
+        # A/B/C: only T5 has a region (all of it). A = C's T5 piece (inside), B = its T1 piece
+        # (no region voxels), merged with A at seam 3; C = its T0 piece, with B-C (seam 2)
+        # left undecided. Neither B nor C reaches into the region, but A+B does, so the
+        # undecided contact means A+B may be truncated: it counts and is listed.
+        directory = self.make_dir()
+        build_regions(directory, {T5: [(8, 16, 0, 32, 32, 64)]})
+        self.with_regions(directory)
+        self.assertEqual([c["in_region"] for c in self.candidates], ["false", "false", "false", "true", "false", "false"])
+        path = write_decisions(self.work / "d.csv", self.candidates, {3: "yes"})
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(path))
+        measure = ("stitch_measure", "--work", str(self.work), "--voxel-size-zyx", "30", "8", "8")
+        self.call(*measure)
+        self.assertEqual(self.measurements_row(4)["unresolved_contacts"], "1")
+        self.assertEqual([r["seam"] for r in read_rows(self.work / "unresolved_candidates.csv")],
+                         ["0", "1", "2", "5", "5"])                    # every unsure/undecided candidate
+
+        err = self.call(*measure, "--region-only")
+        self.assertIn("1 unresolved candidate(s) -> unresolved_candidates.csv", err)
+        rows = {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}
+        self.assertEqual(sorted(rows), [4])                      # A+B: 64 of 224 voxels inside
+        self.assertEqual((rows[4]["region_voxels"], rows[4]["crosses_region_boundary"]), ("64", "true"))
+        self.assertEqual(rows[4]["unresolved_contacts"], "1")    # B-C is undecided
+        unresolved = read_rows(self.work / "unresolved_candidates.csv")
+        self.assertEqual(list(unresolved[0]), list(stitching_measure.UNRESOLVED_FIELDS))
+        self.assertEqual([tuple(r.values()) for r in unresolved], [
+            ("2", T0, "3", T1, "1", "3", "4", "3", "4", "undecided", "12", "1.000000", "1.000000")])
+
+        # A second review round covers exactly that candidate.
+        self.call("stitch_review", "--work", str(self.work), "--images", str(self.images()), "--crop", "8",
+                  "--only", str(self.work / "unresolved_candidates.csv"))
+        page = (self.work / "review_unresolved_candidates" / "index.html").read_text()
+        data = json.loads(re.search(r'<script type="application/json" id="review-data">(.*?)</script>',
+                                    page, re.S).group(1))
+        self.assertEqual([c["id"] for c in data["cards"]], ["c000002"])
+        self.assertEqual(data["export_name"], "decisions_unresolved_candidates.csv")
+
+    def measurements_row(self, object_id):
+        return {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}[object_id]
