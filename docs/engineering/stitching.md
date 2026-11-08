@@ -1,9 +1,8 @@
 # Cross-tile mitochondria stitching
 
-Status: phases 1-6 are implemented (offline management commands), plus
+Status: phases 1-7 are implemented (offline management commands), plus
 auto-accepting clear-cut merges (`stitch_auto_decisions`) and optional region
-(ROI) awareness (see [Regions](#regions-roi)). Phase 7 is planned and described
-here so a later session can continue from this file. Keep it current when
+(ROI) awareness (see [Regions](#regions-roi)). Keep this file current when
 behavior changes.
 
 ## Goal
@@ -51,6 +50,24 @@ tiles only.
 Changing the label source changes the label IDs, so rerun every phase from 1.
 Decisions from one set of tiles do not carry over to another.
 
+**Region-only run on the proofread labels (phases 1-6, before phase 7):**
+
+- 4,346 mitochondria reach into the region.
+- 409 span 2 or more tiles; one spans 10.
+- 599 touch a data edge (`touches_edge`).
+- 2,246 cross the region boundary.
+- 426 touch an unproofread tile.
+- 1 was skipped for `crop_limit` (volume kept, no length).
+- 50 objects hold two labels from the same tile (`stitch_objects` warns).
+  `stitch_validate` classifies them.
+- A blind check of 50 randomly sampled auto-accepted pairs agreed 50/50 with
+  the auto rule.
+
+**Scope decision (from the scientist): the analysis is region-only.** Only the
+region was proofread, so labels outside it may be inaccurate. The deliverable
+lists only objects that reach into the region, and flags those that cross its
+boundary.
+
 ## Decisions
 
 - **Tile names carry the tile box.** A tile name starts with
@@ -88,8 +105,8 @@ Decisions from one set of tiles do not carry over to another.
 | 3 | Merge candidates at seams | done | `candidates.csv` |
 | 4 | Human yes/no proofreading | done | `review/` (offline HTML page) → `decisions.csv`; `image_pairing.csv`; optional `decisions_auto.csv`, `auto_sample_*.csv` |
 | 5 | Union-find global object IDs | done | `objects.csv`, `objects_summary.csv`, `decisions_resolved.csv` |
-| 6 | Measure stitched objects | done | `measurements.csv` |
-| 7 | Validation and delivery | planned | report + archived work directory |
+| 6 | Measure stitched objects | done | `measurements.csv`, `unresolved_candidates.csv`, `label_boxes.csv`, `measure_run.json` |
+| 7 | Validation and delivery | done | `validate_repeated_tile.csv`, `validate_largest.csv`; `delivery/` (`mitochondria.csv`, `summary.csv`, `excluded.csv`, `README.md`) |
 
 ### 1. Inventory
 
@@ -363,6 +380,21 @@ Touching a seam face is never an edge, whatever the decision for that pair:
 with "no", the neighbour is a different object, not the volume edge.
 `edge_faces` lists each `tile:face` (faces `-z`, `+z`, `-y`, `+y`, `-x`, `+x`).
 
+**Bounding box and centroid.** `bbox_z0 … bbox_x1` is the union of the
+members' boxes from the pass-1 label scan, in region voxel coordinates
+(half-open). `center_z_nm, center_y_nm, center_x_nm` is the centroid: the mean
+voxel index on each axis times the voxel size, so voxel `i` is at `i · v` nm.
+The coordinate sums are exact integers taken from the mask phase 6 already
+assembles for the skeleton (per-axis projections, no extra read). An object
+over the crop limit gets no skeleton, but its window is still read once, in Z
+slabs of at most `--max-crop-voxels`, for its centroid. Phase 6 checks that the
+mask holds exactly `voxel_count` voxels.
+
+Phase 6 also writes `label_boxes.csv` (every label's box, so phase 7 can crop
+without a full read) and `measure_run.json` (voxel size, region-only,
+crop limit, unproofread tiles, code revision, finish time and the command's
+options) for the delivery README.
+
 **Other columns.**
 
 - `unresolved_contacts` counts the object's candidates (either side is a
@@ -387,13 +419,87 @@ so importing it into a page decides nothing.
 seconds) and per multi-tile object (members, tiles, crop size, length,
 seconds). Then come totals.
 
-### 7. Validation and delivery (planned)
+### 7. Validation and delivery
 
-Check voxel totals are conserved (sum over objects equals sum over `id_map`),
-every accepted merge is in exactly one object, and no object contains two
-labels from the same tile unless a decision chain links them. Spot-check a
-sample of stitched objects visually. Deliver the CSVs with the command lines,
-code revision and voxel size used.
+Both commands read only the work directory (and, for `stitch_validate`, small
+crops of the tiles). Run phase 6 again after upgrading: phase 7 needs
+`measurements.csv`'s bbox/centroid columns, `label_boxes.csv` and
+`measure_run.json`.
+
+#### 7a. `stitch_validate`
+
+**Consistency (no tile reads).** `stitch_validate` refuses, listing every
+violation, unless:
+
+- no global ID is listed twice in `id_map.csv` or `objects.csv`, no object
+  twice in `objects_summary.csv` or `measurements.csv`, and `objects.csv`
+  covers exactly the labels in `id_map.csv`;
+- each object's `object_id` is its smallest member;
+- each object's member count and voxel total, in `objects_summary.csv` and
+  `measurements.csv`, equal the sums over its members in `id_map.csv` (and
+  `region_voxels` too, with region data); the grand totals agree;
+- each object's members are connected through `yes` rows of
+  `decisions_resolved.csv` alone, and no `yes` row joins two objects.
+
+`stitch_deliver` runs the same checks first.
+
+**Repeated-tile objects.** For every object holding two or more labels from
+one tile (`stitch_objects` warns about these), it reads only the union of
+those labels' boxes in that tile (from `label_boxes.csv`, in Z blocks of about
+64 MB) and records which of the labels share a face (6-connectivity: diagonal
+contact does not count).
+
+- `touching`: the labels form one connected group inside the tile. Most likely
+  a proofreader split one mitochondrion into two IDs.
+- `separate`: they do not. The object leaves the tile and comes back (a U-turn
+  through a neighbour), or a `yes` is wrong. Check these visually.
+
+Each (object, tile) pair is one row of `validate_repeated_tile.csv`.
+
+**Unusual objects.** `validate_largest.csv` lists the top `--top` (default 20)
+objects by `member_count`, then the top 20 by cable length, for visual
+checking. Ties go to the smaller `object_id`. Objects without a length
+(`crop_limit`) are left out of the length ranking.
+
+#### 7b. `stitch_deliver`
+
+Writes a delivery folder (default `<work>/delivery`; a non-empty folder needs
+`--overwrite`, which replaces only the four files). No tile is read.
+
+- **Scope:** region-only. It refuses `measurements.csv` without region
+  columns, and lists only objects with `region_voxels > 0`, whether or not
+  phase 6 ran with `--region-only`.
+- **Exclusions:** `--exclude-global-ids FILE` lists global IDs (one per line;
+  blank lines, `#` comments and a `global_id` header are ignored) that
+  reviewers judged not to be mitochondria. Each excludes its whole object,
+  which goes to `excluded.csv` with the IDs that caused it, and is left out of
+  `mitochondria.csv` and `summary.csv`. Unknown IDs and non-integers are
+  refused.
+- **`mitochondria.csv`:** `mito_id` is the `object_id` (traceable, not
+  renumbered). `cut_off_at_data_edge` is `touches_edge`;
+  `touches_unproofread_tile` is `unproofread_tiles > 0`; `length_status` is
+  `measured` or `skipped_too_large` (`crop_limit`). `core` is `true` when the
+  object is not cut off, does not cross the region boundary, touches no
+  unproofread tile and has no unresolved contacts. `not_core_reasons` lists
+  the failing ones, in that order: `cut_off_at_data_edge`,
+  `crosses_region_boundary`, `touches_unproofread_tile`,
+  `unresolved_contacts`.
+- **`summary.csv`:** counts for all and core objects, and the median, 90th
+  percentile (numpy, linear interpolation) and maximum of volume and of
+  measured length.
+- **Seam decisions in the README.** Counts come from
+  `decisions_resolved.csv` (also restricted to `in_region` candidates when
+  known). The auto rule and its count come from `decisions_auto.csv` in the
+  work directory, or `--auto-decisions FILE`; every row of it must be `yes`
+  in `decisions_resolved.csv`, otherwise it was not the file `stitch_objects`
+  used and the run is refused. Human decisions are the decided candidates
+  minus the auto-accepted ones. `--spot-check FILE` (repeatable) takes a
+  reviewer's blind answers for an auto sample; every row must be an
+  auto-accepted pair, and the README reports how many agreed. The real 50/50
+  check is recorded only through this option.
+- **README provenance:** the code revision of the delivery run and of the
+  phase 6 run (`+modified` when the checkout had uncommitted changes), the
+  phase 6 command, and every input tile with its file and proofread status.
 
 ## Regions (ROI)
 
@@ -561,7 +667,15 @@ python manage.py stitch_review --work /scratch/stitch_p10 --images /data/nag_p10
 python manage.py stitch_objects --work /scratch/stitch_p10 --decisions decisions_auto.csv \
     --decisions decisions_region.csv
 python manage.py stitch_measure --work /scratch/stitch_p10 --voxel-size-zyx 30 8 8 --region-only
+python manage.py stitch_validate --work /scratch/stitch_p10
+python manage.py stitch_deliver --work /scratch/stitch_p10 --exclude-global-ids not_mito.txt \
+    --spot-check /scratch/stitch_p10/decisions_auto_sample_50_seed1.csv
 ```
+
+`stitch_validate` takes `--top N` (default 20). `stitch_deliver` takes
+`--exclude-global-ids FILE`, `--out DIR` (default `<work>/delivery`),
+`--overwrite`, `--auto-decisions FILE` (default `<work>/decisions_auto.csv`
+if present) and `--spot-check FILE` (repeatable).
 
 Do not pass `--require-complete` to `stitch_objects` in a region-only run:
 candidates outside the region are expected to stay undecided.
@@ -718,8 +832,11 @@ It has no `decision` column, so importing it into a page decides nothing.
 `measurements.csv` — one row per object, sorted by `object_id`:
 
 ```text
-object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles
+object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm
 ```
+
+- The bbox is half-open, in region voxel coordinates; `center_*_nm` are
+  full-precision floats (centroid, voxel `i` at `i ·` voxel size).
 
 - `tiles` and `edge_faces` are `;`-separated, in tile order;
   `edge_faces` entries are `tile:face`.
@@ -742,19 +859,73 @@ seam,tile_a,label_a,tile_b,label_b,global_a,global_b,object_a,object_b,current_d
   region are listed.
 - `stitch_review --only` accepts the file.
 
+`label_boxes.csv` — from `stitch_measure`, one row per label, by `global_id`;
+half-open boxes in region coordinates:
+
+```text
+global_id,tile,local_id,z0,z1,y0,y1,x0,x1
+```
+
+`measure_run.json` — from `stitch_measure`: `voxel_size_zyx_nm`,
+`region_only`, `max_crop_voxels`, `unproofread_tiles` (names, tile order),
+`code_revision`, `finished_at` (UTC), `command`.
+
+`validate_repeated_tile.csv` — from `stitch_validate`, by `object_id` then
+tile order:
+
+```text
+object_id,tile,labels,global_ids,classification,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1
+```
+
+`labels` and `global_ids` are `;`-separated; `classification` is `touching` or
+`separate`; the bbox is the union of those labels' boxes.
+
+`validate_largest.csv` — from `stitch_validate`:
+
+```text
+ranked_by,rank,object_id,member_count,tiles,length_um,volume_um3,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1
+```
+
+`ranked_by` is `member_count` or `length`.
+
+`delivery/mitochondria.csv` — from `stitch_deliver`, by `mito_id`:
+
+```text
+mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons
+```
+
+`delivery/summary.csv` — `metric,all,core`; metrics `objects, multi_tile,
+length_measured, length_skipped_too_large, cut_off_at_data_edge,
+crosses_region_boundary, touches_unproofread_tile, unresolved_contacts,
+volume_um3_{median,p90,max}, length_um_{median,p90,max}`. Statistics are
+empty when there are no values.
+
+`delivery/excluded.csv`:
+
+```text
+mito_id,excluded_global_ids,n_tiles,tiles,volume_um3,reaches_region
+```
+
+`delivery/README.md` — the scientist's guide; every column above is described
+in it.
+
 ## Code
 
 - `backend/annotation/stitching.py` — parsing, inventory, ID assignment, plane
   reads, candidates, decisions, union-find, objects, auto-accept, CSV I/O.
 - `backend/annotation/stitching_measure.py` — phase 6: face coverage, edges,
   crops in region coordinates, cable length through `annotation.measurements`.
+- `backend/annotation/stitching_validate.py` — phase 7a: consistency checks,
+  repeated-tile classification (face contacts in Z blocks), largest objects.
+- `backend/annotation/stitching_deliver.py` — phase 7b: exclusions, decision
+  statistics, the delivery tables and README.
 - `backend/annotation/stitching_review.py` — image pairing, card geometry, PNG
   rendering (Pillow), and the review page (HTML, CSS and a small script inlined
   in one template).
 - `backend/annotation/management/commands/stitch_inventory.py`,
   `stitch_ids.py`, `stitch_candidates.py`, `stitch_review.py`,
-  `stitch_objects.py`, `stitch_auto_decisions.py`, `stitch_measure.py` — thin
-  CLI wrappers.
+  `stitch_objects.py`, `stitch_auto_decisions.py`, `stitch_measure.py`,
+  `stitch_validate.py`, `stitch_deliver.py` — thin CLI wrappers.
 - `backend/annotation/test_stitching.py` — synthetic 2 x 2 x 2 grid built in a
   temporary directory, with matching uint8 raw image tiles; no data is
   committed.
@@ -769,6 +940,13 @@ seam,tile_a,label_a,tile_b,label_b,global_a,global_b,object_a,object_b,current_d
   - Region masks over part of the grid (one tile without a file) cover the
     region rules. One test checks that a run without `--regions` writes the
     same bytes as before.
+  - bbox and centroid are checked exactly against the untiled volume, also
+    with every object over the crop limit (slab reads).
+  - Phase 7: a two-tile fixture with a touching proofreading split and a
+    U-turn; a unit test of face-only contacts across Z blocks; the largest
+    lists; each consistency check against a deliberately broken file;
+    exclusions; the core flag and reasons on a region layout that produces
+    every reason; the README naming every column.
 
 ```bash
 python manage.py test annotation.test_stitching
@@ -802,6 +980,10 @@ python manage.py test annotation.test_stitching
   `--max-crop-voxels` on smaller machines.
 - **Single-object skeletons.** Objects are skeletonised one at a time, single
   threaded (the per-volume code's `num_thread=1`).
+- **Phase 7 reads.** `stitch_validate` reads only the union of the boxes of
+  each repeated-tile object's labels in that tile; `stitch_deliver` reads no
+  tile. Over-limit objects in phase 6 cost one extra read of their window
+  (for the centroid).
 - **Sparse label IDs.** The label scan reuses the per-volume code's
   `scipy.ndimage.find_objects`, whose memory grows with a slice's largest
   label ID. Tiles with very sparse IDs in the billions would need a different

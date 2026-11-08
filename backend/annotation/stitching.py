@@ -20,6 +20,7 @@ import itertools
 import os
 import random
 import re
+import subprocess
 from collections import Counter
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
@@ -771,6 +772,20 @@ def build_objects(tiles: list[Tile], id_rows: list[dict], candidates: list[dict]
     counts["objects"] = len(summary)
     counts["merged_objects"] = sum(1 for row in summary if row["member_count"] > 1)
     return ObjectsResult(objects, summary, counts, repeated)
+
+
+def code_revision() -> str:
+    """The git commit of this code, with ``+modified`` when the checkout has
+    uncommitted changes, or ``unknown`` outside a git checkout."""
+    here = Path(__file__).resolve().parent
+    try:
+        commit = subprocess.run(["git", "-C", str(here), "rev-parse", "HEAD"], capture_output=True, text=True,
+                                check=True, timeout=10).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(here), "status", "--porcelain", "--untracked-files=no"],
+                               capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return commit + ("+modified" if dirty else "")
 
 
 # --- CSV I/O -----------------------------------------------------------------
