@@ -20,10 +20,12 @@ The design is in ``docs/engineering/stitching.md``.
 
 from __future__ import annotations
 
+import json
 import math
 import time
 from contextlib import ExitStack
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +44,7 @@ from annotation.stitching import (
     Tile,
     build_inventory,
     check_seams_csv,
+    code_revision,
     load_region_voxels,
     load_tile_ids,
     load_tiles_csv,
@@ -54,8 +57,15 @@ from annotation.stitching import (
 
 DEFAULT_MAX_CROP_VOXELS = 512_000_000
 FACES = ("-z", "+z", "-y", "+y", "-x", "+x")  # index = 2 * axis + (1 for the upper face)
+BBOX_FIELDS = ("bbox_z0", "bbox_z1", "bbox_y0", "bbox_y1", "bbox_x0", "bbox_x1")
+CENTER_FIELDS = ("center_z_nm", "center_y_nm", "center_x_nm")
 MEASUREMENTS_FIELDS = ("object_id", "member_count", "tiles", "voxel_count", "volume_um3", "skeleton_length_um",
-                       "touches_edge", "edge_faces", "skipped_reason", "unresolved_contacts", "unproofread_tiles")
+                       "touches_edge", "edge_faces", "skipped_reason", "unresolved_contacts", "unproofread_tiles",
+                       *BBOX_FIELDS, *CENTER_FIELDS)
+# Every label's bounding box from the pass-1 scan, so phase 7 can crop without a full read.
+LABEL_BOXES_FIELDS = ("global_id", "tile", "local_id", "z0", "z1", "y0", "y1", "x0", "x1")
+# Parameters of the last run, for phase 7's report.
+MEASURE_RUN = "measure_run.json"
 REGION_FIELDS = (REGION_VOXELS, "frac_in_region", "crosses_region_boundary")
 UNRESOLVED = ("unsure", "undecided")
 # Candidates counted in unresolved_contacts; stitch_review --only reads the key columns.
@@ -76,8 +86,11 @@ class StitchedObject:
     unresolved_contacts: int = 0
     unproofread_tiles: int = 0
     region_voxels: int | None = None                # None without region data
+    box: tuple[int, ...] = ()                       # union of the members' boxes, region coordinates
+    coord_sums: tuple[int, int, int] = (0, 0, 0)    # sum of z, y, x over the object's voxels
 
-    def row(self, voxel_nm3: float) -> dict:
+    def row(self, voxel_size) -> dict:
+        voxel_nm3 = voxel_size[0] * voxel_size[1] * voxel_size[2]
         region = {} if self.region_voxels is None else {
             REGION_VOXELS: self.region_voxels,
             "frac_in_region": repr(self.region_voxels / self.voxel_count),
@@ -90,7 +103,11 @@ class StitchedObject:
             "touches_edge": "true" if self.edge_faces else "false",
             "edge_faces": ";".join(f"{name}:{FACES[face]}" for _, face, name in sorted(self.edge_faces)),
             "skipped_reason": self.skipped_reason, "unresolved_contacts": self.unresolved_contacts,
-            "unproofread_tiles": self.unproofread_tiles, **region,
+            "unproofread_tiles": self.unproofread_tiles,
+            **dict(zip(BBOX_FIELDS, self.box)),
+            # Centroid: mean voxel index times the voxel size (voxel i is at i * size nm).
+            **{f: repr(self.coord_sums[a] / self.voxel_count * voxel_size[a]) for a, f in enumerate(CENTER_FIELDS)},
+            **region,
         }
 
 
@@ -114,6 +131,38 @@ def box_union(boxes) -> tuple[int, ...]:
 
 def box_voxels(box) -> int:
     return math.prod(box[2 * a + 1] - box[2 * a] for a in range(3))
+
+
+def mask_moments(mask: np.ndarray, window) -> tuple[int, tuple[int, int, int]]:
+    """``(voxel count, (sum z, sum y, sum x))`` of ``mask`` placed at
+    ``window`` (region coordinates). Exact integers, from per-axis projections."""
+    sums = []
+    for a in range(3):
+        per_plane = np.count_nonzero(mask, axis=tuple(b for b in range(3) if b != a)).astype(np.int64)
+        sums.append(int(per_plane @ np.arange(window[2 * a], window[2 * a + 1], dtype=np.int64)))
+    return int(np.count_nonzero(mask)), tuple(sums)
+
+
+def window_moments(window, parts, max_voxels: int) -> tuple[int, tuple[int, int, int]]:
+    """``mask_moments`` of a window too large to hold at once, assembled in Z
+    slabs of at most ``max_voxels`` (at least one plane)."""
+    plane = box_voxels((0, 1, *window[2:]))
+    step = max(1, max_voxels // max(1, plane))
+    count, sums = 0, [0, 0, 0]
+    for z in range(window[0], window[1], step):
+        slab = (z, min(z + step, window[1]), *window[2:])
+        c, s = mask_moments(assemble_mask(slab, parts), slab)
+        count += c
+        sums = [a + b for a, b in zip(sums, s)]
+    return count, tuple(sums)
+
+
+def _set_moments(obj: StitchedObject, moments) -> None:
+    count, sums = moments
+    if count != obj.voxel_count:
+        raise StitchingError(f"object {obj.object_id}: {count} voxels in its crop but {obj.voxel_count} in "
+                             "id_map.csv; rerun stitch_ids")
+    obj.coord_sums = sums
 
 
 def face_coverage(tile: Tile, seams) -> list[np.ndarray]:
@@ -204,6 +253,8 @@ class MeasureResult:
     counts: dict[str, int]
     fields: tuple[str, ...] = MEASUREMENTS_FIELDS
     unresolved: list[dict] = field(default_factory=list)   # rows for unresolved_candidates.csv
+    label_boxes: list[dict] = field(default_factory=list)  # rows for label_boxes.csv
+    run: dict = field(default_factory=dict)                 # measure_run.json
 
 
 def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS,
@@ -298,12 +349,16 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
                 obj = single.get(offset + int(lid))
                 if obj is None:
                     continue
-                window = padded_window(boxes[obj.members[0]], region)
+                obj.box = boxes[obj.members[0]]
+                window = padded_window(obj.box, region)
+                parts = [(tile, volume, [int(lid)])]
                 if box_voxels(window) > max_crop_voxels:
                     obj.skipped_reason = SKIPPED_CROP_LIMIT
+                    _set_moments(obj, window_moments(window, parts, max_crop_voxels))
                     skipped += 1
                     continue
-                mask = assemble_mask(window, [(tile, volume, [int(lid)])])
+                mask = assemble_mask(window, parts)
+                _set_moments(obj, mask_moments(mask, window))
                 obj.skeleton_length_um = skeleton_length_nm(mask, voxel_size) / 1000.0
                 measured += 1
         log(f"tile {index}/{len(tiles)} {tile.name}: {len(summary['bboxes'])} label(s), "
@@ -315,25 +370,30 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
     multi = [o for o in objects.values() if len(o.members) > 1]
     for index, obj in enumerate(multi, 1):
         t0 = time.monotonic()
-        window = padded_window(box_union(boxes[g] for g in obj.members), region)
+        obj.box = box_union(boxes[g] for g in obj.members)
+        window = padded_window(obj.box, region)
         size = "x".join(str(window[2 * a + 1] - window[2 * a]) for a in range(3))
-        if box_voxels(window) > max_crop_voxels:
+        locals_by_tile: dict[str, list[int]] = {}
+        for g in obj.members:
+            locals_by_tile.setdefault(member[g][0], []).append(member[g][1])
+        too_large = box_voxels(window) > max_crop_voxels
+        with ExitStack() as stack:
+            parts = [(by_name[n], stack.enter_context(open_tile(by_name[n].path)), locals_by_tile[n])
+                     for n in obj.tiles]
+            if too_large:   # no skeleton, but the centroid is still needed: read the window in slabs
+                _set_moments(obj, window_moments(window, parts, max_crop_voxels))
+            else:
+                mask = assemble_mask(window, parts)
+                _set_moments(obj, mask_moments(mask, window))
+        if too_large:
             obj.skipped_reason = SKIPPED_CROP_LIMIT
             log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.tiles)} tiles, crop {size} "
                 f"= {box_voxels(window)} voxels > {max_crop_voxels}; skipped (crop_limit)")
             continue
-        locals_by_tile: dict[str, list[int]] = {}
-        for g in obj.members:
-            locals_by_tile.setdefault(member[g][0], []).append(member[g][1])
-        with ExitStack() as stack:
-            parts = [(by_name[n], stack.enter_context(open_tile(by_name[n].path)), locals_by_tile[n])
-                     for n in obj.tiles]
-            mask = assemble_mask(window, parts)
         obj.skeleton_length_um = skeleton_length_nm(mask, voxel_size) / 1000.0
         log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.members)} label(s) in {len(obj.tiles)} tiles, "
             f"crop {size}, {obj.skeleton_length_um:.4g} um in {time.monotonic() - t0:.1f}s")
 
-    voxel_nm3 = voxel_size[0] * voxel_size[1] * voxel_size[2]
     ordered = [objects[o] for o in sorted(objects)]
     counts = {
         "region_only": region_only,
@@ -346,7 +406,15 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
         "seconds": round(time.monotonic() - started),
     }
     fields = MEASUREMENTS_FIELDS + (REGION_FIELDS if region_voxels is not None else ())
-    return MeasureResult(ordered, [o.row(voxel_nm3) for o in ordered], counts, fields, unresolved_rows)
+    label_boxes = [{"global_id": g, "tile": member[g][0], "local_id": member[g][1],
+                    **dict(zip(LABEL_BOXES_FIELDS[3:], boxes[g]))} for g in sorted(boxes)]
+    run = {
+        "voxel_size_zyx_nm": list(voxel_size), "region_only": region_only, "max_crop_voxels": max_crop_voxels,
+        "unproofread_tiles": [t.name for t in tiles if t.name in unproofread_names],
+        "code_revision": code_revision(), "finished_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    return MeasureResult(ordered, [o.row(voxel_size) for o in ordered], counts, fields, unresolved_rows,
+                         label_boxes, run)
 
 
 def _touches_uncovered(volume, tile: Tile, lid: int, local_box, face: int, covered: np.ndarray, planes) -> bool:
@@ -365,9 +433,20 @@ def _touches_uncovered(volume, tile: Tile, lid: int, local_box, face: int, cover
 
 
 def run_measure(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS,
-                region_only: bool = False, log=lambda message: None) -> MeasureResult:
+                region_only: bool = False, log=lambda message: None, command: str = "") -> MeasureResult:
     result = measure_objects(work, voxel_size_zyx, unproofread=unproofread, max_crop_voxels=max_crop_voxels,
                              region_only=region_only, log=log)
-    write_csv(Path(work) / "measurements.csv", result.fields, result.rows)
-    write_csv(Path(work) / "unresolved_candidates.csv", UNRESOLVED_FIELDS, result.unresolved)
+    work = Path(work)
+    write_csv(work / "measurements.csv", result.fields, result.rows)
+    write_csv(work / "unresolved_candidates.csv", UNRESOLVED_FIELDS, result.unresolved)
+    write_csv(work / "label_boxes.csv", LABEL_BOXES_FIELDS, result.label_boxes)
+    result.run["command"] = command
+    (work / MEASURE_RUN).write_text(json.dumps(result.run, indent=2) + "\n")
     return result
+
+
+def load_measure_run(work) -> dict:
+    path = Path(work) / MEASURE_RUN
+    if not path.exists():
+        raise StitchingError(f"{path} not found; rerun stitch_measure (phase 6)")
+    return json.loads(path.read_text())

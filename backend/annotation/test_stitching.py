@@ -1,4 +1,4 @@
-"""Stitching phases 1-5 on synthetic tiles built in temporary directories.
+"""Stitching phases 1-7 on synthetic tiles built in temporary directories.
 
 The main fixture is a 2 x 2 x 2 grid of 8 x 32 x 32 tiles (region 16 x 64 x 64)
 with hand-placed objects; every expected row below was worked out by hand from
@@ -22,7 +22,7 @@ from django.core.management import CommandError, call_command
 from django.test import SimpleTestCase
 from PIL import Image
 
-from annotation import stitching, stitching_measure, stitching_review
+from annotation import stitching, stitching_deliver, stitching_measure, stitching_review, stitching_validate
 from annotation.measurements import measure_label_volume
 from annotation.stitching import StitchingError, Tile, parse_tile_name
 from annotation.visualization import slice_io
@@ -1140,6 +1140,12 @@ class StitchRunMixin(TempDirMixin):
     def untiled_measurements(self, tiles_dir, work):
         """Per-volume measurements of the same objects in one untiled volume
         (each voxel labelled with its object_id)."""
+        path = self.make_dir() / "untiled.tif"
+        _write_tiff(path, self.untiled_volume(work))
+        return {m.label_id: m for m in measure_label_volume(path, VOXEL)}
+
+    def untiled_volume(self, work) -> np.ndarray:
+        """The whole region as one array, each voxel labelled with its object_id."""
         tiles = read_rows(work / "tiles.csv")
         offsets = {r["tile"]: int(r["id_offset"]) for r in read_rows(work / "tile_ids.csv")}
         object_of = {int(r["global_id"]): int(r["object_id"]) for r in read_rows(work / "objects.csv")}
@@ -1152,9 +1158,21 @@ class StitchRunMixin(TempDirMixin):
                 lookup[lid] = object_of[offsets[row["tile"]] + lid]
             box = tuple(slice(int(row[f"{a}0"]), int(row[f"{a}1"])) for a in "zyx")
             volume[box] = lookup[local]
-        path = self.make_dir() / "untiled.tif"
-        _write_tiff(path, volume)
-        return {m.label_id: m for m in measure_label_volume(path, VOXEL)}
+        return volume
+
+    def assert_boxes_and_centres(self, work, voxel=VOXEL):
+        """bbox and centroid columns equal the untiled volume's, exactly."""
+        volume = self.untiled_volume(work)
+        rows = self.measurements(work)
+        for object_id, row in rows.items():
+            points = np.argwhere(volume == object_id)
+            count = len(points)
+            box = tuple(v for a in range(3) for v in (int(points[:, a].min()), int(points[:, a].max()) + 1))
+            centre = tuple(repr(int(points[:, a].sum()) / count * voxel[a]) for a in range(3))
+            with self.subTest(object_id=object_id):
+                self.assertEqual(tuple(int(row[f]) for f in stitching_measure.BBOX_FIELDS), box)
+                self.assertEqual(tuple(row[f] for f in stitching_measure.CENTER_FIELDS), centre)
+        return rows
 
 
 def decide_all(decision="yes", overrides=None):
@@ -1683,3 +1701,368 @@ class RegionTests(StitchedGridMixin, SimpleTestCase):
 
     def measurements_row(self, object_id):
         return {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}[object_id]
+
+
+# --- phase 6 additions: boxes, centroids, label boxes, run parameters --------------
+
+class MeasureBoxTests(StitchRunMixin, SimpleTestCase):
+    def setUp(self):
+        self.tiles_dir = self.make_dir()
+        build_grid(self.tiles_dir)
+        self.work = self.stitch(self.tiles_dir, lambda c: ALL_DECIDED)
+
+    def test_bbox_and_centre_are_exact(self):
+        self.measure(self.work)
+        rows = self.assert_boxes_and_centres(self.work)
+        # D by hand: z 0-2, y 60-63, x 60-63 -> mean (1, 61.5, 61.5) voxels.
+        self.assertEqual(tuple(rows[7][f] for f in (*stitching_measure.BBOX_FIELDS, *stitching_measure.CENTER_FIELDS)),
+                         ("0", "3", "60", "64", "60", "64", "30.0", "492.0", "492.0"))
+        # C spans three tiles; its box is the union of C1 and C2.
+        self.assertEqual(tuple(rows[3][f] for f in stitching_measure.BBOX_FIELDS), ("1", "12", "16", "20", "26", "40"))
+
+    def test_skipped_objects_get_exact_centres_from_slabs(self):
+        self.measure(self.work)
+        full = self.measurements(self.work)
+        # A 100-voxel cap skips every object (single- and multi-tile) and reads windows in several slabs.
+        err = self.measure(self.work, "--max-crop-voxels", "100")
+        self.assertIn("8 skipped (crop_limit)", err)
+        skipped = self.assert_boxes_and_centres(self.work)
+        for object_id, row in skipped.items():
+            with self.subTest(object_id=object_id):
+                self.assertEqual(row["skipped_reason"], "crop_limit")
+                for f in (*stitching_measure.BBOX_FIELDS, *stitching_measure.CENTER_FIELDS):
+                    self.assertEqual(row[f], full[object_id][f])
+
+    def test_label_boxes_and_run_parameters(self):
+        listing = self.work / "unproofread.txt"
+        listing.write_text(f"{T4}\n")
+        self.measure(self.work, "--unproofread-tiles", str(listing))
+        boxes = {int(r["global_id"]): r for r in read_rows(self.work / "label_boxes.csv")}
+        self.assertEqual(sorted(boxes), [g for _, _, g, _ in EXPECTED_ID_MAP])
+        # C's T1 label is the union of C1 and C2 inside T1.
+        self.assertEqual(tuple(boxes[4].values()), ("4", T1, "1", "1", "8", "16", "20", "32", "40"))
+        run = json.loads((self.work / "measure_run.json").read_text())
+        self.assertEqual({k: run[k] for k in ("voxel_size_zyx_nm", "region_only", "max_crop_voxels",
+                                              "unproofread_tiles")},
+                         {"voxel_size_zyx_nm": [30.0, 8.0, 8.0], "region_only": False,
+                          "max_crop_voxels": 512_000_000, "unproofread_tiles": [T4]})
+        self.assertTrue(run["code_revision"])
+        self.assertTrue(run["finished_at"].endswith("Z"))
+
+
+# --- phase 7a: validation ------------------------------------------------------------
+
+# Two tiles side by side in x. In the left tile, labels 1 and 2 touch (a proofreading
+# split of one mitochondrion); labels 3 and 4 do not touch there, but both meet label 2
+# of the right tile, which joins them (a U-turn through the neighbour).
+RL, RR = "0-4_0-16_0-8_r", "0-4_0-16_8-16_r"
+REPEATED_OBJECTS = (
+    ("SPLIT1", (1, 3, 1, 4, 2, 8), {RL: 1}),
+    ("SPLIT2", (1, 3, 4, 7, 2, 8), {RL: 2}),
+    ("SPLITR", (1, 3, 1, 7, 8, 12), {RR: 1}),
+    ("U1", (1, 3, 9, 11, 5, 8), {RL: 3}),
+    ("U2", (1, 3, 13, 15, 5, 8), {RL: 4}),
+    ("UR", (1, 3, 9, 15, 8, 10), {RR: 2}),
+)
+
+
+class RepeatedTileTests(StitchRunMixin, SimpleTestCase):
+    def test_touching_split_and_u_turn(self):
+        tiles_dir = self.make_dir()
+        write_tiles(tiles_dir, (RL, RR), REPEATED_OBJECTS)
+        work = self.stitch(tiles_dir, decide_all())
+        self.measure(work)
+        err = self.call("stitch_validate", "--work", str(work))
+        self.assertIn("consistency: ok", err)
+        self.assertIn("repeated-tile objects: 2 (2 object/tile pair(s)): 1 touching, 1 separate", err)
+        rows = read_rows(work / "validate_repeated_tile.csv")
+        self.assertEqual(list(rows[0]), list(stitching_validate.REPEATED_FIELDS))
+        self.assertEqual([tuple(r.values()) for r in rows], [
+            ("1", RL, "1;2", "1;2", "touching", "1", "3", "1", "7", "2", "8"),
+            ("3", RL, "3;4", "3;4", "separate", "1", "3", "9", "15", "5", "8"),
+        ])
+
+    def test_contacts_are_faces_only_and_carry_across_blocks(self):
+        volume = np.zeros((4, 4, 4), np.uint16)
+        volume[0, 0, 0] = 1
+        volume[1, 1, 1] = 2          # diagonal to 1: not a face contact
+        volume[1, 2, 1] = 3          # face contact with 2 (y)
+        volume[2, 2, 1] = 4          # face contact with 3 (z), across a block boundary below
+        contacts = stitching_validate.label_contacts(volume, (0, 4, 0, 4, 0, 4), [1, 2, 3, 4], block_bytes=16 * 2)
+        self.assertEqual(contacts, {(2, 3), (3, 4)})
+        self.assertEqual(stitching_validate.label_contacts(volume, (0, 4, 0, 4, 0, 4), [1, 2]), set())
+
+
+class ValidateTests(StitchRunMixin, SimpleTestCase):
+    def setUp(self):
+        tiles_dir = self.make_dir()
+        build_grid(tiles_dir)
+        self.work = self.stitch(tiles_dir, lambda c: ALL_DECIDED)
+        self.measure(self.work)
+
+    def validate(self, *extra):
+        return self.call("stitch_validate", "--work", str(self.work), *extra)
+
+    def test_no_repeated_tiles_and_largest_lists(self):
+        err = self.validate("--top", "3")
+        self.assertIn("consistency: ok (8 object(s), 8 measured)", err)
+        self.assertIn("repeated-tile objects: 0", err)
+        self.assertEqual(read_rows(self.work / "validate_repeated_tile.csv"), [])
+        rows = read_rows(self.work / "validate_largest.csv")
+        self.assertEqual(list(rows[0]), list(stitching_validate.LARGEST_FIELDS))
+        by_members = [(r["rank"], r["object_id"], r["member_count"]) for r in rows if r["ranked_by"] == "member_count"]
+        self.assertEqual(by_members, [("1", "3", "3"), ("2", "1", "2"), ("3", "2", "2")])   # ties: smaller id
+        measured = self.measurements(self.work)
+        expected = sorted(measured, key=lambda o: (-float(measured[o]["skeleton_length_um"]), o))[:3]
+        by_length = [r for r in rows if r["ranked_by"] == "length"]
+        self.assertEqual([int(r["object_id"]) for r in by_length], expected)
+        c = next(r for r in rows if r["object_id"] == "3")
+        self.assertEqual((c["tiles"], c["volume_um3"], c["length_um"], c["bbox_x0"], c["bbox_x1"]),
+                         (f"{T0};{T1};{T5}", measured[3]["volume_um3"], measured[3]["skeleton_length_um"], "26", "40"))
+
+    def test_skipped_lengths_are_left_out_of_the_length_ranking(self):
+        self.measure(self.work, "--max-crop-voxels", "1,000")   # skips C (3) and G+H1 (6)
+        self.validate()
+        rows = read_rows(self.work / "validate_largest.csv")
+        self.assertEqual(len([r for r in rows if r["ranked_by"] == "member_count"]), 8)
+        ranked = {r["object_id"] for r in rows if r["ranked_by"] == "length"}
+        self.assertEqual(ranked, {"1", "2", "7", "70010", "70011", "70012"})
+
+    def edit(self, name, old, new):
+        path = self.work / name
+        text = path.read_text()
+        self.assertIn(old, text)
+        path.write_text(text.replace(old, new, 1))
+
+    def assert_refused(self, message):
+        with self.assertRaises(CommandError) as ctx:
+            self.validate()
+        self.assertIn("consistency check failed", str(ctx.exception))
+        self.assertIn(message, str(ctx.exception))
+        self.assertFalse((self.work / "validate_largest.csv").exists())
+
+    def test_voxel_total_mismatch_is_refused(self):
+        self.edit("measurements.csv", f"\n7,1,{T3},48,", f"\n7,1,{T3},49,")
+        self.assert_refused("measurements.csv: object 7 has 1 member(s), 49 voxels; id_map.csv gives 1, 48")
+
+    def test_summary_total_mismatch_is_refused(self):
+        self.edit("objects_summary.csv", f"7,1,{T3},48,0", f"7,1,{T3},50,0")
+        self.assert_refused("objects_summary.csv holds 1074 voxels in all; id_map.csv holds 1072")
+
+    def test_object_joined_without_a_yes_is_refused(self):
+        # H2 (70010) put into G's object 6, though G-H2 was answered no.
+        self.edit("objects.csv", "\n70010,70010\n", "\n70010,6\n")
+        self.assert_refused("object 6: 3 labels fall into 2 groups by yes decisions")
+
+    def test_yes_across_two_objects_is_refused(self):
+        # A's T4 piece (8) split off as its own object, though A's pair was answered yes.
+        self.edit("objects.csv", "\n8,1\n", "\n8,8\n")
+        self.assert_refused("yes for 1 -> 8 joins objects 1 and 8")
+
+    def test_object_listed_twice_is_refused(self):
+        path = self.work / "measurements.csv"
+        lines = path.read_text().splitlines(keepends=True)
+        path.write_text("".join(lines + lines[-1:]))
+        self.assert_refused("objects listed twice in measurements.csv (1):\n  70012")
+
+    def test_label_in_two_objects_is_refused(self):
+        self.edit("objects.csv", "\n70012,70012\n", "\n70012,70012\n70012,7\n")
+        self.assert_refused("global ids listed twice in objects.csv (1):\n  70012")
+
+    def test_h1_and_h2_joined_through_g_touch(self):
+        path = write_decisions(self.work / "d.csv", read_rows(self.work / "candidates.csv"), {**ALL_DECIDED, 5: "yes"})
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(path))
+        self.measure(self.work)
+        self.validate()
+        self.assertEqual([tuple(r.values()) for r in read_rows(self.work / "validate_repeated_tile.csv")],
+                         [("6", T6, "1;2", "70009;70010", "touching", "8", "10", "40", "48", "4", "14")])
+        (self.work / "label_boxes.csv").unlink()     # measurements from before phase 7
+        with self.assertRaisesMessage(CommandError, "label_boxes.csv not found; rerun stitch_measure"):
+            self.validate()
+
+
+# --- phase 7b: delivery --------------------------------------------------------------
+
+# Regions chosen so every not-core reason occurs (decisions: A, C yes; G-H1 no; B, G-H2 undecided;
+# T4 unproofread):
+#   A (1)      crosses the region (T0 y < 6) and touches the unproofread T4
+#   C (3)      crosses the region (only T1 inside)
+#   G (6)      entirely inside, but G-H2 is undecided
+#   D (7)      entirely inside (all of T3), on the outer boundary
+#   E (70011)  entirely inside (a box in T6), nothing wrong: core
+DELIVERY_REGIONS = {
+    T0: [(0, 8, 0, 6, 0, 32)], T1: [(0, 8, 0, 32, 32, 64)], T2: [(0, 8, 40, 64, 0, 32)],
+    T3: [(0, 8, 32, 64, 32, 64)], T5: [], T6: [(8, 16, 40, 44, 24, 32)], T7: [],
+}
+EXPECTED_CORE = {
+    1: ("false", "crosses_region_boundary;touches_unproofread_tile"),
+    3: ("false", "crosses_region_boundary"),
+    6: ("false", "unresolved_contacts"),
+    7: ("false", "cut_off_at_data_edge"),
+    70011: ("true", ""),
+}
+
+
+class DeliverTests(StitchedGridMixin, SimpleTestCase):
+    def setUp(self):
+        super().setUp()
+        regions = self.make_dir()
+        build_regions(regions, DELIVERY_REGIONS)
+        self.call("stitch_ids", "--work", str(self.work), "--regions", str(regions))
+        self.call("stitch_candidates", "--work", str(self.work))
+        self.candidates = read_rows(self.work / "candidates.csv")
+        self.call("stitch_auto_decisions", "--work", str(self.work), "--min-contact", "6", "--region-only")
+        human = write_decisions(self.work / "decisions_region.csv", self.candidates, {4: "no"})
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(self.work / "decisions_auto.csv"),
+                  "--decisions", str(human))
+        self.unproofread = self.work / "unproofread.txt"
+        self.unproofread.write_text(f"{T4}\n")
+        self.measure()
+
+    def measure(self, *extra):
+        self.call("stitch_measure", "--work", str(self.work), "--voxel-size-zyx", "30", "8", "8", "--region-only",
+                  "--unproofread-tiles", str(self.unproofread), *extra)
+
+    def deliver(self, *extra):
+        return self.call("stitch_deliver", "--work", str(self.work), *extra)
+
+    def rows(self, name="mitochondria.csv"):
+        return read_rows(self.work / "delivery" / name)
+
+    def test_core_flag_and_reasons(self):
+        err = self.deliver()
+        self.assertIn("5 mitochondria (1 core), 0 excluded", err)
+        rows = self.rows()
+        self.assertEqual(list(rows[0]), list(stitching_deliver.MITO_FIELDS))
+        self.assertEqual({int(r["mito_id"]): (r["core"], r["not_core_reasons"]) for r in rows}, EXPECTED_CORE)
+        flags = {int(r["mito_id"]): (r["cut_off_at_data_edge"], r["crosses_region_boundary"],
+                                     r["touches_unproofread_tile"]) for r in rows}
+        self.assertEqual(flags, {1: ("false", "true", "true"), 3: ("false", "true", "false"),
+                                 6: ("false", "false", "false"), 7: ("true", "false", "false"),
+                                 70011: ("false", "false", "false")})
+
+    def test_columns_follow_the_measurements(self):
+        self.deliver()
+        measured = {int(r["object_id"]): r for r in read_rows(self.work / "measurements.csv")}
+        for r in self.rows():
+            m = measured[int(r["mito_id"])]
+            with self.subTest(mito_id=r["mito_id"]):
+                self.assertEqual((r["volume_um3"], r["length_um"], r["frac_in_region"], r["tiles"], r["length_status"]),
+                                 (m["volume_um3"], m["skeleton_length_um"], m["frac_in_region"], m["tiles"], "measured"))
+                self.assertEqual(r["volume_in_region_um3"], repr(int(m["region_voxels"]) * 30.0 * 8.0 * 8.0 / 1e9))
+                self.assertEqual(int(r["n_tiles"]), len(m["tiles"].split(";")))
+                for f in (*stitching_measure.BBOX_FIELDS, *stitching_measure.CENTER_FIELDS):
+                    self.assertEqual(r[f], m[f])
+        a = next(r for r in self.rows() if r["mito_id"] == "1")
+        self.assertEqual((a["volume_in_region_um3"], a["frac_in_region"], a["n_tiles"]),
+                         (repr(24 * 1920.0 / 1e9), "0.25", "2"))
+        d = next(r for r in self.rows() if r["mito_id"] == "7")
+        self.assertEqual(tuple(d[f] for f in (*stitching_measure.BBOX_FIELDS, *stitching_measure.CENTER_FIELDS)),
+                         ("0", "3", "60", "64", "60", "64", "30.0", "492.0", "492.0"))
+
+    def test_summary(self):
+        self.measure("--max-crop-voxels", "1,000")    # C and G+H1 too large to skeletonise
+        self.deliver()
+        rows = self.rows()
+        status = {int(r["mito_id"]): (r["length_status"], r["length_um"]) for r in rows}
+        self.assertEqual((status[3], status[6]), (("skipped_too_large", ""), ("skipped_too_large", "")))
+        summary = {r["metric"]: (r["all"], r["core"]) for r in self.rows("summary.csv")}
+        self.assertEqual(list(summary), list(stitching_deliver.SUMMARY_METRICS))
+        self.assertEqual({k: summary[k] for k in stitching_deliver.SUMMARY_METRICS[:8]}, {
+            "objects": ("5", "1"), "multi_tile": ("2", "0"), "length_measured": ("3", "1"),
+            "length_skipped_too_large": ("2", "0"), "cut_off_at_data_edge": ("1", "0"),
+            "crosses_region_boundary": ("2", "0"), "touches_unproofread_tile": ("1", "0"),
+            "unresolved_contacts": ("1", "0"),
+        })
+        volumes = [float(r["volume_um3"]) for r in rows]
+        lengths = [float(r["length_um"]) for r in rows if r["length_um"]]
+        core = next(r for r in rows if r["core"] == "true")
+        self.assertEqual(summary["volume_um3_median"], (repr(float(np.median(volumes))), core["volume_um3"]))
+        self.assertEqual(summary["volume_um3_p90"][0], repr(float(np.percentile(volumes, 90))))
+        self.assertEqual(summary["volume_um3_max"][0], repr(max(volumes)))
+        self.assertEqual(summary["length_um_max"], (repr(max(lengths)), repr(float(core["length_um"]))))
+
+    def test_exclusions(self):
+        listing = self.work / "not_mito.txt"
+        # 4 is C's T1 piece (excludes all of C); 70010 is H2, outside the region; 1 is A, listed twice.
+        listing.write_text("global_id\n# reviewer: r2\n4\n\n70010  # outside\n1\n1\n")
+        err = self.deliver("--exclude-global-ids", str(listing))
+        self.assertIn("3 mitochondria (1 core), 3 excluded", err)
+        self.assertEqual([r["mito_id"] for r in self.rows()], ["6", "7", "70011"])
+        excluded = self.rows("excluded.csv")
+        self.assertEqual(list(excluded[0]), list(stitching_deliver.EXCLUDED_FIELDS))
+        self.assertEqual([(r["mito_id"], r["excluded_global_ids"], r["n_tiles"], r["tiles"], r["reaches_region"])
+                          for r in excluded], [
+            ("1", "1", "2", f"{T0};{T4}", "true"),
+            ("3", "4", "3", f"{T0};{T1};{T5}", "true"),
+            ("70010", "70010", "1", T6, "false"),
+        ])
+        self.assertEqual(excluded[1]["volume_um3"], repr(296 * 1920.0 / 1e9))
+
+    def test_bad_exclusions_are_refused(self):
+        listing = self.work / "not_mito.txt"
+        listing.write_text("4\n999999\nabc\n")
+        with self.assertRaises(CommandError) as ctx:
+            self.deliver("--exclude-global-ids", str(listing))
+        self.assertIn(f"{listing}:2: global id 999999 is not in objects.csv", str(ctx.exception))
+        self.assertIn(f"{listing}:3: 'abc' is not a global id", str(ctx.exception))
+        self.assertFalse((self.work / "delivery").exists())
+
+    def test_readme(self):
+        sample = write_decisions(self.work / "decisions_auto_sample.csv", self.candidates, {0: "yes", 2: "yes", 3: "no"},
+                                 reviewer="blind")
+        err = self.deliver("--spot-check", str(sample))
+        self.assertIn("spot check decisions_auto_sample.csv: 2 of 3 agreed", err)
+        readme = (self.work / "delivery" / "README.md").read_text()
+        for name in (*stitching_deliver.MITO_FIELDS, *stitching_deliver.SUMMARY_METRICS,
+                     *stitching_deliver.EXCLUDED_FIELDS):
+            with self.subTest(column=name):
+                self.assertIn(f"`{name}`", readme)
+        for text in ("30 × 8 × 8 nm (Z, Y, X)", "TEASAR", "kimimaro", "cable length", "region only",
+                     "864-1120", "3 clear-cut pairs were accepted by rule",
+                     "`auto:one-to-one,min_frac=0.5,min_contact=6,region_only`",
+                     "A reviewer (blind) judged a random sample of 3 auto-accepted pairs",
+                     "2 of 3 agreed", "**Human review.** 1 pair(s)",
+                     "All candidate pairs** (from `decisions_resolved.csv`): 3 yes, 1 no, 0 unsure, 2 undecided",
+                     "1 tile(s) still hold automatic predictions: `8-16_0-32_0-32_im`",
+                     f"Tiles without a region file (counted as entirely outside the region): `{T4}`",
+                     "command `stitch_measure --work ", "--voxel-size-zyx 30 8 8", "--region-only`",
+                     "code revision `"):
+            with self.subTest(text=text):
+                self.assertIn(text, readme)
+        for t in GRID_TILES:
+            self.assertIn(f"| `{t}` |", readme)
+
+    def test_spot_check_rows_must_be_auto_accepted(self):
+        sample = write_decisions(self.work / "s.csv", self.candidates, {4: "no"})
+        with self.assertRaisesMessage(CommandError, "spot-check rows that are not auto-accepted pairs"):
+            self.deliver("--spot-check", str(sample))
+
+    def test_refusals(self):
+        self.deliver()
+        with self.assertRaisesMessage(CommandError, "is not empty; pass --overwrite"):
+            self.deliver()
+        self.deliver("--overwrite")
+        self.call("stitch_objects", "--work", str(self.work), "--decisions",
+                  str(self.work / "decisions_region.csv"))   # without the auto decisions
+        self.measure()
+        with self.assertRaisesMessage(CommandError, "decisions_auto.csv was not used by stitch_objects"):
+            self.deliver("--overwrite")
+        (self.work / "measure_run.json").unlink()
+        with self.assertRaisesMessage(CommandError, "measure_run.json not found; rerun stitch_measure"):
+            self.deliver("--overwrite")
+
+    def test_consistency_is_checked_first(self):
+        path = self.work / "objects.csv"
+        path.write_text(path.read_text().replace("\n8,1\n", "\n8,8\n"))
+        with self.assertRaisesMessage(CommandError, "consistency check failed"):
+            self.deliver()
+
+    def test_needs_region_data(self):
+        self.call("stitch_ids", "--work", str(self.work))
+        self.call("stitch_candidates", "--work", str(self.work))
+        write_decisions(self.work / "d.csv", read_rows(self.work / "candidates.csv"), ALL_DECIDED)
+        self.call("stitch_objects", "--work", str(self.work), "--decisions", str(self.work / "d.csv"))
+        self.call("stitch_measure", "--work", str(self.work), "--voxel-size-zyx", "30", "8", "8")
+        with self.assertRaisesMessage(CommandError, "measurements.csv has no region columns"):
+            self.deliver()

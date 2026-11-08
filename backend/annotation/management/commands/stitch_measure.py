@@ -3,8 +3,10 @@
 Reads the work directory (tiles.csv, seams.csv, tile_ids.csv, id_map.csv,
 candidates.csv, objects.csv and decisions_resolved.csv from stitch_objects)
 and writes measurements.csv: one row per object with volume, TEASAR cable
-length from the per-volume measurement code, and the edge flag for the whole
-tiled volume. Also writes unresolved_candidates.csv, the unsure/undecided
+length from the per-volume measurement code, the edge flag for the whole
+tiled volume, bounding box and centroid. Also writes label_boxes.csv (every
+label's box, for stitch_validate) and measure_run.json (parameters, for
+stitch_deliver). Also writes unresolved_candidates.csv, the unsure/undecided
 candidates counted in unresolved_contacts, which stitch_review --only turns
 into a page for a second review round. Progress is logged per tile and per
 multi-tile object.
@@ -16,6 +18,8 @@ See docs/engineering/stitching.md.
     python manage.py stitch_measure --work stitch_p10 --voxel-size-zyx 30 8 8 --region-only
 """
 
+import shlex
+
 from django.core.management.base import BaseCommand, CommandError
 
 from annotation.stitching import StitchingError
@@ -24,6 +28,19 @@ from annotation.stitching_measure import DEFAULT_MAX_CROP_VOXELS, run_measure
 
 def _count(text: str) -> int:
     return int(text.replace(",", "").replace("_", ""))
+
+
+def _command_line(opts) -> str:
+    """The run's options as a stitch_measure command line, for measure_run.json."""
+    args = ["stitch_measure", "--work", str(opts["work"]),
+            "--voxel-size-zyx", *(f"{v:g}" for v in opts["voxel_size_zyx"])]
+    if opts["unproofread_tiles"]:
+        args += ["--unproofread-tiles", str(opts["unproofread_tiles"])]
+    if opts["max_crop_voxels"] != DEFAULT_MAX_CROP_VOXELS:
+        args += ["--max-crop-voxels", str(opts["max_crop_voxels"])]
+    if opts["region_only"]:
+        args.append("--region-only")
+    return shlex.join(args)
 
 
 class Command(BaseCommand):
@@ -60,7 +77,7 @@ class Command(BaseCommand):
         try:
             result = run_measure(opts["work"], opts["voxel_size_zyx"], unproofread=opts["unproofread_tiles"],
                                  max_crop_voxels=opts["max_crop_voxels"], region_only=opts["region_only"],
-                                 log=log)
+                                 log=log, command=_command_line(opts))
         except StitchingError as exc:
             raise CommandError(str(exc))
 
