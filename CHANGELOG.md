@@ -5,6 +5,14 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add `measure_volume`: measures mitochondria in one large, already-stitched
+  Neuroglancer precomputed volume (first use: p7) and writes the same delivery
+  files as `stitch_deliver` (`mitochondria.csv`, `summary.csv`, `excluded.csv`,
+  `README.md`) plus `measure_run.json`. It visits only existing chunk files,
+  measures cable length with the per-volume code, takes the voxel size
+  explicitly and records when it overrides the volume's metadata. New
+  dependency: `tensorstore` (Apache-2.0). No database, API or UI changes. See
+  `docs/engineering/stitching.md`.
 - Make offline stitching region-aware (optional): `stitch_ids --regions` pairs ROI
   masks to tiles by box and counts each label's voxels inside; candidates gain
   `in_region`; `--region-only` on `stitch_review`, `stitch_auto_decisions` and

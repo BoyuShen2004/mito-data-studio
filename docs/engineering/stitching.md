@@ -2,8 +2,11 @@
 
 Status: phases 1-7 are implemented (offline management commands), plus
 auto-accepting clear-cut merges (`stitch_auto_decisions`) and optional region
-(ROI) awareness (see [Regions](#regions-roi)). Keep this file current when
-behavior changes.
+(ROI) awareness (see [Regions](#regions-roi)). A volume that was already
+stitched upstream is measured with `measure_volume` instead, into the same
+delivery files (see
+[Measuring an upstream-stitched volume](#measuring-an-upstream-stitched-volume)).
+Keep this file current when behavior changes.
 
 ## Goal
 
@@ -586,6 +589,162 @@ changes three things:
 
 Every other column of a listed object is identical to the full run.
 
+## Measuring an upstream-stitched volume
+
+Some regions arrive already stitched and seam-proofread upstream, as one
+Neuroglancer volume instead of tiles. `measure_volume` measures such a volume
+and writes the same delivery files as `stitch_deliver`, with the same columns
+and core rules, so p7 and p10 deliveries line up column for column. It shares
+no work directory with phases 1-7.
+
+**p7 (first use).**
+
+- One volume of 10240 × 8192 × 1344 voxels (x, y, z), stitched and
+  seam-proofread upstream (who did so is not recorded with the data).
+- Labels: `neuroglancer_precomputed`, unsharded, `compressed_segmentation`,
+  uint32, 128 × 128 × 64 chunks. The data are sparse: only 3,207 chunk files
+  exist.
+- Region (the PC cell): a separate precomputed segmentation on the same grid,
+  nonzero = inside.
+- **Voxel size.** The files' metadata says 32 × 32 × 120 nm (x, y, z), but
+  analysis showed the true size is 8 × 8 × 30 nm, the same as p10. So run it
+  with `--voxel-size-zyx 30 8 8`.
+
+```bash
+python manage.py measure_volume --labels /data/p7/labels --region /data/p7/region_pc \
+    --voxel-size-zyx 30 8 8 --work /scratch/measure_p7 --region-only --volume-name p7 \
+    2>&1 | tee /scratch/measure_p7.log
+```
+
+**Inputs.**
+
+- `--labels DIR`: a local precomputed directory (holding `info`); scale 0 is
+  read with tensorstore. It must be unsharded with one channel and an unsigned
+  integer type; a sharded scale is refused, because unsharded chunk files are
+  what lets the command visit only existing data.
+- `--region DIR` (optional): a precomputed mask, nonzero = inside. Its scale 0
+  must have the same `size` and `voxel_offset` as the labels, or the run is
+  refused. Its chunk size and encoding may differ. A different `resolution`
+  in its metadata only warns (and is recorded), since the voxel size is given
+  explicitly anyway.
+- `--voxel-size-zyx Z Y X` in nm (required). It is always used and the
+  metadata resolution never is. When they disagree, the run logs it, and
+  `measure_run.json` (`voxel_size_matches_metadata: false`,
+  `voxel_size_note`) and the README record it.
+- `--work DIR`; `--max-crop-voxels N` (default 512,000,000, commas allowed);
+  `--region-only` (needs `--region`); `--exclude-label-ids FILE`;
+  `--volume-name NAME` (default: the labels directory name); `--out DIR`
+  (default `<work>/delivery`); and `--overwrite`, needed for a non-empty
+  delivery folder (replaces only the four delivery files).
+
+**Pass 1: label statistics.** The scale directory is listed, and only chunk
+files that exist are read (one chunk-aligned read each, with the next chunk
+prefetched). The volume is never read whole.
+
+- A missing chunk is background: Neuroglancer stores no all-zero chunks, and
+  tensorstore reads a missing chunk as 0, so pass 2 crops agree with pass 1.
+- Any other file in the scale directory (a misaligned box, a `.gz` chunk, a
+  stray file) stops the run. Data are never silently skipped. Hidden files
+  are ignored.
+- Per chunk, labels are compacted with `np.unique` and their boxes found with
+  `find_objects` on the compact IDs. Memory and time therefore do not depend
+  on how large or sparse the IDs are, unlike the per-volume label scan
+  (see [Known limits](#known-limits)). The region mask is read for the same
+  box.
+- Per label, the merged result is the voxel count, bounding box and region
+  voxel count, written to `<work>/label_stats.csv`. Progress is logged every
+  5 % with an estimate of the time left.
+
+**Pass 2: measurement.** Each listed label is measured from its own crop
+(labels are visited in chunk order, so neighbouring crops reuse decoded
+chunks from a 1 GiB tensorstore cache). The crop and length are exactly the
+per-volume rule:
+
+- the label's box padded by `CROP_PAD` (2) and clipped to the volume;
+- mask = crop == label; `skeleton_length_nm` with the same TEASAR
+  parameters, `DUST_SIZE` and voxel size passed once in (Z, Y, X)
+  (tensorstore's x, y, z order is transposed at the read);
+- over `--max-crop-voxels`, the volume is kept and the length left empty, with
+  `skipped_reason` `crop_limit` (`length_status` `skipped_too_large`). The
+  window is still read in Z slabs for the centroid.
+
+The crop's voxel count must equal pass 1's, or the run stops (the volume
+changed during the run). The centroid uses the same exact integer moments as
+phase 6.
+
+**Which labels.** Every label is listed, or with `--region-only` only labels
+with region voxels. Excluded labels are not measured.
+
+**Coordinates.** Bounding boxes and centroids use the volume's own voxel
+coordinates (Neuroglancer's), including any `voxel_offset`. Voxel `i` is at
+`i ·` voxel size nm, as in phase 6.
+
+**Delivery.** The rows go through `stitch_deliver`'s own code: `mito_row`,
+`summarise` and the README sections (`readme_*_lines` in
+`stitching_deliver.py`). The four files have exactly the columns and metrics
+of [7b](#7b-stitch_deliver), and `core` follows the same rule.
+
+- `mito_id` is the label ID in the volume.
+- `cut_off_at_data_edge`: the label's box touches one of the six outer faces
+  of the volume (the per-volume rule).
+- `crosses_region_boundary`: the label has voxels both inside and outside the
+  region. `volume_in_region_um3`, `frac_in_region` and
+  `crosses_region_boundary` are computed as in phase 6. Without `--region`,
+  the first two are empty and the flag is `false`.
+- `n_tiles` is `1` and `tiles` is the volume name.
+- `touches_unproofread_tile` is always `false`, and the unresolved contact
+  count is always 0. The volume was stitched and its seams proofread upstream,
+  as a whole. There are no tiles with a recorded proofread status, and this
+  command makes no seam decisions, so nothing can be unresolved. `core`
+  therefore reduces to "not cut off and not crossing the region boundary".
+  The columns are kept so that the files line up with p10.
+- `--exclude-label-ids FILE` takes label IDs, in the same file format as
+  `--exclude-global-ids` (an optional `label_id` header). Its syntax is
+  checked before pass 1, and unknown IDs after it. Each excluded label goes
+  to `excluded.csv` (`excluded_global_ids` holds the label ID; the column name
+  is shared).
+- The README is adapted for an upstream-stitched volume: "stitched and
+  seam-proofread upstream", the voxel-size override, why the constant columns
+  are constant, and provenance (input paths, scale keys, metadata resolution,
+  command, git commit, date, tensorstore version).
+
+**`measure_run.json`** (in the work directory) holds every setting: the
+command, `labels` and `region` (path, scale key, size, offset, chunk size,
+metadata resolution, encoding, data type), `volume_name`,
+`voxel_size_zyx_nm`, `voxel_size_matches_metadata`, `voxel_size_note`,
+`region_only`, `max_crop_voxels`, `crop_pad`, the exclusion file and IDs, the
+delivery folder, `tensorstore_version`, `code_revision`, `started_at`,
+`finished_at`, and counts (chunk files, labels, listed, excluded, core, flags,
+skipped, seconds per pass).
+
+`label_stats.csv` — every label from pass 1, by `label_id`, in volume voxel
+coordinates (half-open); `region_voxels` only with `--region`:
+
+```text
+label_id,voxel_count,region_voxels,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1
+```
+
+**Cost.** Pass 1 decodes each existing chunk once (128 × 128 × 64 uint32 is
+4 MB). Pass 2 reads each listed label's padded box. The crop cap bounds one
+crop at 512 M voxels: 2 GB of uint32 labels plus a 512 MB mask, on top of the
+1 GiB cache. Lower `--max-crop-voxels` on smaller machines. Labels are
+skeletonised one at a time, single threaded.
+
+**Tests** (`backend/annotation/test_volume_measure.py`) write small synthetic
+volumes with tensorstore: compressed_segmentation, 3 × 3 × 3 chunks, a voxel
+offset and the wrong 32 × 32 × 120 metadata, plus a raw uint8 region mask with
+a different chunk size. Every object's volume, length, edge flag, box and
+centroid equal those of `measure_label_volume` on the same in-memory array.
+The reference runs on a compact relabelling, because the per-volume scan is
+slow with the fixture's 3,000,000,123 ID. The tests cover:
+
+- objects crossing chunk faces, touching volume faces, crossing the region
+  boundary, and entirely outside it (left out with `--region-only`);
+- a deleted chunk file (background), crop_limit and exclusions;
+- the metadata-mismatch record, and a matching-metadata run;
+- refusal of a region on another grid, unexpected files and sharded scales;
+- column sets identical to `stitch_deliver`'s.
+
 ## CLI
 
 All commands are offline, read-only for inputs, and write into a work
@@ -918,7 +1077,11 @@ in it.
 - `backend/annotation/stitching_validate.py` — phase 7a: consistency checks,
   repeated-tile classification (face contacts in Z blocks), largest objects.
 - `backend/annotation/stitching_deliver.py` — phase 7b: exclusions, decision
-  statistics, the delivery tables and README.
+  statistics, the delivery tables and README (its `readme_*_lines` sections
+  are shared with `measure_volume`).
+- `backend/annotation/volume_measure.py` and
+  `management/commands/measure_volume.py` — measuring an upstream-stitched
+  Neuroglancer volume (tensorstore reads, chunk listing, both passes, README).
 - `backend/annotation/stitching_review.py` — image pairing, card geometry, PNG
   rendering (Pillow), and the review page (HTML, CSS and a small script inlined
   in one template).

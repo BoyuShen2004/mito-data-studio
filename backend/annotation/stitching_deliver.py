@@ -62,30 +62,35 @@ def _bool(flag: bool) -> str:
 
 # --- inputs ------------------------------------------------------------------
 
-def read_exclusions(path, objects: dict[int, int]) -> dict[int, list[int]]:
+def read_exclusions(path, objects: dict[int, int], *, what: str = "global id",
+                    source: str = "objects.csv") -> dict[int, list[int]]:
     """``{object_id: [global ids]}`` for the global IDs listed in ``path`` (one
     per line; blank lines, ``#`` comments and a ``global_id`` header are
-    ignored). Refuses non-integers and IDs that are not in objects.csv."""
+    ignored). Refuses non-integers and IDs that are not in objects.csv.
+
+    ``measure_volume`` passes label IDs (``what="label id"``, header
+    ``label_id``) with each label as its own object."""
+    header = what.replace(" ", "_")
     bad, unknown, excluded = [], [], {}
     for lineno, raw in enumerate(Path(path).read_text().splitlines(), 1):
         line = raw.split("#", 1)[0].strip().rstrip(",")
-        if not line or (lineno == 1 and line.lower() == "global_id"):
+        if not line or (lineno == 1 and line.lower() == header):
             continue
         if not line.isdigit():
-            bad.append(f"{path}:{lineno}: {raw.strip()!r} is not a global id")
+            bad.append(f"{path}:{lineno}: {raw.strip()!r} is not a {what}")
             continue
         g = int(line)
         if g not in objects:
-            unknown.append(f"{path}:{lineno}: global id {g} is not in objects.csv")
+            unknown.append(f"{path}:{lineno}: {what} {g} is not in {source}")
             continue
         ids = excluded.setdefault(objects[g], [])
         if g not in ids:
             ids.append(g)
     problems = []
     if bad:
-        problems.append(_listing("lines that are not global ids", bad))
+        problems.append(_listing(f"lines that are not {what}s", bad))
     if unknown:
-        problems.append(_listing("excluded global ids that match no label", unknown))
+        problems.append(_listing(f"excluded {what}s that match no label", unknown))
     if problems:
         raise StitchingError("\n".join(problems))
     return {o: sorted(ids) for o, ids in excluded.items()}
@@ -273,9 +278,84 @@ def _counts_line(counts: dict[str, int]) -> str:
     return ", ".join(f"{counts[k]:,} {k}" for k in ("yes", "no", "unsure", "undecided"))
 
 
+# README sections shared with measure_volume (annotation.volume_measure), so
+# the two deliveries describe their identical columns in the same words.
+
+def readme_files_lines(mito_text: str) -> list[str]:
+    return [
+        "## What is here",
+        "",
+        "| File | Contents |",
+        "|------|----------|",
+        f"| `mitochondria.csv` | {mito_text} |",
+        "| `summary.csv` | Counts and volume/length statistics, for all mitochondria and for core ones. |",
+        "| `excluded.csv` | Objects left out because reviewers judged them not to be mitochondria. |",
+        "| `README.md` | This file. |",
+        "",
+    ]
+
+
+def readme_units_lines(voxel, box_coordinates: str) -> list[str]:
+    vz, vy, vx = (f"{v:g}" for v in voxel)
+    return [
+        "## Units and coordinates",
+        "",
+        f"- Voxel size: **{vz} × {vy} × {vx} nm (Z, Y, X)**. One voxel is {voxel[0] * voxel[1] * voxel[2]:g} nm³.",
+        "- Volumes are in µm³, lengths in µm, centroids in nm.",
+        f"- Bounding boxes are in voxels in {box_coordinates}, Z, Y, X order. Lower bounds are inclusive and upper "
+        "bounds exclusive.",
+        f"- A voxel at index (z, y, x) sits at (z × {vz}, y × {vy}, x × {vx}) nm, so dividing a centroid by the "
+        "voxel size gives its position in voxels.",
+        "- `true`/`false` columns are text. Lists inside a cell are separated by `;`.",
+        "",
+    ]
+
+
+def readme_tables_lines(column_docs: dict[str, str], excluded_intro: str,
+                        excluded_docs: dict[str, str] = EXCLUDED_DOCS) -> list[str]:
+    return [
+        "## Columns of `mitochondria.csv`",
+        "",
+        "| Column | Meaning |",
+        "|--------|---------|",
+        *[f"| `{name}` | {text} |" for name, text in column_docs.items()],
+        "",
+        "## `summary.csv`",
+        "",
+        "Columns `metric`, `all` (every row of `mitochondria.csv`) and `core` (only rows with `core` = `true`). "
+        "Metrics:",
+        "",
+        *[f"- `{name}`: {text}" for name, text in SUMMARY_DOCS.items()],
+        "",
+        "## `excluded.csv`",
+        "",
+        excluded_intro,
+        "",
+        *[f"- `{name}`: {text}" for name, text in excluded_docs.items()],
+        "",
+    ]
+
+
+def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
+    return [
+        "## How length is measured",
+        "",
+        "Each mitochondrion is turned into a one-voxel-wide centreline skeleton with the TEASAR algorithm, "
+        "using the kimimaro library with the lab's parameters (the same code and parameters Mito Data Studio "
+        "uses for single volumes; TEASAR scale 1.5, const 500 nm). The voxel size above is passed in, so the "
+        "skeleton is in nm. Length is the **cable length**: the sum of the lengths of all skeleton edges, so "
+        f"branches count. Pieces smaller than {DUST_SIZE} voxels are ignored by the skeletoniser, so a very "
+        "small mitochondrion can have length 0.",
+        "",
+        f"{crop_sentence} Objects whose box would exceed "
+        f"{max_crop_voxels:,} voxels are not skeletonised (`length_status` = `skipped_too_large`); their "
+        "volume, box and centroid are still exact.",
+        "",
+    ]
+
+
 def build_readme(ctx: dict) -> str:
     voxel = ctx["voxel"]
-    vz, vy, vx = (f"{v:g}" for v in voxel)
     stats: DecisionStats = ctx["decisions"]
     s_all, s_core = ctx["summary_all"], ctx["summary_core"]
     lines = [
@@ -283,15 +363,7 @@ def build_readme(ctx: dict) -> str:
         "",
         f"Generated {ctx['generated_at']} from the stitching work directory `{ctx['work']}`.",
         "",
-        "## What is here",
-        "",
-        "| File | Contents |",
-        "|------|----------|",
-        "| `mitochondria.csv` | One row per mitochondrion that reaches into the region (exclusions removed). |",
-        "| `summary.csv` | Counts and volume/length statistics, for all mitochondria and for core ones. |",
-        "| `excluded.csv` | Objects left out because reviewers judged them not to be mitochondria. |",
-        "| `README.md` | This file. |",
-        "",
+        *readme_files_lines("One row per mitochondrion that reaches into the region (exclusions removed)."),
         f"In short: **{s_all['objects']:,} mitochondria**, of which **{s_core['objects']:,} are core** "
         f"(complete and fully proofread; see `core`). {s_all['multi_tile']:,} span more than one tile. "
         f"{ctx['excluded_count']:,} object(s) were excluded.",
@@ -304,50 +376,13 @@ def build_readme(ctx: dict) -> str:
         "whole (its volume and length include the outside part), and is flagged `crosses_region_boundary`; "
         "`volume_in_region_um3` and `frac_in_region` give the inside share.",
         "",
-        "## Units and coordinates",
-        "",
-        f"- Voxel size: **{vz} × {vy} × {vx} nm (Z, Y, X)**. One voxel is {voxel[0] * voxel[1] * voxel[2]:g} nm³.",
-        "- Volumes are in µm³, lengths in µm, centroids in nm.",
-        "- Bounding boxes are in voxels in the coordinates of the whole dataset (the same coordinates as the tile "
-        "names), Z, Y, X order. Lower bounds are inclusive and upper bounds exclusive.",
-        f"- A voxel at index (z, y, x) sits at (z × {vz}, y × {vy}, x × {vx}) nm, so dividing a centroid by the "
-        "voxel size gives its position in voxels.",
-        "- `true`/`false` columns are text. Lists inside a cell are separated by `;`.",
-        "",
-        "## Columns of `mitochondria.csv`",
-        "",
-        "| Column | Meaning |",
-        "|--------|---------|",
-        *[f"| `{name}` | {text} |" for name, text in _column_docs(voxel).items()],
-        "",
-        "## `summary.csv`",
-        "",
-        "Columns `metric`, `all` (every row of `mitochondria.csv`) and `core` (only rows with `core` = `true`). "
-        "Metrics:",
-        "",
-        *[f"- `{name}`: {text}" for name, text in SUMMARY_DOCS.items()],
-        "",
-        "## `excluded.csv`",
-        "",
-        "Reviewers listed global label IDs that are not mitochondria. Each listed ID removes the whole stitched "
-        "object it belongs to. Columns:",
-        "",
-        *[f"- `{name}`: {text}" for name, text in EXCLUDED_DOCS.items()],
-        "",
-        "## How length is measured",
-        "",
-        "Each mitochondrion is turned into a one-voxel-wide centreline skeleton with the TEASAR algorithm, "
-        "using the kimimaro library with the lab's parameters (the same code and parameters Mito Data Studio "
-        "uses for single volumes; TEASAR scale 1.5, const 500 nm). The voxel size above is passed in, so the "
-        "skeleton is in nm. Length is the **cable length**: the sum of the lengths of all skeleton edges, so "
-        f"branches count. Pieces smaller than {DUST_SIZE} voxels are ignored by the skeletoniser, so a very "
-        "small mitochondrion can have length 0.",
-        "",
-        f"A stitched mitochondrion is skeletonised once, as one piece, from a box around all of it (padded by "
-        f"{CROP_PAD} voxels), so the path across tile seams counts. Objects whose box would exceed "
-        f"{ctx['max_crop_voxels']:,} voxels are not skeletonised (`length_status` = `skipped_too_large`); their "
-        "volume, box and centroid are still exact.",
-        "",
+        *readme_units_lines(voxel, "the coordinates of the whole dataset (the same coordinates as the tile names)"),
+        *readme_tables_lines(_column_docs(voxel),
+                             "Reviewers listed global label IDs that are not mitochondria. Each listed ID removes "
+                             "the whole stitched object it belongs to. Columns:"),
+        *readme_length_lines(f"A stitched mitochondrion is skeletonised once, as one piece, from a box around all "
+                             f"of it (padded by {CROP_PAD} voxels), so the path across tile seams counts.",
+                             ctx["max_crop_voxels"]),
         "## How stitching works",
         "",
         "The data arrive as tiles that were segmented one at a time, so a mitochondrion crossing a tile "

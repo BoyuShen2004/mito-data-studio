@@ -75,6 +75,13 @@ when a measurement runs; lazy importing does not resolve the licensing
 requirements of distributing the integrated software. Licenses were read from
 installed package metadata; this record is not a legal compliance finding.
 
+Recorded 2026-11-08: `tensorstore` (Apache-2.0) to read Neuroglancer
+precomputed volumes in `backend/annotation/volume_measure.py`
+(`measure_volume`), with its one new transitive dependency `ml-dtypes`
+(Apache-2.0). Both are imported lazily, only when that command runs.
+Licenses were read from installed package metadata; this record is not a legal
+compliance finding.
+
 ## 3. Ported code with unresolved provenance review
 
 Several modules in `backend/annotation/cellable_port/` were ported from the
