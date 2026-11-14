@@ -18,6 +18,7 @@ No tile is read: everything comes from the phase 2-6 outputs. The design is in
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -354,6 +355,29 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
     ]
 
 
+def readme_viewer_lines(export: dict | None) -> list[str]:
+    """How to look at the stitched objects; ``export`` is ``export_run.json``
+    from ``stitch_export`` when a layer was written."""
+    lines = [
+        "## Viewing in Neuroglancer",
+        "",
+        "`stitch_export` writes the stitched segmentation as a Neuroglancer precomputed layer (uint64). Each "
+        "segment ID in it is a `mito_id` from `mitochondria.csv`, and its voxel coordinates are the dataset's, "
+        "so a bounding box or centroid above can be typed into Neuroglancer as is (centroids divided by the "
+        "voxel size).",
+        "",
+    ]
+    if export and export.get("ids") == "object":
+        vz, vy, vx = (f"{v:g}" for v in export["voxel_size_zyx_nm"])
+        lines += [f"A layer was written to `{export['layer']}` on {export.get('finished_at', 'an unknown date')} "
+                  f"(resolution {vz} × {vy} × {vx} nm Z, Y, X"
+                  + ("; only objects reaching into the region" if export.get("region_only") else "; every object")
+                  + "). It is not part of this folder; if stitching was rerun since, export it again.", ""]
+    else:
+        lines += ["No such layer had been written when this delivery was made.", ""]
+    return lines
+
+
 def build_readme(ctx: dict) -> str:
     voxel = ctx["voxel"]
     stats: DecisionStats = ctx["decisions"]
@@ -395,6 +419,7 @@ def build_readme(ctx: dict) -> str:
         "4. Labels are joined through yes decisions only. A mitochondrion can span many tiles.",
         "5. Each joined object is measured as a whole.",
         "",
+        *readme_viewer_lines(ctx.get("export")),
         "## How seam decisions were made",
         "",
     ]
@@ -518,7 +543,9 @@ def run_deliver(work, *, out=None, exclude_global_ids=None, overwrite: bool = Fa
     no_region = []
     if (work / "region_pairing.csv").exists():
         no_region = [r["tile"] for r in read_csv(work / "region_pairing.csv") if r["status"] == "no_region"]
+    export_path = work / "export_run.json"      # written by stitch_export, when a layer was exported
     ctx = {
+        "export": json.loads(export_path.read_text()) if export_path.exists() else None,
         "work": str(work), "voxel": voxel, "decisions": stats, "summary_all": s_all, "summary_core": s_core,
         "excluded_count": len(excluded_rows), "max_crop_voxels": int(run["max_crop_voxels"]),
         "unproofread": list(run.get("unproofread_tiles", [])), "run": run, "tiles": tiles, "no_region": no_region,
