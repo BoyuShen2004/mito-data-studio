@@ -18,6 +18,7 @@ No tile is read: everything comes from the phase 2-6 outputs. The design is in
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -150,6 +151,24 @@ def decision_stats(work: Path, resolved: list[dict], auto_path=None, spot_check_
                             "agreed": sum(r["decision"].strip().lower() == "yes" for r in rows),
                             "reviewers": sorted({r.get("reviewer", "") for r in rows} - {""})})
     return DecisionStats(counts, in_region, rules, len(auto_keys), spot_checks)
+
+
+def carry_stats(work: Path, resolved: list[dict]) -> dict | None:
+    """What ``stitch_carry_decisions`` carried into this work directory, or
+    ``None`` when it was not used: the earlier work directory, how many
+    earlier decisions were invalidated, and how many carried decisions are
+    still the decision ``stitch_objects`` used (a reviewer may have changed
+    one on the review page afterwards)."""
+    path = work / "carry_run.json"
+    if not path.exists():
+        return None
+    run = json.loads(path.read_text())
+    carried_file = Path(run.get("carried_file") or work / "decisions_carried.csv")
+    decision_of = {_pair_key(r): r["decision"] for r in resolved}
+    carried = read_decisions([carried_file]) if carried_file.exists() else []
+    kept = sum(decision_of.get(_pair_key(r)) == r["decision"].strip().lower() for r in carried)
+    return {"old_work": run.get("old_work", ""), "carried": len(carried), "kept": kept,
+            "invalidated": int(run.get("counts", {}).get("invalidated", 0)), "finished_at": run.get("finished_at", "")}
 
 
 # --- tables ------------------------------------------------------------------
@@ -418,6 +437,19 @@ def build_readme(ctx: dict) -> str:
     lines += [
         f"- **Human review.** {human:,} pair(s) were decided by reviewers on an offline review page that shows "
         "each pair on the electron microscopy images.",
+    ]
+    carry = ctx.get("carry")
+    if carry:
+        lines += [
+            f"- **Carried over from an earlier run.** {carry['kept']:,} of the reviewed decisions were made on an "
+            f"earlier stitching run (`{carry['old_work']}`) and carried over, because for each of them both "
+            "tiles, both labels (same voxel count) and their contact across the seam were unchanged"
+            + (f" ({carry['carried'] - carry['kept']:,} more were carried and then changed by a reviewer)"
+               if carry["carried"] != carry["kept"] else "")
+            + f". {carry['invalidated']:,} earlier decision(s) no longer applied, because a tile or label had "
+            "changed, and those pairs were reviewed again.",
+        ]
+    lines += [
         f"- **All candidate pairs** (from `decisions_resolved.csv`): {_counts_line(stats.counts)}.",
     ]
     if stats.in_region is not None:
@@ -519,6 +551,7 @@ def run_deliver(work, *, out=None, exclude_global_ids=None, overwrite: bool = Fa
     if (work / "region_pairing.csv").exists():
         no_region = [r["tile"] for r in read_csv(work / "region_pairing.csv") if r["status"] == "no_region"]
     ctx = {
+        "carry": carry_stats(work, data.resolved),
         "work": str(work), "voxel": voxel, "decisions": stats, "summary_all": s_all, "summary_core": s_core,
         "excluded_count": len(excluded_rows), "max_crop_voxels": int(run["max_crop_voxels"]),
         "unproofread": list(run.get("unproofread_tiles", [])), "run": run, "tiles": tiles, "no_region": no_region,
