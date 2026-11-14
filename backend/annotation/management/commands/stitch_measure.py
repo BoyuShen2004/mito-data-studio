@@ -74,6 +74,8 @@ class Command(BaseCommand):
             self.stderr.write(message)
             self.stderr.flush()
 
+        # Always say which voxel size is used: recorded resolutions have been wrong before (p7 was off by 4x).
+        log("voxel size used: {:g} x {:g} x {:g} nm (Z, Y, X), from --voxel-size-zyx".format(*opts["voxel_size_zyx"]))
         try:
             result = run_measure(opts["work"], opts["voxel_size_zyx"], unproofread=opts["unproofread_tiles"],
                                  max_crop_voxels=opts["max_crop_voxels"], region_only=opts["region_only"],
