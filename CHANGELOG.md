@@ -5,6 +5,13 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add `stitch_carry_decisions` for stitching re-runs: after tiles are added or
+  relabelled, it carries every earlier human seam decision that is still valid
+  into the new run, reports the invalidated ones with reasons
+  (`carry_report.csv`) and lists the candidates that still need review
+  (`needs_review.csv`, for `stitch_review --only`). Tiles of different sizes
+  sharing a seam were already supported and are now tested. No new
+  dependencies. See `docs/engineering/stitching.md`.
 - Add `measure_volume`: measures mitochondria in one large, already-stitched
   Neuroglancer precomputed volume (first use: p7) and writes the same delivery
   files as `stitch_deliver` (`mitochondria.csv`, `summary.csv`, `excluded.csv`,
