@@ -15,6 +15,7 @@ from unittest import skipUnless
 import numpy as np
 import scipy.ndimage as ndi
 from django.test import SimpleTestCase
+from scipy.spatial import cKDTree
 
 from annotation import stitching_deliver, stitching_measure
 from annotation.measurements import CROP_PAD, skeleton_length_nm, skeletonize_mask
@@ -23,6 +24,9 @@ from annotation.morphology import (
     Morphology,
     longest_path_nm,
     measure_morphology,
+    skeleton_branches,
+    smooth_path,
+    smoothed_cable_length_nm,
     skeleton_radii_nm,
     sphericity,
     width_stats_nm,
@@ -100,6 +104,96 @@ def y_shape(radius=80.0, arm=800.0):
         mask |= ((z - centre[0]) ** 2 + (y - centre[1] - along * dy) ** 2
                  + (x - centre[2] - along * dx) ** 2 <= radius ** 2)
     return mask
+
+
+def tube(centreline_nm, radius, pad=4):
+    """Every voxel within ``radius`` nm of a densely sampled centreline (nm, Z Y X):
+    a round tube with hemispherical ends, placed wherever the curve falls on the grid."""
+    curve = np.asarray(centreline_nm, float)
+    curve = curve - (curve.min(axis=0) - radius - pad * np.array(VOXEL))
+    shape = np.ceil((curve.max(axis=0) + radius + pad * np.array(VOXEL)) / VOXEL).astype(int) + 1
+    centres = np.indices(shape).reshape(3, -1).T * VOXEL
+    return (cKDTree(curve).query(centres)[0] <= radius).reshape(shape)
+
+
+def arc(radius_of_curvature, degrees, plane, n=6000):
+    t = np.linspace(0.0, math.radians(degrees), n)
+    a, b, flat = radius_of_curvature * np.cos(t), radius_of_curvature * np.sin(t), np.zeros(n)
+    return {"xy": np.stack([flat + 3.1, a, b], axis=1), "xz": np.stack([a, flat + 2.3, b], axis=1)}[plane]
+
+
+class SmoothedLengthTests(SimpleTestCase):
+    """The raw cable length runs long on anisotropic voxels; the smoothed one must not."""
+
+    def test_cylinder_between_two_z_planes(self):
+        # The worst case: the axis lies exactly between two Z planes and two Y rows, so the
+        # skeleton hops between them. The remaining excess is the dive into the flat ends' corners.
+        m = measure_morphology(cylinder_x(offset=(0.0, 0.0)), VOXEL)
+        self.assertGreater(m.length_nm, 2.5 * LENGTH)
+        self.assertAlmostEqual(m.length_smoothed_nm, LENGTH, delta=0.10 * LENGTH)
+        self.assertEqual((m.branch_points, m.endpoints), (0, 2))        # zigzag, not spurious branches
+
+    def test_capsules_on_and_off_the_grid(self):
+        tip_to_tip = LENGTH + 2 * RADIUS
+        for offset in ((0.0, 0.0), (7.0, 2.0)):
+            with self.subTest(offset=offset):
+                m = measure_morphology(capsule_x(offset=offset), VOXEL)
+                self.assertAlmostEqual(m.length_smoothed_nm, tip_to_tip, delta=0.02 * tip_to_tip)
+                self.assertGreater(m.length_nm, 1.05 * tip_to_tip)
+
+    def test_slanted_and_curved_tubes_of_known_length(self):
+        start = np.array([1.3, 2.1, 0.7])
+        slanted = np.linspace(start, start + 1600.0 * np.array([math.sin(math.radians(30)), 0.0,
+                                                                math.cos(math.radians(30))]), 4000)
+        cases = [("30 degrees in XZ", slanted, 1600.0), ("half circle in XY", arc(600.0, 180, "xy"), math.pi * 600.0),
+                 ("half circle in XZ", arc(600.0, 180, "xz"), math.pi * 600.0)]
+        for name, centreline, length in cases:
+            with self.subTest(name):
+                m = measure_morphology(tube(centreline, RADIUS), VOXEL)
+                true = length + 2 * RADIUS      # tip to tip along the centreline
+                self.assertAlmostEqual(m.length_smoothed_nm, true, delta=0.03 * true)
+                self.assertGreater(m.length_nm, 1.07 * true)             # what the raw length reads
+                self.assertEqual((m.branch_points, m.endpoints), (0, 2))
+
+    def test_y_branch_arms_add_up(self):
+        m = measure_morphology(y_shape(), VOXEL)
+        true = 3 * 800.0 + 3 * 80.0             # three arms, each to its tip
+        self.assertAlmostEqual(m.length_smoothed_nm, true, delta=0.03 * true)
+        self.assertGreater(m.length_nm, 1.05 * true)
+
+    def test_straight_paths_are_unchanged_and_zigzag_is_removed(self):
+        x = np.arange(0.0, 1601.0, 8.0)
+        straight = np.stack([np.zeros_like(x), np.zeros_like(x), x], axis=1)
+        edges = np.stack([np.arange(len(x) - 1), np.arange(1, len(x))], axis=1)
+        self.assertAlmostEqual(smoothed_cable_length_nm(straight, edges), 1600.0, places=6)
+        hopping = straight.copy()
+        hopping[1:-1:2, 0] = 30.0               # every other vertex one Z voxel up
+        raw = float(np.linalg.norm(np.diff(hopping, axis=0), axis=1).sum())
+        self.assertGreater(raw, 3 * 1600.0)
+        self.assertAlmostEqual(smoothed_cable_length_nm(hopping, edges), 1600.0, delta=0.02 * 1600.0)
+        # The ends never move, and a path too short to smooth is returned as is.
+        smoothed = smooth_path(hopping, 200.0)
+        np.testing.assert_array_equal(smoothed[[0, -1]], hopping[[0, -1]])
+        np.testing.assert_array_equal(smooth_path(hopping[:2], 200.0), hopping[:2])
+
+    def test_branches_cover_every_edge_once(self):
+        # A Y (node 1) with a loop hanging off one arm (node 4), and a separate closed ring.
+        edges = np.array([[0, 1], [1, 2], [1, 3], [3, 4], [4, 5], [5, 6], [6, 4], [7, 8], [8, 9], [9, 7]])
+        paths = skeleton_branches(10, edges)
+        walked = sorted(tuple(sorted(pair)) for path in paths for pair in zip(path, path[1:]))
+        self.assertEqual(walked, sorted(tuple(sorted(e)) for e in edges.tolist()))
+        self.assertIn([7, 8, 9, 7], paths)
+        # Branch points stay fixed: each path starts and ends on a node or closes on itself.
+        degree = np.bincount(edges.ravel(), minlength=10)
+        for path in paths:
+            self.assertTrue(path[0] == path[-1] or (degree[path[0]] != 2 and degree[path[-1]] != 2))
+
+    def test_no_skeleton_has_zero_length(self):
+        dust = np.zeros((10, 10, 10), bool)
+        dust[2:5, 2:5, 2:5] = True
+        m = measure_morphology(dust, VOXEL)
+        self.assertEqual((m.length_nm, m.length_smoothed_nm), (0.0, 0.0))
+        self.assertEqual(m.row()["length_smoothed_um"], "0.0")
 
 
 class WidthTests(SimpleTestCase):
@@ -326,12 +420,25 @@ class DeliveryColumnTests(SimpleTestCase):
         self.assertEqual(tuple(row), stitching_deliver.MITO_FIELDS)
         self.assertEqual({row[f] for f in MORPHOLOGY_FIELDS}, {""})
         self.assertEqual(row["core"], "true")
+        # ... and summarises with the smoothed-length statistics empty.
+        summary = stitching_deliver.summarise([row], [{n: False for n in stitching_deliver.NOT_CORE_REASONS}])
+        self.assertEqual((summary["length_um_median"], summary["length_smoothed_um_median"]), ("1.5", ""))
+
+    def test_summary_metrics_only_grow_at_the_end(self):
+        self.assertEqual(stitching_deliver.SUMMARY_METRICS[:14], (
+            "objects", "multi_tile", "length_measured", "length_skipped_too_large", "cut_off_at_data_edge",
+            "crosses_region_boundary", "touches_unproofread_tile", "unresolved_contacts", "volume_um3_median",
+            "volume_um3_p90", "volume_um3_max", "length_um_median", "length_um_p90", "length_um_max"))
+        self.assertEqual(stitching_deliver.SUMMARY_METRICS[14:], (
+            "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max"))
+        self.assertEqual(MORPHOLOGY_FIELDS[-1], "length_smoothed_um")
 
     def test_readme_documents_every_morphology_column(self):
         docs = stitching_deliver._column_docs(VOXEL)
         self.assertEqual(tuple(docs), stitching_deliver.MITO_FIELDS)
         text = "\n".join(stitching_deliver.readme_length_lines("Crop sentence.", 1000))
         self.assertIn("## How width and shape are measured", text)
+        self.assertIn("**Two lengths.**", text)
         self.assertIn("Euclidean distance", text)
 
 

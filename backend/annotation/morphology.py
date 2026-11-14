@@ -8,6 +8,9 @@ skeletonisation per object); everything else is computed from the mask.
   distance from a skeleton point to the nearest background voxel, with the
   anisotropic voxel size applied: the Euclidean distance transform, evaluated
   only at skeleton points. See ``skeleton_radii_nm``.
+- **Smoothed length** is the cable length of the same skeleton after each
+  branch is smoothed along its path. The raw cable length follows voxel
+  centres, so it zigzags and staircases; see ``smoothed_cable_length_nm``.
 - **Branch points / endpoints** are skeleton vertices of degree >= 3 / 1.
 - **Tortuosity** is cable length / end-to-end distance of the longest path.
 - **Surface area** is the marching-cubes surface of the lightly smoothed mask.
@@ -40,7 +43,10 @@ from annotation.third_party.em_erl_skel import cable_length
 SURFACE_SIGMA = 1.0
 MORPHOLOGY_FIELDS = ("width_mean_nm", "width_median_nm", "width_min_nm", "width_max_nm", "branch_points",
                      "endpoints", "longest_path_um", "end_to_end_um", "tortuosity", "surface_area_um2",
-                     "sphericity")
+                     "sphericity", "length_smoothed_um")
+# Smoothed length: moving average over this much path (nm), applied this many times.
+SMOOTH_WINDOW_NM = 200.0
+SMOOTH_PASSES = 2
 # Skeleton points are voxel centres; the true centreline can sit up to half a
 # voxel away. The radius is the best of the point and its half-voxel shifts.
 # Skeleton points closer to a skeleton end than this many of their own radii
@@ -54,6 +60,7 @@ class Morphology:
     """Features of one object. ``None`` means not available: no skeleton (an
     object below the dust size) or no measurable value."""
     length_nm: float = 0.0
+    length_smoothed_nm: float = 0.0
     width_mean_nm: float | None = None
     width_median_nm: float | None = None
     width_min_nm: float | None = None
@@ -77,7 +84,7 @@ class Morphology:
             "branch_points": text(self.branch_points), "endpoints": text(self.endpoints),
             "longest_path_um": text(self.longest_path_nm, 1e3), "end_to_end_um": text(self.end_to_end_nm, 1e3),
             "tortuosity": text(self.tortuosity), "surface_area_um2": text(self.surface_area_nm2, 1e6),
-            "sphericity": text(self.sphericity),
+            "sphericity": text(self.sphericity), "length_smoothed_um": text(self.length_smoothed_nm, 1e3),
         }
 
 
@@ -183,6 +190,86 @@ def longest_path_nm(vertices_nm: np.ndarray, edges: np.ndarray) -> tuple[float, 
     return best
 
 
+# --- smoothed length ---------------------------------------------------------
+
+def skeleton_branches(n_vertices: int, edges: np.ndarray) -> list[list[int]]:
+    """The skeleton as ordered vertex paths. Each path runs between two nodes
+    (vertices of degree other than 2: endpoints and branch points) through
+    degree-2 vertices only; every edge is in exactly one path. A closed loop
+    without a node is one path that starts and ends at the same vertex."""
+    neighbours: list[list[int]] = [[] for _ in range(n_vertices)]
+    for a, b in edges.tolist():
+        if a != b:
+            neighbours[a].append(b)
+            neighbours[b].append(a)
+    used: set[tuple[int, int]] = set()
+
+    def walk(start: int, nxt: int) -> list[int]:
+        path = [start, nxt]
+        used.update(((start, nxt), (nxt, start)))
+        while len(neighbours[path[-1]]) == 2 and path[-1] != start:
+            a, b = neighbours[path[-1]]
+            step = b if a == path[-2] else a
+            used.update(((path[-1], step), (step, path[-1])))
+            path.append(step)
+        return path
+
+    paths = []
+    for node in range(n_vertices):
+        if len(neighbours[node]) != 2:
+            paths += [walk(node, nxt) for nxt in neighbours[node] if (node, nxt) not in used]
+    for vertex in range(n_vertices):        # what is left are loops of degree-2 vertices
+        paths += [walk(vertex, nxt) for nxt in neighbours[vertex] if (vertex, nxt) not in used]
+    return paths
+
+
+def smooth_path(points: np.ndarray, window_nm: float) -> np.ndarray:
+    """``points`` (an ordered path, nm) with every point replaced by the mean
+    of the path within ``window_nm / 2`` of it along the path, weighted by the
+    cable each point stands for. The window shrinks toward the two ends, so
+    the first and last point do not move."""
+    if len(points) < 3:
+        return points
+    steps = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    along = np.concatenate([[0.0], np.cumsum(steps)])
+    weights = np.zeros(len(points))
+    weights[:-1] += steps / 2
+    weights[1:] += steps / 2
+    total_weight = np.concatenate([[0.0], np.cumsum(weights)])
+    total_points = np.vstack([np.zeros(3), np.cumsum(points * weights[:, None], axis=0)])
+    half = np.minimum(window_nm / 2, np.minimum(along, along[-1] - along))
+    first = np.searchsorted(along, along - half, "left")
+    last = np.searchsorted(along, along + half, "right")
+    smoothed = (total_points[last] - total_points[first]) / np.maximum(total_weight[last] - total_weight[first],
+                                                                       1e-12)[:, None]
+    smoothed[0], smoothed[-1] = points[0], points[-1]
+    return smoothed
+
+
+def smoothed_cable_length_nm(vertices_nm: np.ndarray, edges: np.ndarray, *, window_nm: float = SMOOTH_WINDOW_NM,
+                             passes: int = SMOOTH_PASSES) -> float:
+    """Cable length (nm) of the skeleton after smoothing each branch.
+
+    A TEASAR skeleton is a chain of voxel centres. Its raw length is too long
+    wherever the true centreline is not a row of voxels: it hops between two
+    equally central rows (30 nm per hop in Z), and it climbs oblique or curved
+    stretches in voxel steps. On (30, 8, 8) nm voxels that reads 6-40 % long
+    on test tubes, and 170 % on a cylinder centred between two Z planes.
+
+    Each branch is smoothed with ``smooth_path`` ``passes`` times; endpoints
+    and branch points stay where they are, so the topology and the ends are
+    unchanged. Bends tighter than about 2.5 tube radii are cut slightly
+    (2-6 % short)."""
+    vertices = np.asarray(vertices_nm, float)
+    total = 0.0
+    for path in skeleton_branches(len(vertices), np.asarray(edges, np.int64).reshape(-1, 2)):
+        points = vertices[path]
+        for _ in range(passes):
+            points = smooth_path(points, window_nm)
+        total += float(np.linalg.norm(np.diff(points, axis=0), axis=1).sum())
+    return total
+
+
 # --- surface -----------------------------------------------------------------
 
 def surface_area_nm2(mask: np.ndarray, voxel, *, sigma: float = SURFACE_SIGMA) -> float | None:
@@ -235,7 +322,7 @@ def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
     mean, median, low, high = width_stats_nm(skeleton_radii_nm(mask, vertices, voxel), vertices, edges)
     path, end_to_end = longest_path_nm(vertices, edges)
     return Morphology(
-        length_nm=length, width_mean_nm=mean, width_median_nm=median, width_min_nm=low, width_max_nm=high,
+        length_nm=length, length_smoothed_nm=smoothed_cable_length_nm(vertices, edges), width_mean_nm=mean, width_median_nm=median, width_min_nm=low, width_max_nm=high,
         branch_points=int(np.count_nonzero(degree >= 3)), endpoints=int(np.count_nonzero(degree == 1)),
         longest_path_nm=path if end_to_end > 0 else None, end_to_end_nm=end_to_end if end_to_end > 0 else None,
         tortuosity=length / end_to_end if end_to_end > 0 else None, **shape)

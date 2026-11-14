@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from annotation.measurements import CROP_PAD, DUST_SIZE, SKIPPED_CROP_LIMIT
-from annotation.morphology import MORPHOLOGY_FIELDS, SURFACE_SIGMA
+from annotation.morphology import MORPHOLOGY_FIELDS, SMOOTH_PASSES, SMOOTH_WINDOW_NM, SURFACE_SIGMA
 from annotation.stitching import (
     IN_REGION,
     REGION_VOXELS,
@@ -53,7 +53,9 @@ SUMMARY_FIELDS = ("metric", "all", "core")
 SUMMARY_METRICS = ("objects", "multi_tile", "length_measured", "length_skipped_too_large",
                    "cut_off_at_data_edge", "crosses_region_boundary", "touches_unproofread_tile",
                    "unresolved_contacts", "volume_um3_median", "volume_um3_p90", "volume_um3_max",
-                   "length_um_median", "length_um_p90", "length_um_max")
+                   "length_um_median", "length_um_p90", "length_um_max",
+                   # Added later: new metrics go at the end.
+                   "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max")
 EXCLUDED_FIELDS = ("mito_id", "excluded_global_ids", "n_tiles", "tiles", "volume_um3", "reaches_region")
 DELIVERY_FILES = ("mitochondria.csv", "summary.csv", "excluded.csv", "README.md")
 MEASURED, SKIPPED_TOO_LARGE = "measured", "skipped_too_large"
@@ -205,6 +207,10 @@ def summarise(rows: list[dict], flags: list[dict]) -> dict[str, object]:
     }
     out.update(zip(("volume_um3_median", "volume_um3_p90", "volume_um3_max"), _stats(volumes)))
     out.update(zip(("length_um_median", "length_um_p90", "length_um_max"), _stats(lengths)))
+    smoothed = [float(r["length_smoothed_um"]) for r in rows
+                if r["length_status"] == MEASURED and r.get("length_smoothed_um")]
+    out.update(zip(("length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max"),
+                   _stats(smoothed)))
     return out
 
 
@@ -268,6 +274,10 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
         "surface_area_um2": "Surface area in µm². Empty when `length_status` is `skipped_too_large`.",
         "sphericity": "How close the shape is to a sphere: the surface of a sphere of the same volume divided by "
                       "`surface_area_um2`. 1 for a sphere, about 0.6 for a rod five times longer than wide.",
+        "length_smoothed_um": "Length in µm of the same skeleton after smoothing it along its path (see *How "
+                              "length is measured*). Closer to the true centreline length than `length_um`, "
+                              "which runs long; compare the two before choosing one. Empty when `length_status` "
+                              "is `skipped_too_large`.",
     }
     return docs
 
@@ -287,6 +297,9 @@ SUMMARY_DOCS = {
     "length_um_median": "median length (µm), over measured lengths",
     "length_um_p90": "90th percentile of length (µm), over measured lengths",
     "length_um_max": "largest length (µm)",
+    "length_smoothed_um_median": "median smoothed length (µm), over measured lengths",
+    "length_smoothed_um_p90": "90th percentile of smoothed length (µm)",
+    "length_smoothed_um_max": "largest smoothed length (µm)",
 }
 EXCLUDED_DOCS = {
     "mito_id": "the excluded object",
@@ -374,6 +387,17 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         f"{crop_sentence} Objects whose box would exceed "
         f"{max_crop_voxels:,} voxels are not skeletonised (`length_status` = `skipped_too_large`); their "
         "volume, box and centroid are still exact.",
+        "",
+        "**Two lengths.** `length_um` is the raw cable length, as in earlier deliveries. A skeleton is a chain "
+        "of voxel centres, so the raw length runs long wherever the true centreline is not a straight row of "
+        "voxels: it hops between neighbouring rows and climbs slanted or curved stretches in voxel steps. On "
+        "test tubes of known length it reads 6 to 40 % long, least for objects running along Z and most for "
+        "slanted, curved or rough ones. `length_smoothed_um` is the length of the same skeleton after each "
+        f"branch is smoothed along its path (moving average over {SMOOTH_WINDOW_NM:g} nm, applied "
+        f"{SMOOTH_PASSES} times; ends and branch points do not move). On the same test tubes it is within "
+        "about 3 % for straight, slanted and gently curved shapes, up to 8 % long on very rough ones, and 2 to "
+        "6 % short on bends tighter than about 2.5 tube radii. Both are given so they can be compared on this "
+        "dataset; they describe the same skeleton.",
         "",
         "## How width and shape are measured",
         "",
