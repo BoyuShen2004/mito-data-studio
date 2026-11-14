@@ -35,9 +35,9 @@ from annotation.measurements import (
     CROP_PAD,
     SKIPPED_CROP_LIMIT,
     MeasurementError,
-    skeleton_length_nm,
     validate_voxel_size,
 )
+from annotation.morphology import EMPTY_ROW, MORPHOLOGY_FIELDS, Morphology, measure_morphology
 from annotation.stitching import (
     REGION_VOXELS,
     StitchingError,
@@ -61,7 +61,7 @@ BBOX_FIELDS = ("bbox_z0", "bbox_z1", "bbox_y0", "bbox_y1", "bbox_x0", "bbox_x1")
 CENTER_FIELDS = ("center_z_nm", "center_y_nm", "center_x_nm")
 MEASUREMENTS_FIELDS = ("object_id", "member_count", "tiles", "voxel_count", "volume_um3", "skeleton_length_um",
                        "touches_edge", "edge_faces", "skipped_reason", "unresolved_contacts", "unproofread_tiles",
-                       *BBOX_FIELDS, *CENTER_FIELDS)
+                       *BBOX_FIELDS, *CENTER_FIELDS, *MORPHOLOGY_FIELDS)
 # Every label's bounding box from the pass-1 scan, so phase 7 can crop without a full read.
 LABEL_BOXES_FIELDS = ("global_id", "tile", "local_id", "z0", "z1", "y0", "y1", "x0", "x1")
 # Parameters of the last run, for phase 7's report.
@@ -88,6 +88,12 @@ class StitchedObject:
     region_voxels: int | None = None                # None without region data
     box: tuple[int, ...] = ()                       # union of the members' boxes, region coordinates
     coord_sums: tuple[int, int, int] = (0, 0, 0)    # sum of z, y, x over the object's voxels
+    morphology: Morphology | None = None            # None when skipped (crop_limit)
+
+    def measure(self, mask: np.ndarray, voxel_size) -> None:
+        """Cable length and morphology from the object's assembled mask."""
+        self.morphology = measure_morphology(mask, voxel_size)
+        self.skeleton_length_um = self.morphology.length_nm / 1000.0
 
     def row(self, voxel_size) -> dict:
         voxel_nm3 = voxel_size[0] * voxel_size[1] * voxel_size[2]
@@ -107,6 +113,7 @@ class StitchedObject:
             **dict(zip(BBOX_FIELDS, self.box)),
             # Centroid: mean voxel index times the voxel size (voxel i is at i * size nm).
             **{f: repr(self.coord_sums[a] / self.voxel_count * voxel_size[a]) for a, f in enumerate(CENTER_FIELDS)},
+            **(self.morphology.row() if self.morphology is not None else EMPTY_ROW),
             **region,
         }
 
@@ -359,7 +366,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
                     continue
                 mask = assemble_mask(window, parts)
                 _set_moments(obj, mask_moments(mask, window))
-                obj.skeleton_length_um = skeleton_length_nm(mask, voxel_size) / 1000.0
+                obj.measure(mask, voxel_size)
                 measured += 1
         log(f"tile {index}/{len(tiles)} {tile.name}: {len(summary['bboxes'])} label(s), "
             f"{measured} single-tile object(s) measured, {skipped} skipped (crop_limit) "
@@ -390,7 +397,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
             log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.tiles)} tiles, crop {size} "
                 f"= {box_voxels(window)} voxels > {max_crop_voxels}; skipped (crop_limit)")
             continue
-        obj.skeleton_length_um = skeleton_length_nm(mask, voxel_size) / 1000.0
+        obj.measure(mask, voxel_size)
         log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.members)} label(s) in {len(obj.tiles)} tiles, "
             f"crop {size}, {obj.skeleton_length_um:.4g} um in {time.monotonic() - t0:.1f}s")
 

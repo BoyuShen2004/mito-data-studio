@@ -40,9 +40,9 @@ from annotation.measurements import (
     CROP_PAD,
     SKIPPED_CROP_LIMIT,
     MeasurementError,
-    skeleton_length_nm,
     validate_voxel_size,
 )
+from annotation.morphology import EMPTY_ROW, Morphology, measure_morphology
 from annotation.stitching import REGION_VOXELS, StitchingError, _listing, code_revision, write_csv
 from annotation.stitching_deliver import (
     DELIVERY_FILES,
@@ -296,6 +296,7 @@ class LabelMeasurement:
     coord_sums: tuple[int, int, int] = (0, 0, 0)
     skeleton_length_um: float | None = None
     skipped_reason: str = ""
+    morphology: Morphology | None = None    # None when skipped (crop_limit)
 
     def center_nm(self, voxel) -> list[str]:
         return [repr(self.coord_sums[a] / self.voxel_count * voxel[a]) for a in range(3)]
@@ -332,7 +333,8 @@ def measure_label(store, lid: int, stats: LabelStats, volume_box, voxel, max_cro
                                  "did the volume change during the run?")
     m.coord_sums = moments[1]
     if not m.skipped_reason:
-        m.skeleton_length_um = skeleton_length_nm(mask, voxel) / 1000.0
+        m.morphology = measure_morphology(mask, voxel)
+        m.skeleton_length_um = m.morphology.length_nm / 1000.0
     return m
 
 
@@ -351,6 +353,7 @@ def delivery_row(m: LabelMeasurement, name: str, voxel) -> tuple[dict, dict[str,
         "unproofread_tiles": 0, "unresolved_contacts": 0, "tiles": name,
         REGION_VOXELS: region or 0, "frac_in_region": "" if region is None else repr(region / m.voxel_count),
         **dict(zip(BBOX_FIELDS, m.box)), **dict(zip(CENTER_FIELDS, m.center_nm(voxel))),
+        **(m.morphology.row() if m.morphology is not None else EMPTY_ROW),
     }
     row, flags = mito_row(measured, voxel_nm3)
     if region is None:      # no region mask: the region columns are empty, not zero
@@ -560,6 +563,9 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
         read_exclusions(exclude_label_ids, _AnyLabel(), what="label id", source="the volume")
 
     matches = _same(label_vol.resolution, voxel)
+    # Always say which voxel size is used: p7's recorded resolution was off by 4x.
+    log("voxel size used: {:g} x {:g} x {:g} nm (Z, Y, X), from --voxel-size-zyx; the labels' metadata says "
+        "{:g} x {:g} x {:g}".format(*voxel, *label_vol.resolution))
     if not matches:
         log(f"voxel size {voxel} nm (Z, Y, X) overrides the labels' metadata {label_vol.resolution}")
     if region_vol is not None and not _same(region_vol.resolution, label_vol.resolution):

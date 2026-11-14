@@ -5,6 +5,13 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add morphology columns to `stitch_measure`, `measure_volume` and the
+  delivery (`mitochondria.csv`, appended after the existing columns): width
+  mean/median/min/max from an anisotropic Euclidean distance transform sampled
+  along the skeleton (not kimimaro's radius), branch point and endpoint counts,
+  longest path, end-to-end distance, tortuosity, surface area and sphericity.
+  Both commands now always log the voxel size they use. No new dependencies,
+  no database, API or UI changes. See `docs/engineering/stitching.md`.
 - Add `measure_volume`: measures mitochondria in one large, already-stitched
   Neuroglancer precomputed volume (first use: p7) and writes the same delivery
   files as `stitch_deliver` (`mitochondria.csv`, `summary.csv`, `excluded.csv`,
