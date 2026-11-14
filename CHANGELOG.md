@@ -5,6 +5,12 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add `stitch_export`: writes the stitched segmentation as a Neuroglancer
+  precomputed layer (uint64 object IDs = the delivery's `mito_id`, dataset
+  voxel coordinates, unsharded `compressed_segmentation`) for viewing and
+  spot-checking seams. Uses tensorstore, already required; no new
+  dependencies. The delivery README names the layer when one was exported.
+  See `docs/engineering/stitching.md`.
 - Add `measure_volume`: measures mitochondria in one large, already-stitched
   Neuroglancer precomputed volume (first use: p7) and writes the same delivery
   files as `stitch_deliver` (`mitochondria.csv`, `summary.csv`, `excluded.csv`,

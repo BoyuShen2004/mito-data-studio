@@ -2,7 +2,9 @@
 
 Status: phases 1-7 are implemented (offline management commands), plus
 auto-accepting clear-cut merges (`stitch_auto_decisions`) and optional region
-(ROI) awareness (see [Regions](#regions-roi)). A volume that was already
+(ROI) awareness (see [Regions](#regions-roi)), and `stitch_export`, which
+writes the stitched objects as a Neuroglancer layer (see
+[Neuroglancer export](#neuroglancer-export)). A volume that was already
 stitched upstream is measured with `measure_volume` instead, into the same
 delivery files (see
 [Measuring an upstream-stitched volume](#measuring-an-upstream-stitched-volume)).
@@ -745,6 +747,55 @@ slow with the fixture's 3,000,000,123 ID. The tests cover:
 - refusal of a region on another grid, unexpected files and sharded scales;
 - column sets identical to `stitch_deliver`'s.
 
+## Neuroglancer export
+
+`stitch_export` writes the stitched segmentation as one Neuroglancer
+precomputed layer, so the result can be viewed and seams spot-checked. It needs
+phases 1-5 (`tiles.csv`, `tile_ids.csv`, `id_map.csv`, `objects.csv`) and
+reads every tile once. It is offline like the other commands and changes no
+input.
+
+```bash
+python manage.py stitch_export --work /scratch/stitch_p10 --out /scratch/p10_stitched \
+    --voxel-size-zyx 30 8 8 2>&1 | tee /scratch/stitch_p10/export.log
+```
+
+- **IDs.** Each voxel holds its stitched object's `object_id` (the delivery's
+  `mito_id`) as uint64. `--ids label` writes each label's own global ID
+  instead: the pieces before merging, which shows where a seam was not joined.
+- **Coordinates.** The layer covers the bounding box of all tiles, and its
+  `voxel_offset` is that box's lowest corner. Voxel coordinates in Neuroglancer
+  are therefore the dataset's: the tile names' and the bbox columns'.
+- **Resolution.** `--voxel-size-zyx Z Y X` in nm is required, logged, and
+  written as the layer's resolution in precomputed's (x, y, z) order. Nothing
+  is read from tile metadata.
+- **Format.** Scale 0 only, unsharded, `compressed_segmentation` (8 x 8 x 8
+  blocks), chunks 128 x 128 x 64 (x, y, z; `--chunk-size-xyz`). This is the
+  layout `measure_volume` reads, and a test measures an export with it.
+- **Sparse grids.** A position with no tile is background. All-background
+  chunks are not stored, so the missing slab costs nothing.
+- **`--region-only`** writes only objects that reach into the region (total
+  `region_voxels > 0`), whole, as `stitch_measure --region-only` lists them.
+- **Streaming.** A tile is read and written in blocks of at most 512 MB of
+  output, cut on the layer's chunk grid in Z and Y, so no tile is held whole.
+  Local IDs map through a lookup table, or through `np.unique` when a tile's
+  largest local ID is above 2^26.
+- **Refusals.** A tile changed since `stitch_ids`, a label missing from
+  `id_map.csv`, `objects.csv` not covering `id_map.csv`, and a non-empty
+  `--out` are refused. `--overwrite` replaces an existing layer, and only a
+  folder that holds a precomputed `info`.
+- It writes `export_run.json` in the work directory (command, layer path, ID
+  mode, voxel size, size, offset, chunk size, counts, code revision, time).
+  `stitch_deliver` names the layer in the delivery README when it exists.
+
+Run it after `stitch_objects`; rerun it whenever decisions change. It does not
+need phase 6.
+
+**Viewing.** Serve the layer folder over HTTP with CORS enabled and add it in
+Neuroglancer as `precomputed://http://<host>:<port>/`. Add the raw image as a
+second layer for context. There is one scale only, so zoomed-out views of a
+large region load slowly; zoom in to a seam first.
+
 ## CLI
 
 All commands are offline, read-only for inputs, and write into a work
@@ -830,6 +881,10 @@ python manage.py stitch_validate --work /scratch/stitch_p10
 python manage.py stitch_deliver --work /scratch/stitch_p10 --exclude-global-ids not_mito.txt \
     --spot-check /scratch/stitch_p10/decisions_auto_sample_50_seed1.csv
 ```
+
+`stitch_export` takes `--out DIR` and `--voxel-size-zyx Z Y X` (both
+required), `--ids object|label` (default `object`), `--region-only`,
+`--chunk-size-xyz X Y Z` (default `128 128 64`) and `--overwrite`.
 
 `stitch_validate` takes `--top N` (default 20). `stitch_deliver` takes
 `--exclude-global-ids FILE`, `--out DIR` (default `<work>/delivery`),
@@ -1029,6 +1084,11 @@ global_id,tile,local_id,z0,z1,y0,y1,x0,x1
 `region_only`, `max_crop_voxels`, `unproofread_tiles` (names, tile order),
 `code_revision`, `finished_at` (UTC), `command`.
 
+`export_run.json` — from `stitch_export`: `command`, `layer`, `ids`,
+`region_only`, `voxel_size_zyx_nm`, `size_xyz`, `voxel_offset_xyz`,
+`chunk_size_xyz`, `scale_key`, `encoding`, `counts` (`tiles`, `segments`,
+`labelled_voxels`, `seconds`), `code_revision`, `finished_at` (UTC).
+
 `validate_repeated_tile.csv` — from `stitch_validate`, by `object_id` then
 tile order:
 
@@ -1082,6 +1142,9 @@ in it.
 - `backend/annotation/volume_measure.py` and
   `management/commands/measure_volume.py` — measuring an upstream-stitched
   Neuroglancer volume (tensorstore reads, chunk listing, both passes, README).
+- `backend/annotation/stitching_export.py` and
+  `management/commands/stitch_export.py` — the Neuroglancer precomputed layer
+  of stitched objects (tensorstore writes, block streaming, ID mapping).
 - `backend/annotation/stitching_review.py` — image pairing, card geometry, PNG
   rendering (Pillow), and the review page (HTML, CSS and a small script inlined
   in one template).
@@ -1111,8 +1174,15 @@ in it.
     exclusions; the core flag and reasons on a region layout that produces
     every reason; the README naming every column.
 
+- `backend/annotation/test_stitching_export.py` — round trips: tiles at a
+  nonzero origin, in two sizes, with a missing position, are stitched,
+  exported and read back with tensorstore. Every voxel must hold its object's
+  ID at its dataset coordinate; boxes and voxel counts must equal
+  `stitch_measure`'s; `measure_volume` must read the export; IDs above 2^63
+  must survive exactly.
+
 ```bash
-python manage.py test annotation.test_stitching
+python manage.py test annotation.test_stitching annotation.test_stitching_export
 ```
 
 ## Known limits
@@ -1147,6 +1217,11 @@ python manage.py test annotation.test_stitching
   each repeated-tile object's labels in that tile; `stitch_deliver` reads no
   tile. Over-limit objects in phase 6 cost one extra read of their window
   (for the centroid).
+- **Export cost.** `stitch_export` reads every tile once and writes uint64
+  chunks; a tile off the layer's chunk grid makes the chunks it shares with a
+  neighbour be written twice. Only scale 0 is written (no downsampled levels,
+  no meshes or segment properties), so Neuroglancer is slow when zoomed out.
+  The export has not been run on real data yet.
 - **Sparse label IDs.** The label scan reuses the per-volume code's
   `scipy.ndimage.find_objects`, whose memory grows with a slice's largest
   label ID. Tiles with very sparse IDs in the billions would need a different
