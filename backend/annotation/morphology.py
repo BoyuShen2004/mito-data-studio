@@ -45,7 +45,7 @@ from annotation.third_party.em_erl_skel import cable_length
 SURFACE_SIGMA = 1.0
 MORPHOLOGY_FIELDS = ("width_mean_nm", "width_median_nm", "width_min_nm", "width_max_nm", "branch_points",
                      "endpoints", "longest_path_um", "end_to_end_um", "tortuosity", "surface_area_um2",
-                     "sphericity", "length_smoothed_um", "longest_path_smoothed_um")
+                     "sphericity", "length_smoothed_um", "longest_path_smoothed_um", "short_object")
 # Smoothed length: moving average over this much path (nm), applied this many times.
 SMOOTH_WINDOW_NM = 200.0
 SMOOTH_PASSES = 2
@@ -54,12 +54,17 @@ SMOOTH_PASSES = 2
 # Skeleton points closer to a skeleton end than this many of their own radii
 # are left out of the width statistics (see ``width_stats_nm``).
 END_CAP_FACTOR = 1.5
+# An object whose smoothed length is below this many times its largest width is flagged
+# ``short_object``: its length is then within 10 % of the truth only about five times in six
+# (errors up to 17 % on test capsules and blobs), against 363 of 366 above the threshold.
+SHORT_OBJECT_ASPECT = 1.5
 # Identifies how the numbers were made; written to measure_run.json, the logs and the delivery
 # README. Raise the number whenever a definition or a parameter changes.
-METHOD_VERSION = (f"morphology/2 (length: TEASAR cable; smoothed length: branch moving average "
+METHOD_VERSION = (f"morphology/3 (length: TEASAR cable; smoothed length: branch moving average "
                   f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}; tortuosity: smoothed longest path / end-to-end; "
                   f"width: anisotropic EDT, tips within {END_CAP_FACTOR:g} radii left out; "
-                  f"surface: marching cubes, sigma {SURFACE_SIGMA:g} voxel)")
+                  f"surface: marching cubes, sigma {SURFACE_SIGMA:g} voxel; "
+                  f"short_object: smoothed length < {SHORT_OBJECT_ASPECT:g} x largest width)")
 _HALF_STEPS = np.array(list(itertools.product((0.0, -0.5, 0.5), repeat=3)))
 
 
@@ -82,6 +87,14 @@ class Morphology:
     surface_area_nm2: float | None = None
     sphericity: float | None = None
 
+    @property
+    def short_object(self) -> bool | None:
+        """True when the object is too short for its width for the length to be reliable;
+        ``None`` without a skeleton width."""
+        if self.width_max_nm is None:
+            return None
+        return self.length_smoothed_nm < SHORT_OBJECT_ASPECT * self.width_max_nm
+
     def row(self) -> dict[str, str]:
         """The ``MORPHOLOGY_FIELDS`` columns (empty where not available)."""
         def text(value, scale=1.0):
@@ -95,6 +108,7 @@ class Morphology:
             "tortuosity": text(self.tortuosity), "surface_area_um2": text(self.surface_area_nm2, 1e6),
             "sphericity": text(self.sphericity), "length_smoothed_um": text(self.length_smoothed_nm, 1e3),
             "longest_path_smoothed_um": text(self.longest_path_smoothed_nm, 1e3),
+            "short_object": "" if self.short_object is None else "true" if self.short_object else "false",
         }
 
 

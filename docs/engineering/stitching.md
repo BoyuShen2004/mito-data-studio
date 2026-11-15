@@ -1049,10 +1049,10 @@ It has no `decision` column, so importing it into a page decides nothing.
 `measurements.csv` — one row per object, sorted by `object_id`:
 
 ```text
-object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um
+object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
 ```
 
-- The last thirteen columns are the morphology columns (phase 6,
+- The last fourteen columns are the morphology columns (phase 6,
   **Morphology**): full-precision floats, or integers for the two counts.
   Region columns, when present, still come after them.
 
@@ -1112,7 +1112,7 @@ ranked_by,rank,object_id,member_count,tiles,length_um,volume_um3,bbox_z0,bbox_z1
 `delivery/mitochondria.csv` — from `stitch_deliver`, by `mito_id`:
 
 ```text
-mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um
+mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
 ```
 
 The delivery format only grows at the end: the first 22 columns are those of
@@ -1124,7 +1124,7 @@ before they existed delivers with them empty.
 length_measured, length_skipped_too_large, cut_off_at_data_edge,
 crosses_region_boundary, touches_unproofread_tile, unresolved_contacts,
 volume_um3_{median,p90,max}, length_um_{median,p90,max},
-length_smoothed_um_{median,p90,max}`. Statistics are empty when there are no
+length_smoothed_um_{median,p90,max}, short_object` (a count). Statistics are empty when there are no
 values. New metrics are added at the end only.
 
 `delivery/excluded.csv`:
@@ -1291,7 +1291,10 @@ python manage.py test annotation.test_stitching annotation.test_morphology
   more, 363 of 366 cases are within 10 % (worst 13 %, an object along Z);
   below 1.5, 136 of 162 are, and errors reach 17 %. The raw length reads
   20-36 % long on average across the same capsules. Near-spherical blobs read
-  1-15 % above their diameter. There is no flag for this yet.
+  1-15 % above their diameter. The `short_object` column is `true` below
+  1.5 (`SHORT_OBJECT_ASPECT`), `false` otherwise and empty without a
+  skeleton; `summary.csv` counts them. It does not change `core` and does not
+  cover the Z bias below.
 - **Objects along Z read short.** A capsule whose axis is within about 15
   degrees of Z reads 3-13 % short in the smoothed length (mean -5 % at five
   widths long, -8 to -11 % at two), because the skeleton stops one or two

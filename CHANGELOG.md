@@ -14,7 +14,9 @@ follows semantic versioning for tagged releases.
   the same skeleton's length after smoothing each branch, because the raw
   cable length reads 6-40 % long on anisotropic voxels; `length_um` is
   unchanged. `tortuosity` is the smoothed longest path over its end-to-end
-  distance (`longest_path_smoothed_um` is a column too). Both commands now
+  distance (`longest_path_smoothed_um` is a column too). `short_object` flags
+  objects whose smoothed length is under 1.5 times their largest width, where
+  a skeleton length is unreliable (counted in `summary.csv`). Both commands now
   always log the voxel size they use and a method version string, which is
   also written to `measure_run.json` and the delivery README. No new dependencies,
   no database, API or UI changes. See `docs/engineering/stitching.md`.

@@ -209,9 +209,23 @@ class SmoothedLengthTests(SimpleTestCase):
     def test_method_version_names_the_parameters(self):
         from annotation.morphology import METHOD_VERSION, SMOOTH_PASSES, SMOOTH_WINDOW_NM
 
-        self.assertTrue(METHOD_VERSION.startswith("morphology/2 "))
+        self.assertTrue(METHOD_VERSION.startswith("morphology/3 "))
         self.assertIn(f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}", METHOD_VERSION)
         self.assertIn("tortuosity: smoothed longest path / end-to-end", METHOD_VERSION)
+        self.assertIn("short_object: smoothed length < 1.5 x largest width", METHOD_VERSION)
+
+    def test_short_object_flags_round_objects_only(self):
+        ball = measure_morphology(sphere(), VOXEL)
+        self.assertLess(ball.length_smoothed_nm, 1.5 * ball.width_max_nm)
+        self.assertEqual((ball.short_object, ball.row()["short_object"]), (True, "true"))
+        rod = measure_morphology(capsule_x(), VOXEL)
+        self.assertEqual((rod.short_object, rod.row()["short_object"]), (False, "false"))
+        # The threshold itself: flagged strictly below 1.5 widths.
+        self.assertFalse(Morphology(length_smoothed_nm=300.0, width_max_nm=200.0).short_object)
+        self.assertTrue(Morphology(length_smoothed_nm=299.0, width_max_nm=200.0).short_object)
+        # No skeleton, no width: the flag is empty, not false.
+        self.assertIsNone(Morphology().short_object)
+        self.assertEqual(Morphology().row()["short_object"], "")
 
     def test_no_skeleton_has_zero_length(self):
         dust = np.zeros((10, 10, 10), bool)
@@ -456,6 +470,10 @@ class DeliveryColumnTests(SimpleTestCase):
         # ... and summarises with the smoothed-length statistics empty.
         summary = stitching_deliver.summarise([row], [{n: False for n in stitching_deliver.NOT_CORE_REASONS}])
         self.assertEqual((summary["length_um_median"], summary["length_smoothed_um_median"]), ("1.5", ""))
+        self.assertEqual((row["short_object"], summary["short_object"]), ("", 0))
+        self.assertEqual(stitching_deliver.summarise([{**row, "short_object": "true"}, row],
+                                                     [{n: False for n in stitching_deliver.NOT_CORE_REASONS}] * 2)
+                         ["short_object"], 1)
 
     def test_summary_metrics_only_grow_at_the_end(self):
         self.assertEqual(stitching_deliver.SUMMARY_METRICS[:14], (
@@ -463,8 +481,9 @@ class DeliveryColumnTests(SimpleTestCase):
             "crosses_region_boundary", "touches_unproofread_tile", "unresolved_contacts", "volume_um3_median",
             "volume_um3_p90", "volume_um3_max", "length_um_median", "length_um_p90", "length_um_max"))
         self.assertEqual(stitching_deliver.SUMMARY_METRICS[14:], (
-            "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max"))
-        self.assertEqual(MORPHOLOGY_FIELDS[-2:], ("length_smoothed_um", "longest_path_smoothed_um"))
+            "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max", "short_object"))
+        self.assertEqual(MORPHOLOGY_FIELDS[-3:],
+                         ("length_smoothed_um", "longest_path_smoothed_um", "short_object"))
 
     def test_readme_documents_every_morphology_column(self):
         docs = stitching_deliver._column_docs(VOXEL)

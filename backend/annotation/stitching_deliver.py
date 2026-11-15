@@ -25,7 +25,13 @@ from pathlib import Path
 import numpy as np
 
 from annotation.measurements import CROP_PAD, DUST_SIZE, SKIPPED_CROP_LIMIT
-from annotation.morphology import MORPHOLOGY_FIELDS, SMOOTH_PASSES, SMOOTH_WINDOW_NM, SURFACE_SIGMA
+from annotation.morphology import (
+    MORPHOLOGY_FIELDS,
+    SHORT_OBJECT_ASPECT,
+    SMOOTH_PASSES,
+    SMOOTH_WINDOW_NM,
+    SURFACE_SIGMA,
+)
 from annotation.stitching import (
     IN_REGION,
     REGION_VOXELS,
@@ -55,7 +61,8 @@ SUMMARY_METRICS = ("objects", "multi_tile", "length_measured", "length_skipped_t
                    "unresolved_contacts", "volume_um3_median", "volume_um3_p90", "volume_um3_max",
                    "length_um_median", "length_um_p90", "length_um_max",
                    # Added later: new metrics go at the end.
-                   "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max")
+                   "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max",
+                   "short_object")
 EXCLUDED_FIELDS = ("mito_id", "excluded_global_ids", "n_tiles", "tiles", "volume_um3", "reaches_region")
 DELIVERY_FILES = ("mitochondria.csv", "summary.csv", "excluded.csv", "README.md")
 MEASURED, SKIPPED_TOO_LARGE = "measured", "skipped_too_large"
@@ -211,6 +218,7 @@ def summarise(rows: list[dict], flags: list[dict]) -> dict[str, object]:
                 if r["length_status"] == MEASURED and r.get("length_smoothed_um")]
     out.update(zip(("length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max"),
                    _stats(smoothed)))
+    out["short_object"] = sum(r.get("short_object") == "true" for r in rows)
     return out
 
 
@@ -280,6 +288,10 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
                               "is `skipped_too_large`.",
         "longest_path_smoothed_um": "Length in µm of the main path after the same smoothing. The numerator of "
                                     "`tortuosity`.",
+        "short_object": f"`true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times `width_max_nm`: "
+                        "the object is about as wide as it is long, and both lengths and `tortuosity` are "
+                        "then unreliable (see *How length is measured*). Use volume and `width_max_nm` for "
+                        "these. Does not affect `core`. Empty when there is no skeleton.",
     }
     return docs
 
@@ -302,6 +314,7 @@ SUMMARY_DOCS = {
     "length_smoothed_um_median": "median smoothed length (µm), over measured lengths",
     "length_smoothed_um_p90": "90th percentile of smoothed length (µm)",
     "length_smoothed_um_max": "largest smoothed length (µm)",
+    "short_object": "how many are flagged `short_object` (length unreliable)",
 }
 EXCLUDED_DOCS = {
     "mito_id": "the excluded object",
@@ -400,6 +413,13 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "about 3 % for straight, slanted and gently curved shapes, up to 8 % long on very rough ones, and 2 to "
         "6 % short on bends tighter than about 2.5 tube radii. Both are given so they can be compared on this "
         "dataset; they describe the same skeleton.",
+        "",
+        "**Short objects.** A skeleton length means little for an object that is about as wide as it is long. "
+        f"`short_object` is `true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times "
+        "`width_max_nm`. On test capsules and near-spheres of known size, the smoothed length of flagged objects "
+        "was within 10 % about five times in six (worst 17 %; near-spheres read 1 to 15 % above their "
+        "diameter); unflagged ones were within 10 % in 363 of 366 cases (worst 13 %). The flag does not cover "
+        "one other bias: an elongated object running along Z reads 3 to 13 % short.",
         "",
         "## How width and shape are measured",
         "",
