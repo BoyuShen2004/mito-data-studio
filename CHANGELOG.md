@@ -11,6 +11,21 @@ follows semantic versioning for tagged releases.
   spot-checking seams. Uses tensorstore, already required; no new
   dependencies. The delivery README names the layer when one was exported.
   See `docs/engineering/stitching.md`.
+- Add morphology columns to `stitch_measure`, `measure_volume` and the
+  delivery (`mitochondria.csv`, appended after the existing columns): width
+  mean/median/min/max from an anisotropic Euclidean distance transform sampled
+  along the skeleton (not kimimaro's radius), branch point and endpoint counts,
+  longest path, end-to-end distance, tortuosity, surface area and sphericity.
+  Also adds `length_smoothed_um` (and its three `summary.csv` statistics):
+  the same skeleton's length after smoothing each branch, because the raw
+  cable length reads 6-40 % long on anisotropic voxels; `length_um` is
+  unchanged. `tortuosity` is the smoothed longest path over its end-to-end
+  distance (`longest_path_smoothed_um` is a column too). `short_object` flags
+  objects whose smoothed length is under 1.5 times their largest width, where
+  a skeleton length is unreliable (counted in `summary.csv`). Both commands now
+  always log the voxel size they use and a method version string, which is
+  also written to `measure_run.json` and the delivery README. No new dependencies,
+  no database, API or UI changes. See `docs/engineering/stitching.md`.
 - Add `measure_volume`: measures mitochondria in one large, already-stitched
   Neuroglancer precomputed volume (first use: p7) and writes the same delivery
   files as `stitch_deliver` (`mitochondria.csv`, `summary.csv`, `excluded.csv`,

@@ -47,14 +47,21 @@ def validate_voxel_size(voxel_size_zyx) -> tuple[float, float, float]:
     return values
 
 
-def skeleton_length_nm(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE) -> float:
-    """Cable length in nm of the skeleton of a binary (Z, Y, X) mask."""
+def skeletonize_mask(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE):
+    """The TEASAR skeleton of a binary (Z, Y, X) mask, vertices in nm, or
+    ``None`` when there is none (empty mask, or below the dust size)."""
     res = validate_voxel_size(voxel_size_zyx)
     labels = (np.asarray(mask) > 0).astype(np.uint8)
     skels = vol_to_skel(labels, obj_ids=[1], res=res, dust_size=dust_size, progress=False)
-    if not skels:
+    return skels[1] if skels else None
+
+
+def skeleton_length_nm(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE) -> float:
+    """Cable length in nm of the skeleton of a binary (Z, Y, X) mask."""
+    skeleton = skeletonize_mask(mask, voxel_size_zyx, dust_size=dust_size)
+    if skeleton is None:
         return 0.0
-    rows = skel_to_length(skels, res=[1, 1, 1])
+    rows = skel_to_length({1: skeleton}, res=[1, 1, 1])
     return float(rows[0, 1])
 
 
