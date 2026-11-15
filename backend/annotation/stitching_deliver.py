@@ -26,6 +26,13 @@ from pathlib import Path
 import numpy as np
 
 from annotation.measurements import CROP_PAD, DUST_SIZE, SKIPPED_CROP_LIMIT
+from annotation.morphology import (
+    MORPHOLOGY_FIELDS,
+    SHORT_OBJECT_ASPECT,
+    SMOOTH_PASSES,
+    SMOOTH_WINDOW_NM,
+    SURFACE_SIGMA,
+)
 from annotation.stitching import (
     IN_REGION,
     REGION_VOXELS,
@@ -46,12 +53,17 @@ NOT_CORE_REASONS = ("cut_off_at_data_edge", "crosses_region_boundary", "touches_
                     "unresolved_contacts")
 MITO_FIELDS = ("mito_id", "volume_um3", "length_um", "volume_in_region_um3", "frac_in_region", "n_tiles", "tiles",
                "cut_off_at_data_edge", "crosses_region_boundary", "touches_unproofread_tile", "length_status",
-               *BBOX_FIELDS, *CENTER_FIELDS, "core", "not_core_reasons")
+               *BBOX_FIELDS, *CENTER_FIELDS, "core", "not_core_reasons",
+               # Added after the first deliveries: new columns go at the end, never in between.
+               *MORPHOLOGY_FIELDS)
 SUMMARY_FIELDS = ("metric", "all", "core")
 SUMMARY_METRICS = ("objects", "multi_tile", "length_measured", "length_skipped_too_large",
                    "cut_off_at_data_edge", "crosses_region_boundary", "touches_unproofread_tile",
                    "unresolved_contacts", "volume_um3_median", "volume_um3_p90", "volume_um3_max",
-                   "length_um_median", "length_um_p90", "length_um_max")
+                   "length_um_median", "length_um_p90", "length_um_max",
+                   # Added later: new metrics go at the end.
+                   "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max",
+                   "short_object")
 EXCLUDED_FIELDS = ("mito_id", "excluded_global_ids", "n_tiles", "tiles", "volume_um3", "reaches_region")
 DELIVERY_FILES = ("mitochondria.csv", "summary.csv", "excluded.csv", "README.md")
 MEASURED, SKIPPED_TOO_LARGE = "measured", "skipped_too_large"
@@ -198,6 +210,8 @@ def mito_row(r: dict, voxel_nm3: float) -> tuple[dict, dict[str, bool]]:
         "length_status": status,
         **{f: r[f] for f in (*BBOX_FIELDS, *CENTER_FIELDS)},
         "core": _bool(not reasons), "not_core_reasons": ";".join(reasons),
+        # Empty for a measurements.csv written before these columns existed.
+        **{f: r.get(f, "") for f in MORPHOLOGY_FIELDS},
     }
     return row, flags
 
@@ -219,6 +233,11 @@ def summarise(rows: list[dict], flags: list[dict]) -> dict[str, object]:
     }
     out.update(zip(("volume_um3_median", "volume_um3_p90", "volume_um3_max"), _stats(volumes)))
     out.update(zip(("length_um_median", "length_um_p90", "length_um_max"), _stats(lengths)))
+    smoothed = [float(r["length_smoothed_um"]) for r in rows
+                if r["length_status"] == MEASURED and r.get("length_smoothed_um")]
+    out.update(zip(("length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max"),
+                   _stats(smoothed)))
+    out["short_object"] = sum(r.get("short_object") == "true" for r in rows)
     return out
 
 
@@ -263,6 +282,35 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
                             "`crosses_region_boundary`, `touches_unproofread_tile`, `unresolved_contacts` (a seam "
                             "contact with a neighbouring piece was answered unsure or never reviewed, so the "
                             "mitochondrion may continue into it). Empty for core objects.",
+        "width_mean_nm": "Mean width (diameter) in nm along the centreline skeleton (see *How width and shape are "
+                         "measured*). The four width columns, the skeleton counts and `tortuosity` are empty when "
+                         "there is no skeleton (`length_um` is 0 or empty).",
+        "width_median_nm": "Median width in nm along the skeleton. The most robust single width.",
+        "width_min_nm": "Smallest width in nm along the skeleton (the narrowest point, tips left out).",
+        "width_max_nm": "Largest width in nm along the skeleton: the diameter of the largest sphere that fits "
+                        "inside. The width to use for round objects.",
+        "branch_points": "Number of skeleton points where three or more branches meet. 0 for an unbranched "
+                         "mitochondrion.",
+        "endpoints": "Number of skeleton ends. 2 for an unbranched mitochondrion.",
+        "longest_path_um": "Raw length in µm of the main path: the longest path through the skeleton, from one "
+                           "end to another. Equal to `length_um` when there are no branches. Runs long in the "
+                           "same way as `length_um`; prefer `longest_path_smoothed_um`.",
+        "end_to_end_um": "Straight-line distance in µm between the two ends of the main path.",
+        "tortuosity": "`longest_path_smoothed_um` ÷ `end_to_end_um`: 1 for a straight mitochondrion, larger the "
+                      "more its main path curves. Side branches do not count.",
+        "surface_area_um2": "Surface area in µm². Empty when `length_status` is `skipped_too_large`.",
+        "sphericity": "How close the shape is to a sphere: the surface of a sphere of the same volume divided by "
+                      "`surface_area_um2`. 1 for a sphere, about 0.6 for a rod five times longer than wide.",
+        "length_smoothed_um": "Length in µm of the same skeleton after smoothing it along its path (see *How "
+                              "length is measured*). Closer to the true centreline length than `length_um`, "
+                              "which runs long; compare the two before choosing one. Empty when `length_status` "
+                              "is `skipped_too_large`.",
+        "longest_path_smoothed_um": "Length in µm of the main path after the same smoothing. The numerator of "
+                                    "`tortuosity`.",
+        "short_object": f"`true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times `width_max_nm`: "
+                        "the object is about as wide as it is long, and both lengths and `tortuosity` are "
+                        "then unreliable (see *How length is measured*). Use volume and `width_max_nm` for "
+                        "these. Does not affect `core`. Empty when there is no skeleton.",
     }
     return docs
 
@@ -282,6 +330,10 @@ SUMMARY_DOCS = {
     "length_um_median": "median length (µm), over measured lengths",
     "length_um_p90": "90th percentile of length (µm), over measured lengths",
     "length_um_max": "largest length (µm)",
+    "length_smoothed_um_median": "median smoothed length (µm), over measured lengths",
+    "length_smoothed_um_p90": "90th percentile of smoothed length (µm)",
+    "length_smoothed_um_max": "largest smoothed length (µm)",
+    "short_object": "how many are flagged `short_object` (length unreliable)",
 }
 EXCLUDED_DOCS = {
     "mito_id": "the excluded object",
@@ -369,6 +421,51 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         f"{crop_sentence} Objects whose box would exceed "
         f"{max_crop_voxels:,} voxels are not skeletonised (`length_status` = `skipped_too_large`); their "
         "volume, box and centroid are still exact.",
+        "",
+        "**Two lengths.** `length_um` is the raw cable length, as in earlier deliveries. A skeleton is a chain "
+        "of voxel centres, so the raw length runs long wherever the true centreline is not a straight row of "
+        "voxels: it hops between neighbouring rows and climbs slanted or curved stretches in voxel steps. On "
+        "test tubes of known length it reads 6 to 40 % long, least for objects running along Z and most for "
+        "slanted, curved or rough ones. `length_smoothed_um` is the length of the same skeleton after each "
+        f"branch is smoothed along its path (moving average over {SMOOTH_WINDOW_NM:g} nm, applied "
+        f"{SMOOTH_PASSES} times; ends and branch points do not move). On the same test tubes it is within "
+        "about 3 % for straight, slanted and gently curved shapes, up to 8 % long on very rough ones, and 2 to "
+        "6 % short on bends tighter than about 2.5 tube radii. Both are given so they can be compared on this "
+        "dataset; they describe the same skeleton.",
+        "",
+        "**Short objects.** A skeleton length means little for an object that is about as wide as it is long. "
+        f"`short_object` is `true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times "
+        "`width_max_nm`. On test capsules and near-spheres of known size, the smoothed length of flagged objects "
+        "was within 10 % about five times in six (worst 17 %; near-spheres read 1 to 15 % above their "
+        "diameter); unflagged ones were within 10 % in 363 of 366 cases (worst 13 %). The flag does not cover "
+        "one other bias: an elongated object running along Z reads 3 to 13 % short.",
+        "",
+        "## How width and shape are measured",
+        "",
+        "These columns come from the same skeleton as the length, and from the object's voxels. They are empty "
+        "for objects that were too large to skeletonise.",
+        "",
+        "- **Width** is not the radius the skeletoniser reports (skeleton-derived radii can be off by up to "
+        "50 %). At each skeleton point, the width is twice the Euclidean distance to the nearest voxel outside "
+        "the mitochondrion, using the true voxel size on each axis (a Euclidean distance transform, sampled "
+        "along the skeleton): the diameter of the largest sphere that fits there. Points closer to a skeleton "
+        "end than 1.5 times their own radius are left out, because there the sphere is limited by the tip, not "
+        "the sides (the maximum always uses every point). A blob with no other points uses all of them, and "
+        "for objects that are not clearly longer than wide only `width_max_nm` is meaningful. Mean and median "
+        "are weighted by skeleton length. Expect an accuracy of about half a voxel, which along Z is half the "
+        "Z voxel size.",
+        "- **Branch points and endpoints** are counted on the skeleton. Short side spurs made by the "
+        "skeletoniser on bumpy surfaces count too, so treat small counts on thick objects with care.",
+        "- **Tortuosity** is the smoothed length of the main path (the longest path through the skeleton) "
+        "divided by the straight-line distance between its two ends. Side branches are left out, and the "
+        "smoothed length is used because the raw one runs long even on a straight object.",
+        f"- **Surface area** is the area of a triangle mesh (marching cubes) around the voxels, after smoothing "
+        f"them slightly (Gaussian, {SURFACE_SIGMA:g} voxel). Without smoothing, voxel steps inflate the area by "
+        "5 to 19 %; with it, test spheres and cylinders are within about 3 %. Objects only one or two voxels "
+        "thin lose area to the smoothing.",
+        "- **Sphericity** is π^(1/3) × (6 × volume)^(2/3) ÷ surface area.",
+        "- For a mitochondrion that is cut off at the data edge, all of these describe only the part inside "
+        "the data, closed off at the cut.",
         "",
     ]
 
@@ -479,6 +576,7 @@ def build_readme(ctx: dict) -> str:
         f"- Measurements (`stitch_measure`) finished {ctx['run'].get('finished_at', 'unknown')}, code revision "
         f"`{ctx['run'].get('code_revision', 'unknown')}`"
         + (f", command `{ctx['run']['command']}`" if ctx["run"].get("command") else "") + ".",
+        f"- Method version of the measurements: `{ctx['run'].get('method_version', 'not recorded')}`.",
         f"- Input tiles ({len(ctx['tiles'])}), with the file each was read from:",
         "",
         "| Tile | File | Proofread |",
