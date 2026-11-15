@@ -26,6 +26,7 @@ import numpy as np
 
 from annotation.measurements import CROP_PAD, DUST_SIZE, SKIPPED_CROP_LIMIT
 from annotation.morphology import (
+    END_TRIM_FACTOR,
     MORPHOLOGY_FIELDS,
     SHORT_OBJECT_ASPECT,
     SMOOTH_PASSES,
@@ -276,22 +277,25 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
         "longest_path_um": "Raw length in µm of the main path: the longest path through the skeleton, from one "
                            "end to another. Equal to `length_um` when there are no branches. Runs long in the "
                            "same way as `length_um`; prefer `longest_path_smoothed_um`.",
-        "end_to_end_um": "Straight-line distance in µm between the two ends of the main path.",
+        "end_to_end_um": "Straight-line distance in µm between the two ends of the main path, tip to tip (an "
+                         "end at the data edge stays where the skeleton stops).",
         "tortuosity": "`longest_path_smoothed_um` ÷ `end_to_end_um`: 1 for a straight mitochondrion, larger the "
                       "more its main path curves. Side branches do not count.",
         "surface_area_um2": "Surface area in µm². Empty when `length_status` is `skipped_too_large`.",
         "sphericity": "How close the shape is to a sphere: the surface of a sphere of the same volume divided by "
                       "`surface_area_um2`. 1 for a sphere, about 0.6 for a rod five times longer than wide.",
-        "length_smoothed_um": "Length in µm of the same skeleton after smoothing it along its path (see *How "
-                              "length is measured*). Closer to the true centreline length than `length_um`, "
-                              "which runs long; compare the two before choosing one. Empty when `length_status` "
-                              "is `skipped_too_large`.",
-        "longest_path_smoothed_um": "Length in µm of the main path after the same smoothing. The numerator of "
-                                    "`tortuosity`.",
+        "length_smoothed_um": "Length in µm of the same skeleton after smoothing it along its path and carrying "
+                              "its ends to the tips of the mitochondrion (see *How length is measured*). Closer "
+                              "to the true tip-to-tip centreline length than `length_um`, which runs long; "
+                              "compare the two before choosing one. Empty when `length_status` is "
+                              "`skipped_too_large`.",
+        "longest_path_smoothed_um": "Length in µm of the main path after the same smoothing and end "
+                                    "treatment. The numerator of `tortuosity`.",
         "short_object": f"`true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times `width_max_nm`: "
-                        "the object is about as wide as it is long, and both lengths and `tortuosity` are "
-                        "then unreliable (see *How length is measured*). Use volume and `width_max_nm` for "
-                        "these. Does not affect `core`. Empty when there is no skeleton.",
+                        "the object is about as wide as it is long, so its length is closer to a diameter, "
+                        "its `tortuosity` is 1 by construction and `length_um` is at its least reliable (see "
+                        "*How length is measured*). Prefer volume and `width_max_nm` for these. Does not "
+                        "affect `core`. Empty when there is no skeleton.",
     }
     return docs
 
@@ -409,17 +413,31 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "test tubes of known length it reads 6 to 40 % long, least for objects running along Z and most for "
         "slanted, curved or rough ones. `length_smoothed_um` is the length of the same skeleton after each "
         f"branch is smoothed along its path (moving average over {SMOOTH_WINDOW_NM:g} nm, applied "
-        f"{SMOOTH_PASSES} times; ends and branch points do not move). On the same test tubes it is within "
-        "about 3 % for straight, slanted and gently curved shapes, up to 8 % long on very rough ones, and 2 to "
+        f"{SMOOTH_PASSES} times; branch points do not move). On the same test tubes it is within "
+        "about 3 % for straight, slanted and gently curved shapes, up to 5 % off on very rough ones, and 2 to "
         "6 % short on bends tighter than about 2.5 tube radii. Both are given so they can be compared on this "
         "dataset; they describe the same skeleton.",
         "",
+        "**Ends.** A skeleton does not stop at the tip of a mitochondrion: it bends away from the axis inside "
+        "the rounded end and stops at the surface beside the tip, a little early. For `length_smoothed_um`, "
+        f"`longest_path_smoothed_um` and `end_to_end_um`, the last stretch of each end (about "
+        f"{END_TRIM_FACTOR:g} radii) is replaced by a straight line along the local axis out to the surface, so "
+        "these are tip-to-tip measures and a straight mitochondrion has a `tortuosity` of 1.00. Without this, "
+        "test objects lying along Z read 2 to 9 % short on average and straight ones had a tortuosity of 1.02 "
+        "to 1.10. An end "
+        "at the edge of the imaged data is not extended: the mitochondrion is cut off there "
+        "(`cut_off_at_data_edge`). Along Z no end can be placed more finely than one section, so the length "
+        "of a mitochondrion lying along Z is known to about one Z voxel, whatever its length. `length_um` is "
+        "not changed by any of this.",
+        "",
         "**Short objects.** A skeleton length means little for an object that is about as wide as it is long. "
         f"`short_object` is `true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times "
-        "`width_max_nm`. On test capsules and near-spheres of known size, the smoothed length of flagged objects "
-        "was within 10 % about five times in six (worst 17 %; near-spheres read 1 to 15 % above their "
-        "diameter); unflagged ones were within 10 % in 363 of 366 cases (worst 13 %). The flag does not cover "
-        "one other bias: an elongated object running along Z reads 3 to 13 % short.",
+        "`width_max_nm`. Such an object is measured as the straight line through its centre along its longest "
+        "direction: a diameter more than a length, with a `tortuosity` of 1 by construction, and for a nearly "
+        "round object the longest direction is arbitrary. On test capsules and near-spheres of known size, "
+        "`length_smoothed_um` of flagged objects was within 10 % of the true size in all 159 cases (1.4 % on "
+        "average), and of unflagged ones within 5 % in all 369; `length_um` read 15 to 40 % long on the same "
+        "objects.",
         "",
         "## How width and shape are measured",
         "",

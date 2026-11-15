@@ -5,6 +5,17 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Stitching and `measure_volume`: `length_smoothed_um`,
+  `longest_path_smoothed_um`, `end_to_end_um` and `tortuosity` are now
+  measured tip to tip. Each skeleton end is carried along the object's local
+  axis to its surface (a skeleton stops beside the tip, a little early), and
+  an unbranched object too short for that is measured as the chord along its
+  principal axis. Straight objects now have a tortuosity of 1.00 (was
+  1.02-1.10) and objects lying along Z no longer read 2-9 % short. Ends at the
+  edge of the data are not extended. `length_um` is unchanged. Method version
+  `morphology/4`. Expect `length_smoothed_um` to change by a few percent
+  against `morphology/3` (about -5 % at the median on the one real tile
+  measured). See `docs/engineering/stitching.md`.
 - Add morphology columns to `stitch_measure`, `measure_volume` and the
   delivery (`mitochondria.csv`, appended after the existing columns): width
   mean/median/min/max from an anisotropic Euclidean distance transform sampled

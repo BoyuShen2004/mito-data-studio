@@ -24,10 +24,12 @@ from annotation.morphology import (
     METHOD_VERSION,
     MORPHOLOGY_FIELDS,
     Morphology,
+    cap_ends,
     longest_path_nm,
     measure_morphology,
     skeleton_branches,
     smooth_path,
+    smooth_skeleton,
     smoothed_cable_length_nm,
     skeleton_radii_nm,
     sphericity,
@@ -129,13 +131,14 @@ class SmoothedLengthTests(SimpleTestCase):
 
     def test_cylinder_between_two_z_planes(self):
         # The worst case: the axis lies exactly between two Z planes and two Y rows, so the
-        # skeleton hops between them. The remaining excess is the dive into the flat ends' corners.
+        # skeleton hops between them. (Before end caps the dive into the flat ends' corners
+        # left this 8 % long.)
         m = measure_morphology(cylinder_x(offset=(0.0, 0.0)), VOXEL)
         self.assertGreater(m.length_nm, 2.5 * LENGTH)
-        self.assertAlmostEqual(m.length_smoothed_nm, LENGTH, delta=0.10 * LENGTH)
+        self.assertAlmostEqual(m.length_smoothed_nm, LENGTH, delta=0.02 * LENGTH)
         self.assertEqual((m.branch_points, m.endpoints), (0, 2))        # zigzag, not spurious branches
         self.assertGreater(m.longest_path_nm / m.end_to_end_nm, 2.5)    # what the raw path would give
-        self.assertLess(m.tortuosity, 1.12)
+        self.assertLess(m.tortuosity, 1.02)
 
     def test_capsules_on_and_off_the_grid(self):
         tip_to_tip = LENGTH + 2 * RADIUS
@@ -144,8 +147,9 @@ class SmoothedLengthTests(SimpleTestCase):
                 m = measure_morphology(capsule_x(offset=offset), VOXEL)
                 self.assertAlmostEqual(m.length_smoothed_nm, tip_to_tip, delta=0.02 * tip_to_tip)
                 self.assertGreater(m.length_nm, 1.05 * tip_to_tip)
-                # Straight reads nearly straight: the skeleton's two ends sit a little off the axis.
-                self.assertAlmostEqual(m.tortuosity, 1.0, delta=0.05)
+                # Straight reads straight: the ends are carried to the tips along the axis
+                # (the skeleton's own ends sit beside the tips, which read 1.04 here).
+                self.assertAlmostEqual(m.tortuosity, 1.0, delta=0.015)
 
     def test_slanted_and_curved_tubes_of_known_length(self):
         start = np.array([1.3, 2.1, 0.7])
@@ -163,7 +167,7 @@ class SmoothedLengthTests(SimpleTestCase):
                 # Half circle: arc / chord = pi / 2 between the tube's centres of curvature ends.
                 expected = 1.0 if "degrees" in name else None
                 if expected:
-                    self.assertAlmostEqual(m.tortuosity, expected, delta=0.05)
+                    self.assertAlmostEqual(m.tortuosity, expected, delta=0.01)
                 else:
                     self.assertAlmostEqual(m.tortuosity, m.longest_path_smoothed_nm / m.end_to_end_nm)
                     self.assertGreater(m.tortuosity, 1.3)
@@ -209,10 +213,12 @@ class SmoothedLengthTests(SimpleTestCase):
     def test_method_version_names_the_parameters(self):
         from annotation.morphology import METHOD_VERSION, SMOOTH_PASSES, SMOOTH_WINDOW_NM
 
-        self.assertTrue(METHOD_VERSION.startswith("morphology/3 "))
+        self.assertTrue(METHOD_VERSION.startswith("morphology/4 "))
         self.assertIn(f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}", METHOD_VERSION)
         self.assertIn("tortuosity: smoothed longest path / end-to-end", METHOD_VERSION)
         self.assertIn("short_object: smoothed length < 1.5 x largest width", METHOD_VERSION)
+        self.assertIn("ends carried to the surface along the local axis from 2 radii in, not at data edges",
+                      METHOD_VERSION)
 
     def test_short_object_flags_round_objects_only(self):
         ball = measure_morphology(sphere(), VOXEL)
@@ -233,6 +239,86 @@ class SmoothedLengthTests(SimpleTestCase):
         m = measure_morphology(dust, VOXEL)
         self.assertEqual((m.length_nm, m.length_smoothed_nm), (0.0, 0.0))
         self.assertEqual(m.row()["length_smoothed_um"], "0.0")
+
+
+def straight_capsule(direction, tip_to_tip, radius):
+    """A capsule of the given tip-to-tip length along ``direction`` (Z, Y, X), off the grid."""
+    direction = np.asarray(direction, float) / np.linalg.norm(direction)
+    start = np.array([11.0, 3.0, 5.0])
+    return tube(np.linspace(start, start + (tip_to_tip - 2 * radius) * direction, 2000), radius)
+
+
+class EndCapTests(SimpleTestCase):
+    """Skeleton ends are carried to the object's tips, except where the data stops."""
+
+    def test_straight_capsules_read_straight_in_every_orientation(self):
+        tip_to_tip, radius = 1000.0, 100.0
+        for name, direction in (("X", (0, 0, 1)), ("Y", (0, 1, 0)), ("Z", (1, 0, 0)), ("XZ", (1, 0, 1)),
+                                ("YZ", (1, 1, 0)), ("diagonal", (1, 1, 1))):
+            with self.subTest(name):
+                m = measure_morphology(straight_capsule(direction, tip_to_tip, radius), VOXEL)
+                self.assertAlmostEqual(m.length_smoothed_nm, tip_to_tip, delta=0.03 * tip_to_tip)
+                self.assertAlmostEqual(m.end_to_end_nm, tip_to_tip, delta=0.03 * tip_to_tip)
+                self.assertAlmostEqual(m.tortuosity, 1.0, delta=0.01)
+                self.assertAlmostEqual(m.longest_path_smoothed_nm, m.tortuosity * m.end_to_end_nm, places=6)
+
+    def test_short_rod_along_z_is_its_extent(self):
+        # Too short for two end stretches: the chord along the principal axis. Along Z nothing
+        # can read finer than one 30 nm plane.
+        for tip_to_tip in (300.0, 400.0, 500.0):
+            with self.subTest(tip_to_tip):
+                mask = straight_capsule((1, 0, 0), tip_to_tip, 100.0)
+                m = measure_morphology(mask, VOXEL)
+                planes = int(mask.any(axis=(1, 2)).sum())
+                self.assertAlmostEqual(m.length_smoothed_nm, planes * VOXEL[0], delta=1.0)
+                self.assertAlmostEqual(m.length_smoothed_nm, tip_to_tip, delta=VOXEL[0] + 1.0)
+                self.assertAlmostEqual(m.tortuosity, 1.0, places=9)
+
+    def cut_capsule(self):
+        """A capsule along X cut off by the array's +X face, and that face's voxel layer."""
+        mask = capsule_x()[:, :, :120]
+        self.assertTrue(mask[:, :, -1].any())
+        return mask, (0, mask.shape[0], 0, mask.shape[1], mask.shape[2] - 1, mask.shape[2])
+
+    def capped(self, mask, cut_boxes):
+        skeleton = skeletonize_mask(mask, VOXEL)
+        vertices = np.asarray(skeleton.vertices, float)
+        edges = np.asarray(skeleton.edges, np.int64).reshape(-1, 2)
+        smoothed = smooth_skeleton(vertices, edges)
+        radii = skeleton_radii_nm(mask, vertices, VOXEL)
+        return smoothed, cap_ends(mask, VOXEL, smoothed, edges, radii, cut_boxes=cut_boxes)
+
+    def test_end_on_a_data_edge_is_not_moved(self):
+        mask, layer = self.cut_capsule()
+        smoothed, capped = self.capped(mask, [layer])
+        at_cut, free = int(np.argmax(smoothed[:, 2])), int(np.argmin(smoothed[:, 2]))
+        np.testing.assert_array_equal(capped[at_cut], smoothed[at_cut])
+        # The free end goes to the rounded tip, on the axis (capsule_x: 4 voxels of padding).
+        tip_x = 4 * VOXEL[2] - RADIUS + RADIUS
+        self.assertAlmostEqual(capped[free][2], tip_x, delta=VOXEL[2])
+        self.assertGreater(np.linalg.norm(capped[free] - smoothed[free]), 30.0)
+        # Without the layer the cut end would be treated as a tip too.
+        _, unaware = self.capped(mask, ())
+        self.assertGreater(np.linalg.norm(unaware[at_cut] - smoothed[at_cut]), 5.0)
+        # measure_morphology passes the layers on.
+        cut = measure_morphology(mask, VOXEL, cut_boxes=[layer])
+        self.assertNotEqual(cut.end_to_end_nm, measure_morphology(mask, VOXEL).end_to_end_nm)
+
+    def test_edge_layers_of_the_two_commands(self):
+        from types import SimpleNamespace
+
+        from annotation.volume_measure import outer_face_layers
+
+        tile = SimpleNamespace(lo=lambda a: (0, 100, 200)[a], hi=lambda a: (50, 300, 600)[a])
+        window = (0, 20, 150, 250, 560, 600)
+        layers = stitching_measure.edge_layers({(0, 5, "t"), (0, 0, "t")}, {"t": tile}, window)
+        # -z: the tile's first Z plane; +x: its last X column; both in window coordinates.
+        self.assertEqual(layers, [(0, 1, -50, 150, -360, 40), (0, 50, -50, 150, 39, 40)])
+        self.assertEqual(stitching_measure.edge_layers(set(), {"t": tile}, window), [])
+        volume = (0, 50, 0, 300, 0, 600)
+        self.assertEqual(outer_face_layers((0, 18, 152, 248, 562, 600), volume, window),
+                         [(0, 1, 0, 100, 0, 40), (0, 20, 0, 100, 39, 40)])
+        self.assertEqual(outer_face_layers((2, 18, 152, 248, 562, 598), volume, window), [])
 
 
 class WidthTests(SimpleTestCase):
@@ -267,8 +353,8 @@ class WidthTests(SimpleTestCase):
         self.assertAlmostEqual(m.width_median_nm, 2 * RADIUS, delta=VOXEL[0] / 2)
         self.assertAlmostEqual(m.width_mean_nm, 2 * RADIUS, delta=VOXEL[0] / 2)
         self.assertAlmostEqual(m.width_max_nm, 2 * RADIUS, delta=VOXEL[0] / 2)
-        # The skeleton stops a little short of the rounded tips.
-        self.assertAlmostEqual(m.end_to_end_nm, LENGTH + 2 * RADIUS, delta=0.05 * (LENGTH + 2 * RADIUS))
+        # Tip to tip: the ends are carried to the rounded tips.
+        self.assertAlmostEqual(m.end_to_end_nm, LENGTH + 2 * RADIUS, delta=0.01 * (LENGTH + 2 * RADIUS))
         area = 2 * math.pi * RADIUS * LENGTH + 4 * math.pi * RADIUS ** 2
         self.assertAlmostEqual(m.surface_area_nm2, area, delta=0.04 * area)
 
@@ -308,14 +394,13 @@ class ShapeTests(SimpleTestCase):
         m = measure_morphology(mask, VOXEL)
         self.assertEqual(m.length_nm, skeleton_length_nm(mask, VOXEL))    # the same skeleton as the cable length
         self.assertEqual((m.branch_points, m.endpoints), (0, 2))
-        # The skeleton ends in the corners of the flat end faces.
-        self.assertAlmostEqual(m.end_to_end_nm, LENGTH, delta=0.05 * LENGTH)
+        # Face to face along the axis (the skeleton itself ends in the corners of the end faces).
+        self.assertAlmostEqual(m.end_to_end_nm, LENGTH, delta=0.01 * LENGTH)
         self.assertAlmostEqual(m.longest_path_nm, m.length_nm, delta=1e-6 * m.length_nm)
         self.assertAlmostEqual(m.longest_path_smoothed_nm, m.length_smoothed_nm, delta=1e-6 * m.length_nm)
         self.assertEqual(m.tortuosity, m.longest_path_smoothed_nm / m.end_to_end_nm)
-        # Straight, but the skeleton dives into the corners of the flat ends.
         self.assertGreaterEqual(m.tortuosity, 1.0)
-        self.assertLess(m.tortuosity, 1.12)
+        self.assertLess(m.tortuosity, 1.02)
         area = 2 * math.pi * RADIUS * LENGTH + 2 * math.pi * RADIUS ** 2
         self.assertAlmostEqual(m.surface_area_nm2, area, delta=0.04 * area)
         expected = sphericity(math.pi * RADIUS ** 2 * LENGTH, area)       # 0.65
@@ -337,7 +422,7 @@ class ShapeTests(SimpleTestCase):
         self.assertAlmostEqual(m.width_median_nm, 160.0, delta=VOXEL[0] / 2)
         # The longest path is two of the three arms; the ends are 120 degrees apart.
         self.assertLess(m.longest_path_nm, 0.8 * m.length_nm)
-        self.assertAlmostEqual(m.end_to_end_nm, 2 * 880.0 * math.sin(math.radians(60)), delta=120.0)
+        self.assertAlmostEqual(m.end_to_end_nm, 2 * 880.0 * math.sin(math.radians(60)), delta=40.0)
         # Tortuosity is the main path only: two straight arms meeting at 120 degrees, 2 / sqrt(3).
         self.assertEqual(m.tortuosity, m.longest_path_smoothed_nm / m.end_to_end_nm)
         self.assertAlmostEqual(m.tortuosity, 2 / math.sqrt(3), delta=0.04)
@@ -424,6 +509,27 @@ class SeamSplitTests(StitchRunMixin, SimpleTestCase):
     def test_z_seam(self):
         self.check(SEAM_TILES_Z, (48, 40, 40), 0, 100.0)
 
+    def test_object_cut_off_at_the_data_edge_keeps_that_end(self):
+        # The cylinder runs out of the +X face of the second tile: that end is the data edge,
+        # so it is measured with that face's voxel layer as a cut box, and still matches
+        # across the seam.
+        shape = (16, 40, 128)
+        mask = region_cylinder(shape, 2, 100.0, margin=4)
+        mask[:, :, 100:] = mask[:, :, 60:61]
+        tiles_dir = self.make_dir()
+        write_mask_tiles(tiles_dir, SEAM_TILES_X, mask)
+        work = self.stitch(tiles_dir, decide_all("yes"))
+        self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", "30", "8", "8")
+        (row,) = read_rows(work / "measurements.csv")
+        self.assertEqual((row["touches_edge"], row["edge_faces"]), ("true", f"{SEAM_TILES_X[1]}:+x"))
+        box = ndi.find_objects(mask.astype(np.uint8))[0]
+        crop = tuple(slice(max(0, s.start - CROP_PAD), min(n, s.stop + CROP_PAD)) for s, n in zip(box, shape))
+        layer = (-crop[0].start, 16 - crop[0].start, -crop[1].start, 40 - crop[1].start,
+                 127 - crop[2].start, 128 - crop[2].start)
+        expected = measure_morphology(mask[crop], VOXEL, cut_boxes=[layer])
+        self.assertEqual({f: row[f] for f in MORPHOLOGY_FIELDS}, expected.row())
+        self.assertNotEqual(expected.row(), measure_morphology(mask[crop], VOXEL).row())
+
     def test_unmerged_halves_differ_from_the_whole(self):
         mask = region_cylinder((16, 40, 128), 2, 100.0, margin=4)
         tiles_dir = self.make_dir()
@@ -491,6 +597,8 @@ class DeliveryColumnTests(SimpleTestCase):
         text = "\n".join(stitching_deliver.readme_length_lines("Crop sentence.", 1000))
         self.assertIn("## How width and shape are measured", text)
         self.assertIn("**Two lengths.**", text)
+        self.assertIn("**Ends.**", text)
+        self.assertIn("is not extended", text)
         self.assertIn("Euclidean distance", text)
 
 

@@ -307,6 +307,23 @@ def touches_outer_face(box, volume_box) -> bool:
     return any(box[i] == volume_box[i] for i in range(6))
 
 
+def outer_face_layers(box, volume_box, window) -> list[tuple[int, ...]]:
+    """The one-voxel layer of ``window`` on each outer face of the volume that ``box``
+    touches, in the coordinates of ``window``: where the object is cut off."""
+    layers = []
+    for i in range(6):
+        if box[i] != volume_box[i]:
+            continue
+        axis, upper = divmod(i, 2)
+        layer = [v - window[2 * (j // 2)] for j, v in enumerate(window)]
+        if upper:
+            layer[2 * axis] = layer[2 * axis + 1] - 1
+        else:
+            layer[2 * axis + 1] = 1
+        layers.append(tuple(layer))
+    return layers
+
+
 def measure_label(store, lid: int, stats: LabelStats, volume_box, voxel, max_crop_voxels: int,
                   *, has_region: bool) -> LabelMeasurement:
     box = tuple(stats.box)
@@ -333,7 +350,7 @@ def measure_label(store, lid: int, stats: LabelStats, volume_box, voxel, max_cro
                                  "did the volume change during the run?")
     m.coord_sums = moments[1]
     if not m.skipped_reason:
-        m.morphology = measure_morphology(mask, voxel)
+        m.morphology = measure_morphology(mask, voxel, cut_boxes=outer_face_layers(box, volume_box, window))
         m.skeleton_length_um = m.morphology.length_nm / 1000.0
     return m
 
