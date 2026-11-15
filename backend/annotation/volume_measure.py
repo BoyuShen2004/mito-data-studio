@@ -42,7 +42,7 @@ from annotation.measurements import (
     MeasurementError,
     validate_voxel_size,
 )
-from annotation.morphology import EMPTY_ROW, Morphology, measure_morphology
+from annotation.morphology import EMPTY_ROW, METHOD_VERSION, Morphology, measure_morphology
 from annotation.stitching import REGION_VOXELS, StitchingError, _listing, code_revision, write_csv
 from annotation.stitching_deliver import (
     DELIVERY_FILES,
@@ -507,6 +507,7 @@ def build_volume_readme(ctx: dict) -> str:
         f"- Labels: `{labels.path}` (scale `{labels.key}`, metadata resolution {mx} × {my} × {mz} nm x, y, z).",
         f"- Region mask: `{region.path}` (scale `{region.key}`)." if region is not None else "- Region mask: none.",
         f"- Voxel size used: {vz} × {vy} × {vx} nm (Z, Y, X), given on the command line.",
+        f"- Method version: `{METHOD_VERSION}`.",
         f"- Read with tensorstore {ctx['tensorstore_version']}. All settings are in `{MEASURE_RUN}` in the work "
         f"directory `{ctx['work']}`.",
         "",
@@ -563,6 +564,7 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
         read_exclusions(exclude_label_ids, _AnyLabel(), what="label id", source="the volume")
 
     matches = _same(label_vol.resolution, voxel)
+    log(f"method: {METHOD_VERSION}")
     # Always say which voxel size is used: p7's recorded resolution was off by 4x.
     log("voxel size used: {:g} x {:g} x {:g} nm (Z, Y, X), from --voxel-size-zyx; the labels' metadata says "
         "{:g} x {:g} x {:g}".format(*voxel, *label_vol.resolution))
@@ -649,7 +651,7 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
         "region_only": region_only, "max_crop_voxels": max_crop_voxels, "crop_pad": CROP_PAD,
         "exclude_label_ids": str(Path(exclude_label_ids).resolve()) if exclude_label_ids else None,
         "excluded_label_ids": sorted(excluded), "unproofread_tiles": [], "delivery": str(out),
-        "tensorstore_version": ts_version, "code_revision": revision,
+        "tensorstore_version": ts_version, "code_revision": revision, "method_version": METHOD_VERSION,
         "started_at": started_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "finished_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "counts": counts,
     }

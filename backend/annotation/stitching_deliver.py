@@ -265,12 +265,12 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
         "branch_points": "Number of skeleton points where three or more branches meet. 0 for an unbranched "
                          "mitochondrion.",
         "endpoints": "Number of skeleton ends. 2 for an unbranched mitochondrion.",
-        "longest_path_um": "Length in µm of the longest path through the skeleton, from one end to another. "
-                           "Equal to `length_um` when there are no branches.",
-        "end_to_end_um": "Straight-line distance in µm between the two ends of that longest path.",
-        "tortuosity": "`length_um` ÷ `end_to_end_um`: 1 for a straight unbranched mitochondrion, larger when it "
-                      "curves or branches. For the curvature of the main path alone, use `longest_path_um` ÷ "
-                      "`end_to_end_um`.",
+        "longest_path_um": "Raw length in µm of the main path: the longest path through the skeleton, from one "
+                           "end to another. Equal to `length_um` when there are no branches. Runs long in the "
+                           "same way as `length_um`; prefer `longest_path_smoothed_um`.",
+        "end_to_end_um": "Straight-line distance in µm between the two ends of the main path.",
+        "tortuosity": "`longest_path_smoothed_um` ÷ `end_to_end_um`: 1 for a straight mitochondrion, larger the "
+                      "more its main path curves. Side branches do not count.",
         "surface_area_um2": "Surface area in µm². Empty when `length_status` is `skipped_too_large`.",
         "sphericity": "How close the shape is to a sphere: the surface of a sphere of the same volume divided by "
                       "`surface_area_um2`. 1 for a sphere, about 0.6 for a rod five times longer than wide.",
@@ -278,6 +278,8 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
                               "length is measured*). Closer to the true centreline length than `length_um`, "
                               "which runs long; compare the two before choosing one. Empty when `length_status` "
                               "is `skipped_too_large`.",
+        "longest_path_smoothed_um": "Length in µm of the main path after the same smoothing. The numerator of "
+                                    "`tortuosity`.",
     }
     return docs
 
@@ -415,8 +417,9 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "Z voxel size.",
         "- **Branch points and endpoints** are counted on the skeleton. Short side spurs made by the "
         "skeletoniser on bumpy surfaces count too, so treat small counts on thick objects with care.",
-        "- **Tortuosity** is the cable length divided by the straight-line distance between the two ends of "
-        "the longest path through the skeleton.",
+        "- **Tortuosity** is the smoothed length of the main path (the longest path through the skeleton) "
+        "divided by the straight-line distance between its two ends. Side branches are left out, and the "
+        "smoothed length is used because the raw one runs long even on a straight object.",
         f"- **Surface area** is the area of a triangle mesh (marching cubes) around the voxels, after smoothing "
         f"them slightly (Gaussian, {SURFACE_SIGMA:g} voxel). Without smoothing, voxel steps inflate the area by "
         "5 to 19 %; with it, test spheres and cylinders are within about 3 %. Objects only one or two voxels "
@@ -521,6 +524,7 @@ def build_readme(ctx: dict) -> str:
         f"- Measurements (`stitch_measure`) finished {ctx['run'].get('finished_at', 'unknown')}, code revision "
         f"`{ctx['run'].get('code_revision', 'unknown')}`"
         + (f", command `{ctx['run']['command']}`" if ctx["run"].get("command") else "") + ".",
+        f"- Method version of the measurements: `{ctx['run'].get('method_version', 'not recorded')}`.",
         f"- Input tiles ({len(ctx['tiles'])}), with the file each was read from:",
         "",
         "| Tile | File | Proofread |",

@@ -6,6 +6,7 @@ are checked against ``measure_morphology`` on the same object in one unsplit
 array. No data is committed.
 """
 
+import json
 import math
 import shutil
 import tempfile
@@ -20,6 +21,7 @@ from scipy.spatial import cKDTree
 from annotation import stitching_deliver, stitching_measure
 from annotation.measurements import CROP_PAD, skeleton_length_nm, skeletonize_mask
 from annotation.morphology import (
+    METHOD_VERSION,
     MORPHOLOGY_FIELDS,
     Morphology,
     longest_path_nm,
@@ -132,6 +134,8 @@ class SmoothedLengthTests(SimpleTestCase):
         self.assertGreater(m.length_nm, 2.5 * LENGTH)
         self.assertAlmostEqual(m.length_smoothed_nm, LENGTH, delta=0.10 * LENGTH)
         self.assertEqual((m.branch_points, m.endpoints), (0, 2))        # zigzag, not spurious branches
+        self.assertGreater(m.longest_path_nm / m.end_to_end_nm, 2.5)    # what the raw path would give
+        self.assertLess(m.tortuosity, 1.12)
 
     def test_capsules_on_and_off_the_grid(self):
         tip_to_tip = LENGTH + 2 * RADIUS
@@ -140,6 +144,8 @@ class SmoothedLengthTests(SimpleTestCase):
                 m = measure_morphology(capsule_x(offset=offset), VOXEL)
                 self.assertAlmostEqual(m.length_smoothed_nm, tip_to_tip, delta=0.02 * tip_to_tip)
                 self.assertGreater(m.length_nm, 1.05 * tip_to_tip)
+                # Straight reads nearly straight: the skeleton's two ends sit a little off the axis.
+                self.assertAlmostEqual(m.tortuosity, 1.0, delta=0.05)
 
     def test_slanted_and_curved_tubes_of_known_length(self):
         start = np.array([1.3, 2.1, 0.7])
@@ -154,6 +160,13 @@ class SmoothedLengthTests(SimpleTestCase):
                 self.assertAlmostEqual(m.length_smoothed_nm, true, delta=0.03 * true)
                 self.assertGreater(m.length_nm, 1.07 * true)             # what the raw length reads
                 self.assertEqual((m.branch_points, m.endpoints), (0, 2))
+                # Half circle: arc / chord = pi / 2 between the tube's centres of curvature ends.
+                expected = 1.0 if "degrees" in name else None
+                if expected:
+                    self.assertAlmostEqual(m.tortuosity, expected, delta=0.05)
+                else:
+                    self.assertAlmostEqual(m.tortuosity, m.longest_path_smoothed_nm / m.end_to_end_nm)
+                    self.assertGreater(m.tortuosity, 1.3)
 
     def test_y_branch_arms_add_up(self):
         m = measure_morphology(y_shape(), VOXEL)
@@ -183,10 +196,22 @@ class SmoothedLengthTests(SimpleTestCase):
         walked = sorted(tuple(sorted(pair)) for path in paths for pair in zip(path, path[1:]))
         self.assertEqual(walked, sorted(tuple(sorted(e)) for e in edges.tolist()))
         self.assertIn([7, 8, 9, 7], paths)
+        # Repeated edges and self-loops must not trap the walk.
+        doubled = np.array([[0, 1], [1, 0], [1, 2], [2, 2], [2, 3]])
+        self.assertEqual(skeleton_branches(4, doubled), [[0, 1, 2, 3]])
+        line = np.array([[0.0, 0.0, 8.0 * i] for i in range(4)])
+        self.assertAlmostEqual(smoothed_cable_length_nm(line, doubled), 24.0)
         # Branch points stay fixed: each path starts and ends on a node or closes on itself.
         degree = np.bincount(edges.ravel(), minlength=10)
         for path in paths:
             self.assertTrue(path[0] == path[-1] or (degree[path[0]] != 2 and degree[path[-1]] != 2))
+
+    def test_method_version_names_the_parameters(self):
+        from annotation.morphology import METHOD_VERSION, SMOOTH_PASSES, SMOOTH_WINDOW_NM
+
+        self.assertTrue(METHOD_VERSION.startswith("morphology/2 "))
+        self.assertIn(f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}", METHOD_VERSION)
+        self.assertIn("tortuosity: smoothed longest path / end-to-end", METHOD_VERSION)
 
     def test_no_skeleton_has_zero_length(self):
         dust = np.zeros((10, 10, 10), bool)
@@ -272,8 +297,11 @@ class ShapeTests(SimpleTestCase):
         # The skeleton ends in the corners of the flat end faces.
         self.assertAlmostEqual(m.end_to_end_nm, LENGTH, delta=0.05 * LENGTH)
         self.assertAlmostEqual(m.longest_path_nm, m.length_nm, delta=1e-6 * m.length_nm)
-        self.assertEqual(m.tortuosity, m.length_nm / m.end_to_end_nm)
+        self.assertAlmostEqual(m.longest_path_smoothed_nm, m.length_smoothed_nm, delta=1e-6 * m.length_nm)
+        self.assertEqual(m.tortuosity, m.longest_path_smoothed_nm / m.end_to_end_nm)
+        # Straight, but the skeleton dives into the corners of the flat ends.
         self.assertGreaterEqual(m.tortuosity, 1.0)
+        self.assertLess(m.tortuosity, 1.12)
         area = 2 * math.pi * RADIUS * LENGTH + 2 * math.pi * RADIUS ** 2
         self.assertAlmostEqual(m.surface_area_nm2, area, delta=0.04 * area)
         expected = sphericity(math.pi * RADIUS ** 2 * LENGTH, area)       # 0.65
@@ -296,8 +324,11 @@ class ShapeTests(SimpleTestCase):
         # The longest path is two of the three arms; the ends are 120 degrees apart.
         self.assertLess(m.longest_path_nm, 0.8 * m.length_nm)
         self.assertAlmostEqual(m.end_to_end_nm, 2 * 880.0 * math.sin(math.radians(60)), delta=120.0)
-        self.assertEqual(m.tortuosity, m.length_nm / m.end_to_end_nm)
-        self.assertGreater(m.tortuosity, 1.4)       # three arms of cable over a two-arm chord
+        # Tortuosity is the main path only: two straight arms meeting at 120 degrees, 2 / sqrt(3).
+        self.assertEqual(m.tortuosity, m.longest_path_smoothed_nm / m.end_to_end_nm)
+        self.assertAlmostEqual(m.tortuosity, 2 / math.sqrt(3), delta=0.04)
+        self.assertAlmostEqual(m.longest_path_smoothed_nm, 2 * 880.0, delta=0.03 * 2 * 880.0)
+        self.assertLess(m.longest_path_smoothed_nm, 0.75 * m.length_smoothed_nm)
 
     def test_longest_path_over_a_forest(self):
         # Two pieces: an L of 30 + 40 (ends 50 apart) and a straight 60.
@@ -361,7 +392,9 @@ class SeamSplitTests(StitchRunMixin, SimpleTestCase):
         tiles_dir = self.make_dir()
         write_mask_tiles(tiles_dir, names, mask)
         work = self.stitch(tiles_dir, decide_all("yes"))
-        self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", "30", "8", "8")
+        err = self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", "30", "8", "8")
+        self.assertIn(f"method: {METHOD_VERSION}", err)
+        self.assertEqual(json.loads((work / "measure_run.json").read_text())["method_version"], METHOD_VERSION)
         (row,) = read_rows(work / "measurements.csv")
         self.assertEqual((row["member_count"], row["touches_edge"]), ("2", "false"))
         expected = expected_morphology(mask)
@@ -431,7 +464,7 @@ class DeliveryColumnTests(SimpleTestCase):
             "volume_um3_p90", "volume_um3_max", "length_um_median", "length_um_p90", "length_um_max"))
         self.assertEqual(stitching_deliver.SUMMARY_METRICS[14:], (
             "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max"))
-        self.assertEqual(MORPHOLOGY_FIELDS[-1], "length_smoothed_um")
+        self.assertEqual(MORPHOLOGY_FIELDS[-2:], ("length_smoothed_um", "longest_path_smoothed_um"))
 
     def test_readme_documents_every_morphology_column(self):
         docs = stitching_deliver._column_docs(VOXEL)
@@ -466,5 +499,8 @@ class MeasureVolumeMorphologyTests(SimpleTestCase):
         self.assertEqual(rows[4]["width_median_nm"], "")
         self.assertNotEqual(rows[4]["surface_area_um2"], "")
         self.assertIn("How width and shape are measured", (result.out / "README.md").read_text())
+        self.assertIn(f"- Method version: `{METHOD_VERSION}`.", (result.out / "README.md").read_text())
+        self.assertEqual(result.run["method_version"], METHOD_VERSION)
+        self.assertIn(f"method: {METHOD_VERSION}", logs)
         # The resolution used is always reported (the metadata here is wrong on purpose).
         self.assertTrue(any("voxel size" in line for line in logs))

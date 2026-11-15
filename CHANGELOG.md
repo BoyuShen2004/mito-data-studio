@@ -13,7 +13,10 @@ follows semantic versioning for tagged releases.
   Also adds `length_smoothed_um` (and its three `summary.csv` statistics):
   the same skeleton's length after smoothing each branch, because the raw
   cable length reads 6-40 % long on anisotropic voxels; `length_um` is
-  unchanged. Both commands now always log the voxel size they use. No new dependencies,
+  unchanged. `tortuosity` is the smoothed longest path over its end-to-end
+  distance (`longest_path_smoothed_um` is a column too). Both commands now
+  always log the voxel size they use and a method version string, which is
+  also written to `measure_run.json` and the delivery README. No new dependencies,
   no database, API or UI changes. See `docs/engineering/stitching.md`.
 - Add `measure_volume`: measures mitochondria in one large, already-stitched
   Neuroglancer precomputed volume (first use: p7) and writes the same delivery

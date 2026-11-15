@@ -37,7 +37,7 @@ from annotation.measurements import (
     MeasurementError,
     validate_voxel_size,
 )
-from annotation.morphology import EMPTY_ROW, MORPHOLOGY_FIELDS, Morphology, measure_morphology
+from annotation.morphology import EMPTY_ROW, METHOD_VERSION, MORPHOLOGY_FIELDS, Morphology, measure_morphology
 from annotation.stitching import (
     REGION_VOXELS,
     StitchingError,
@@ -419,6 +419,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
         "voxel_size_zyx_nm": list(voxel_size), "region_only": region_only, "max_crop_voxels": max_crop_voxels,
         "unproofread_tiles": [t.name for t in tiles if t.name in unproofread_names],
         "code_revision": code_revision(), "finished_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "method_version": METHOD_VERSION,
     }
     return MeasureResult(ordered, [o.row(voxel_size) for o in ordered], counts, fields, unresolved_rows,
                          label_boxes, run)
