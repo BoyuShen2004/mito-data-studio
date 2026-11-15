@@ -367,6 +367,61 @@ volume.
   `volume_um3`, but `skeleton_length_um` is empty and `skipped_reason` is
   `crop_limit` (as in the per-volume code).
 
+**Morphology.** The mask that gives the cable length also gives the shape
+columns (`annotation/morphology.py`, one skeletonisation per object). They are
+empty for `crop_limit` objects; the skeleton columns are also empty when there
+is no skeleton (below the dust size, length 0).
+
+- **Width** (`width_mean_nm`, `width_median_nm`, `width_min_nm`,
+  `width_max_nm`). kimimaro's skeleton radius is not used. At each skeleton
+  vertex the radius is the Euclidean distance to the nearest background voxel
+  centre with the voxel size applied per axis, which is the anisotropic
+  Euclidean distance transform sampled at that vertex (a test checks it against
+  `scipy.ndimage.distance_transform_edt(sampling=...)`). It is computed with a
+  KD-tree over the background voxels that share a face with the object, so no
+  distance array the size of the crop is allocated. Width is twice the radius.
+  - *Half-voxel refinement.* A skeleton vertex is a voxel centre, and can be
+    half a voxel off the true centreline (always, when the object is an even
+    number of voxels across). The radius is therefore the largest over the
+    vertex and its 26 half-voxel shifts. Without it a 240 nm cylinder reads
+    212 nm at (30, 8, 8); with it, 231-242 nm.
+  - *Tips.* Vertices closer to a skeleton endpoint than 1.5 times their own
+    radius are left out of mean, median and minimum: there the inscribed
+    sphere is limited by the tip. If none remain (a blob), all are used. The
+    maximum always uses every vertex.
+  - Mean and median are weighted by cable (half of each edge at the vertex),
+    because vertices are one per voxel: 30 nm apart along Z, 8 nm along X.
+- **`length_smoothed_um`:** the cable length of the same skeleton after each
+  branch (the path between two endpoints or branch points) is smoothed with a
+  moving average over 200 nm of path, twice. Endpoints and branch points do
+  not move, and the window shrinks toward them. `skeleton_length_um` is
+  unchanged and still written; see *Cable length on anisotropic voxels* under
+  [Known limits](#known-limits) for why both exist and how they compare.
+- **`branch_points`, `endpoints`:** skeleton vertices of degree >= 3 and 1.
+- **Main path** (`longest_path_um`, `longest_path_smoothed_um`,
+  `end_to_end_um`): the longest shortest path through the smoothed skeleton
+  (two sweeps per connected piece; the longest piece wins). One path is
+  chosen, then measured three ways: its raw length, its smoothed length, and
+  the straight distance between its two ends.
+- **`tortuosity`:** `longest_path_smoothed_um / end_to_end_um`. Side branches
+  do not count, and the smoothed length is used because the raw one runs long
+  on a straight object. A straight capsule reads 1.00-1.04 (the skeleton's
+  ends sit slightly off the axis); two straight arms at 120 degrees read
+  1.15 (2/√3).
+- **Method version.** `morphology.METHOD_VERSION` names the definitions and
+  parameters (smoothing window and passes, tortuosity definition, tip factor,
+  surface sigma). `stitch_measure` and `measure_volume` log it and write it to
+  `measure_run.json` (`method_version`); both delivery READMEs print it under
+  Provenance. Raise its number whenever a definition or parameter changes.
+- **`surface_area_um2`:** marching cubes (`skimage.measure`) at level 0.5 on
+  the mask smoothed with a Gaussian of 1 voxel, with the voxel size as
+  spacing. Unsmoothed, the voxel staircase reads 5-19 % high at (30, 8, 8);
+  smoothed, test spheres and cylinders are within 3 %. A mask too thin to
+  survive the smoothing is meshed unsmoothed.
+- **`sphericity`:** `pi^(1/3) * (6 V)^(2/3) / A` with `V` the voxel volume.
+- Everything outside the crop counts as background, so an object cut off at
+  the volume edge is measured as a closed solid.
+
 **Edges.** `touches_edge` means the object touches the **edge of the tiled
 volume**, not a seam. **Any tile face with no neighbouring tile counts as a
 volume edge.** That includes:
@@ -670,7 +725,9 @@ per-volume rule:
 
 The crop's voxel count must equal pass 1's, or the run stops (the volume
 changed during the run). The centroid uses the same exact integer moments as
-phase 6.
+phase 6. The same mask gives the morphology columns, exactly as in phase 6
+(see **Morphology** there). The voxel size used is always logged, next to the
+metadata's.
 
 **Which labels.** Every label is listed, or with `--region-only` only labels
 with region voxels. Excluded labels are not measured.
@@ -712,6 +769,7 @@ of [7b](#7b-stitch_deliver), and `core` follows the same rule.
 command, `labels` and `region` (path, scale key, size, offset, chunk size,
 metadata resolution, encoding, data type), `volume_name`,
 `voxel_size_zyx_nm`, `voxel_size_matches_metadata`, `voxel_size_note`,
+`method_version`,
 `region_only`, `max_crop_voxels`, `crop_pad`, the exclusion file and IDs, the
 delivery folder, `tensorstore_version`, `code_revision`, `started_at`,
 `finished_at`, and counts (chunk files, labels, listed, excluded, core, flags,
@@ -991,8 +1049,12 @@ It has no `decision` column, so importing it into a page decides nothing.
 `measurements.csv` — one row per object, sorted by `object_id`:
 
 ```text
-object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm
+object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
 ```
+
+- The last fourteen columns are the morphology columns (phase 6,
+  **Morphology**): full-precision floats, or integers for the two counts.
+  Region columns, when present, still come after them.
 
 - The bbox is half-open, in region voxel coordinates; `center_*_nm` are
   full-precision floats (centroid, voxel `i` at `i ·` voxel size).
@@ -1027,7 +1089,7 @@ global_id,tile,local_id,z0,z1,y0,y1,x0,x1
 
 `measure_run.json` — from `stitch_measure`: `voxel_size_zyx_nm`,
 `region_only`, `max_crop_voxels`, `unproofread_tiles` (names, tile order),
-`code_revision`, `finished_at` (UTC), `command`.
+`code_revision`, `finished_at` (UTC), `method_version`, `command`.
 
 `validate_repeated_tile.csv` — from `stitch_validate`, by `object_id` then
 tile order:
@@ -1050,14 +1112,20 @@ ranked_by,rank,object_id,member_count,tiles,length_um,volume_um3,bbox_z0,bbox_z1
 `delivery/mitochondria.csv` — from `stitch_deliver`, by `mito_id`:
 
 ```text
-mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons
+mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
 ```
+
+The delivery format only grows at the end: the first 22 columns are those of
+the first deliveries, in the same order, and a test pins them. The morphology
+columns are copied from `measurements.csv`; a `measurements.csv` written
+before they existed delivers with them empty.
 
 `delivery/summary.csv` — `metric,all,core`; metrics `objects, multi_tile,
 length_measured, length_skipped_too_large, cut_off_at_data_edge,
 crosses_region_boundary, touches_unproofread_tile, unresolved_contacts,
-volume_um3_{median,p90,max}, length_um_{median,p90,max}`. Statistics are
-empty when there are no values.
+volume_um3_{median,p90,max}, length_um_{median,p90,max},
+length_smoothed_um_{median,p90,max}, short_object` (a count). Statistics are empty when there are no
+values. New metrics are added at the end only.
 
 `delivery/excluded.csv`:
 
@@ -1074,6 +1142,9 @@ in it.
   reads, candidates, decisions, union-find, objects, auto-accept, CSV I/O.
 - `backend/annotation/stitching_measure.py` — phase 6: face coverage, edges,
   crops in region coordinates, cable length through `annotation.measurements`.
+- `backend/annotation/morphology.py` — width, branch points, endpoints,
+  tortuosity, surface area and sphericity of one mask; used by phase 6 and
+  `measure_volume`.
 - `backend/annotation/stitching_validate.py` — phase 7a: consistency checks,
   repeated-tile classification (face contacts in Z blocks), largest objects.
 - `backend/annotation/stitching_deliver.py` — phase 7b: exclusions, decision
@@ -1111,8 +1182,17 @@ in it.
     exclusions; the core flag and reasons on a region layout that produces
     every reason; the README naming every column.
 
+- `backend/annotation/test_morphology.py` — analytic shapes on (30, 8, 8) nm
+  voxels, placed off the grid: flat-ended cylinders along X and Z, a capsule, a
+  sphere and a Y-shaped branch, each against its known radius, length, area,
+  sphericity and branch/end counts. Smoothed length is checked on the
+  between-planes cylinder, capsules, a slanted tube, half-circle arcs in XY
+  and XZ and the Y branch, each against its known length. A cylinder split across an X seam and a Z
+  seam must give exactly the columns of the unsplit one, and so must
+  `measure_volume`.
+
 ```bash
-python manage.py test annotation.test_stitching
+python manage.py test annotation.test_stitching annotation.test_morphology
 ```
 
 ## Known limits
@@ -1147,6 +1227,100 @@ python manage.py test annotation.test_stitching
   each repeated-tile object's labels in that tile; `stitch_deliver` reads no
   tile. Over-limit objects in phase 6 cost one extra read of their window
   (for the centroid).
+- **Cable length on anisotropic voxels.** A skeleton is a chain of voxel
+  centres, so the raw cable length (`skeleton_length_um`, the delivery's
+  `length_um`) runs long wherever the true centreline is not a row of voxels.
+  Measured on synthetic shapes at (30, 8, 8) nm; none of it is spurious
+  branches (every shape below has the right endpoint and branch counts):
+  - *Zigzag at ties.* When the centreline lies between two equally central
+    voxel rows, the path hops between them. A straight 1600 nm cylinder of
+    radius 120 nm along X, centred between two Z planes, reads 4392 nm: 94
+    reversals in Z at 30 nm each. Within 0.1 voxel of the tie it still hops in
+    Y and reads 2456 nm.
+  - *Staircasing.* Slanted and curved stretches are climbed in voxel steps:
+    capsules at 15-60 degrees in the XZ plane read 18-25 % long, half-circle
+    arcs 8-18 %, a helix 28 %, rough tubes of varying radius 31-42 %. Objects
+    along Z read within 4 %.
+  - *Flat ends.* The path runs from the corner of a flat end face to the
+    axis, about 150 nm extra per end on that cylinder. Rounded ends do not
+    have this.
+
+  `length_smoothed_um` removes the first two. On the same shapes it reads:
+  capsules and slanted tubes -1.5 to +0.6 %; arcs with a radius of curvature
+  of 600-1000 nm -1.4 to +0.2 %; helix and wavy tube under 1 %; Y branches
+  +0.4 %; rough tubes -0.1 to +8.4 %; the flat-ended cylinder +7 to +8 % (the
+  corner dive remains). It reads short where smoothing cuts a corner: 2-6 %
+  on bends tighter than about 2.5 tube radii. A capsule shorter than about
+  two widths lying along Z reads up to 8 % short, because the skeleton stops
+  before the tips there. `tortuosity` uses the smoothed main path for this
+  reason.
+- **Why 200 nm, twice.** The window was swept from 100 to 400 nm, one and two
+  passes, over the 39 shapes used to choose it and over 34 held-out shapes
+  generated afterwards with other radii (70-190 nm), lengths, random 3D
+  orientations, curvature planes, roughness settings and seeds. Median error /
+  mean absolute error against the true length, in %:
+
+  | Window, passes | 39 tuning shapes | 34 held-out shapes |
+  |----------------|------------------|--------------------|
+  | raw            | +17.8 / 26.0     | +25.8 / 24.3       |
+  | 100 nm x 1     | +2.3 / 5.1       | +3.2 / 4.2         |
+  | 200 nm x 1     | +1.2 / 3.0       | +1.3 / 2.4         |
+  | 400 nm x 1     | +0.6 / 2.3       | +0.8 / 2.0         |
+  | 100 nm x 2     | +0.9 / 2.8       | +1.2 / 2.4         |
+  | 150 nm x 2     | +0.5 / 2.2       | +0.5 / 1.8         |
+  | **200 nm x 2** | **-0.0 / 2.0**   | **+0.3 / 1.7**     |
+  | 250 nm x 2     | -0.1 / 1.9       | +0.1 / 1.6         |
+  | 300 nm x 2     | -0.3 / 2.0       | +0.1 / 1.7         |
+  | 400 nm x 2     | -0.6 / 2.5       | -0.0 / 1.8         |
+
+  From 150 to 300 nm with two passes the result barely moves, on both sets;
+  below that zigzag survives, above it tight bends are cut (the worst tuning
+  shape at 400 nm x 2 is a tight arc, -6.9 %). 32 of the 34 held-out shapes are
+  within 3 % at 200 nm x 2. The held-out mean includes one Y shape that reads
+  27 % short at every window because the skeleton has no third arm (next
+  item).
+- **Short side arms are not skeletonised.** With the lab's TEASAR parameters
+  (`const` 500 nm, `scale` 1.5) a side arm shorter than about 600-700 nm from
+  junction to tip (roughly 500 nm + 1.5 radii) gets no branch: tested at radius
+  80 and 120 nm, arms up to 580 / 620 nm are missed, from 680 / 720 nm found.
+  Both lengths then leave the arm out and `branch_points` undercounts. This is
+  the existing skeleton, not the smoothing.
+- **Short and round objects.** Capsules 200-1000 nm long, radii 60-150 nm,
+  seven orientations, plus ellipsoids with axis ratios 1.0-1.5. Taking the
+  measured aspect as `length_smoothed_um / (width_max_nm / 1000)`: at 1.5 or
+  more, 363 of 366 cases are within 10 % (worst 13 %, an object along Z);
+  below 1.5, 136 of 162 are, and errors reach 17 %. The raw length reads
+  20-36 % long on average across the same capsules. Near-spherical blobs read
+  1-15 % above their diameter. The `short_object` column is `true` below
+  1.5 (`SHORT_OBJECT_ASPECT`), `false` otherwise and empty without a
+  skeleton; `summary.csv` counts them. It does not change `core` and does not
+  cover the Z bias below.
+- **Objects along Z read short.** A capsule whose axis is within about 15
+  degrees of Z reads 3-13 % short in the smoothed length (mean -5 % at five
+  widths long, -8 to -11 % at two), because the skeleton stops one or two
+  30 nm planes before each tip.
+- **Rough surfaces.** On straight rough tubes (radius 140 nm, bumps of 30 nm)
+  the smoothed length reads +1.6 to +8.4 % over six seeds. The middle 60 % is
+  within 2.3 %; the rest is at the two ends, where the skeleton runs to an
+  off-axis bump (up to 120 nm off, +140 nm in the worst case), and part is
+  real: the bumps make the object longer than its nominal length (slab
+  centroids of the same object read +3.1 %). Wider windows (to 600 nm) and
+  recentring vertices on the local centroid do not remove it. Bumps of 40 nm
+  spawn a 294 nm side spur; the main path (`longest_path_smoothed_um`) then
+  reads +4.2 % while the total reads +20 %.
+- **One real tile.** On the nag_p10 prediction tile
+  `96-352_8192-10240_19456-21504` (1,286 labels, not proofread; voxel size
+  assumed 30, 8, 8), smoothed / raw length has median 0.75 (5th-95th
+  percentile 0.65-0.85), with no dependence on length. By orientation of the
+  long axis: 0.76 in the XY plane, 0.75 oblique, 0.78 steep, 0.84 along Z.
+  Median tortuosity is 1.06 from the smoothed main path and 1.44 from the raw
+  one. There is no ground truth for real objects, so this shows how far the
+  two lengths differ, not which is right.
+- **Width accuracy** is about half a voxel, so half the Z voxel size for
+  objects lying in the XY plane. `width_min_nm` is the least stable of the
+  four: a flat end or a skeleton spur can still pull it down.
+- **Branch counts** include short spurs the skeletoniser makes on bumpy
+  surfaces; they are not pruned.
 - **Sparse label IDs.** The label scan reuses the per-volume code's
   `scipy.ndimage.find_objects`, whose memory grows with a slice's largest
   label ID. Tiles with very sparse IDs in the billions would need a different
