@@ -311,6 +311,29 @@ together; agreeing duplicates are fine.
   - pairs given different decisions anywhere in the inputs.
 
   The same decision repeated is fine.
+- **Tile fingerprints.** A decision is about two labels as they were when the
+  reviewer saw them. Every decision row therefore carries the fingerprint
+  (`file_size:file_mtime_ns`, as `stitch_ids` recorded it in `tile_ids.csv`)
+  of its two tiles at the time it was made: the review page writes the
+  fingerprints of the tiles it was built from, `stitch_auto_decisions` and
+  `stitch_carry_decisions` those of their work directory. `stitch_objects`
+  fingerprints the tiles again and refuses, before writing anything:
+  - when a tile file no longer matches `tile_ids.csv` ("changed since
+    stitch_ids; rerun stitch_ids"), as phases 3, 4 and 6 already did;
+  - every decision whose recorded fingerprint differs from the current one
+    for either tile, listed with `file:line`, the tile, and both values. This
+    is the case of a tile relabelled in place and phases 1-3 rerun in the same
+    work directory: seam numbers, labels and global IDs can all still match;
+  - every decision with no fingerprint (a file exported before this existed,
+    or with the columns removed), unless `--allow-unfingerprinted` is given;
+    the command then warns with their number. The flag does not accept
+    decisions whose fingerprints are present and wrong.
+
+  A fingerprint is size and modification time, not content: a tile that was
+  saved again unchanged, or copied without keeping its modification time,
+  counts as changed. Rerun in a new work directory and use
+  `stitch_carry_decisions`, which compares the labels themselves (voxel counts
+  and contacts) and gives the decisions it carries the new fingerprints.
 - It reports counts of yes, no, unsure and undecided. `--require-complete`
   refuses if any candidate is undecided; `unsure` counts as decided but never
   merges.
@@ -821,6 +844,8 @@ number and tile names no longer line up. Nothing carried
 a decision forward: every card had to be answered again. One case was worse:
 a tile relabelled *in place* (same name, same largest ID) keeps every key, so
 an earlier decision file was accepted without anyone seeing the change.
+`stitch_objects` now refuses such a file by tile fingerprint (phase 5), but
+only the carry step says which of its decisions still hold.
 
 **`stitch_carry_decisions`** closes both gaps. Rerun phases 1-3 (and
 `stitch_auto_decisions`) in a **new work directory**, then:
@@ -835,7 +860,7 @@ python manage.py stitch_objects --work /scratch/stitch_p10_v2 --decisions decisi
 ```
 
 It reads only the two work directories (`tiles.csv`, `seams.csv`,
-`id_map.csv`, `candidates.csv`) and the earlier decision files. No tile is
+`tile_ids.csv`, `id_map.csv`, `candidates.csv`) and the earlier decision files. No tile is
 read, so the earlier tiles may be gone.
 
 **When a decision is still valid.** A decision is about two labels touching
@@ -951,10 +976,12 @@ box.
   `--overwrite` is given, which replaces only `index.html` and `crops/`.
 - **Pairing file:** it also writes `<work>/image_pairing.csv`.
 
-`stitch_objects` reads `tiles.csv`, `candidates.csv` and `id_map.csv`, plus
-the files given with `--decisions` (repeatable). Add `--require-complete` to
-refuse undecided candidates. It writes `objects.csv`, `objects_summary.csv`
-and `decisions_resolved.csv`.
+`stitch_objects` reads `tiles.csv`, `tile_ids.csv`, `candidates.csv` and
+`id_map.csv`, plus the files given with `--decisions` (repeatable), and stats
+every tile file (it reads none). Add `--require-complete` to refuse undecided
+candidates, and `--allow-unfingerprinted` to accept decision files exported
+before tile fingerprints existed. It writes `objects.csv`,
+`objects_summary.csv` and `decisions_resolved.csv`.
 
 `stitch_auto_decisions` reads `candidates.csv`. Its options:
 
@@ -1108,11 +1135,17 @@ empty).
 `decisions.csv` — exported by the review page, one row per decided card:
 
 ```text
-seam,tile_a,label_a,tile_b,label_b,global_a,global_b,decision,reviewer,decided_at
+seam,tile_a,label_a,tile_b,label_b,global_a,global_b,decision,reviewer,decided_at,fingerprint_a,fingerprint_b
 ```
 
 `decision` is `yes`, `no` or `unsure`. `decided_at` is an ISO 8601 UTC
-timestamp from the reviewer's browser. Shard pages name their export
+timestamp from the reviewer's browser. `fingerprint_a` and `fingerprint_b`
+are `file_size:file_mtime_ns` of the two tiles when the decision was made
+(phase 5, *Tile fingerprints*); they are the last two columns and are missing
+from files exported before they existed, which every reader still accepts
+(`stitch_objects` only with `--allow-unfingerprinted`). The page keeps the
+fingerprints of an imported decision and exports them blank when the imported
+file had none. Shard pages name their export
 `decisions_<i>of<n>.csv`.
 
 `objects.csv` — one row per `global_id` in `id_map.csv`, sorted by
@@ -1321,7 +1354,8 @@ in it.
 - `backend/annotation/test_stitching_rerun.py` — a tile set with a missing Z
   slab that is then filled (decisions carried, only the new seams need review,
   the tube that was cut at the slab becomes one object); a relabelled tile
-  producing each invalidation reason, and the in-place relabel hazard; tiles
+  producing each invalidation reason; the in-place relabel, which
+  `stitch_objects` must refuse by fingerprint; tiles
   of two sizes sharing a seam, and a tile of a third size added later, with
   measurements checked against the untiled volume.
 - `backend/annotation/test_morphology.py` — analytic shapes on (30, 8, 8) nm
@@ -1374,8 +1408,15 @@ python manage.py test annotation.test_stitching annotation.test_stitching_rerun 
   again. Matching by footprint would need the earlier tiles.
 - **In-place relabels.** Rerunning phases 1-3 in the *same* work directory
   overwrites the earlier `candidates.csv`, and earlier decision files may still
-  match by key. `stitch_objects` cannot tell. Always rerun in a new work
-  directory and go through `stitch_carry_decisions`.
+  match by key. `stitch_objects` now refuses them by tile fingerprint, but it
+  cannot say which are still valid, and the earlier work files that
+  `stitch_carry_decisions` needs are gone. Always rerun in a new work
+  directory. Decision files without fingerprints accepted with
+  `--allow-unfingerprinted` have no such protection.
+- **Fingerprints are not content hashes.** Size and modification time, as in
+  phases 3 and 6: cheap for 440 tiles, but a tile rewritten with the same
+  bytes counts as changed, and one changed with its size and modification
+  time restored would not.
 - **Region masks in re-runs.** The validity test does not look at region
   masks. If a mask changes, `in_region` changes and more candidates may need
   review; carried decisions stay valid.

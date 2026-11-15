@@ -30,6 +30,8 @@ from pathlib import Path
 
 from annotation.stitching import (
     DECISION_FIELDS,
+    decision_fingerprints,
+    tile_fingerprints,
     IN_REGION,
     StitchingError,
     _listing,
@@ -102,6 +104,7 @@ def carry_decisions(old_work, new_work, decision_paths, *, include_auto: bool = 
     old_candidates = read_csv(old_work / "candidates.csv")
     new_candidates = read_csv(new_work / "candidates.csv")
     old_counts, new_counts = _label_counts(old_work), _label_counts(new_work)
+    new_fingerprints = tile_fingerprints(new_work)
     if region_only and IN_REGION not in csv_fields(new_work / "candidates.csv"):
         raise StitchingError("--region-only needs region data; run stitch_ids --regions and stitch_candidates "
                              "in the new work directory")
@@ -173,8 +176,11 @@ def carry_decisions(old_work, new_work, decision_paths, *, include_auto: bool = 
             continue
         report.append({**entry, "status": CARRIED, "reason": "", "detail": ""})
         outcome[key] = (CARRIED, "")
+        # The checks above are what makes the decision valid on the new tiles, so it gets
+        # their fingerprints, not the ones it was first recorded with.
         carried.append({**{f: new[f] for f in DECISION_FIELDS[:7]}, "decision": decision,
-                        "reviewer": entry["reviewer"], "decided_at": entry["decided_at"]})
+                        "reviewer": entry["reviewer"], "decided_at": entry["decided_at"],
+                        **decision_fingerprints(new, new_fingerprints)})
     order = {_pair_key(c): i for i, c in enumerate(new_candidates)}
     carried.sort(key=lambda r: order[_pair_key(r)])
 

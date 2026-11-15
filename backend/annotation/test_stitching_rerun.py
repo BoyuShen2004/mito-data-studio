@@ -280,22 +280,35 @@ class RelabelledTileTests(RerunMixin, SimpleTestCase):
             (RA, 4, self.rb2, 4): "changed:label_changed;contact_changed",
         })
 
-    def test_in_place_relabel_is_not_caught_without_the_carry_step(self):
-        # The hazard this command removes: relabelled in place (same names, seams and IDs),
-        # the earlier decisions still match candidates.csv and stitch_objects accepts them.
+    def test_in_place_relabel_is_refused_by_stitch_objects(self):
+        # Relabelled in place (same names, seams and IDs): the earlier decisions still match
+        # candidates.csv by key. They carry the fingerprint of the tile they were made on,
+        # so stitch_objects refuses them; the carry step says which are still valid.
         before, in_place = self.make_dir(), self.make_dir()
         for directory, source in ((before, self.old_tiles / f"{RB}.tif"), (in_place, self.new_tiles / f"{self.rb2}.tif")):
             shutil.copy2(self.old_tiles / f"{RA}.tif", directory / f"{RA}.tif")
             shutil.copy2(source, directory / f"{RB}.tif")
         old, work = self.candidates_run(before), self.candidates_run(in_place)
         stale = self.decide(old, {self.pairs["L"]: "yes"}, name="stale.csv")
-        self.call("stitch_objects", "--work", str(work), "--decisions", str(stale))        # accepted
+        with self.assertRaises(CommandError) as ctx:
+            self.call("stitch_objects", "--work", str(work), "--decisions", str(stale))
+        message = str(ctx.exception)
+        self.assertIn("decisions recorded on another version of a tile", message)
+        was, now = (stitching.tile_fingerprints(w)[RB] for w in (old, work))
+        _, label_a, _, label_b = self.pairs["L"]
+        self.assertIn(f"{stale}:2: seam 0 {RA}:{label_a} -> {RB}:{label_b}: {RB} was {was}, is now {now}", message)
+        self.assertNotIn(f"{RA} was", message)                 # the untouched tile is not blamed
+        self.assertFalse((work / "objects.csv").exists())
         self.carry(old, work, stale)
         self.assertEqual(read_rows(work / "decisions_carried.csv"), [])
         self.assertEqual(self.report(work)[self.pairs["L"]]["reason"], "label_changed")
 
     def test_carried_decisions_are_accepted_by_stitch_objects(self):
         self.carry(self.old, self.new, self.human)
+        # Carried decisions were re-validated on the new tiles and carry their fingerprints.
+        known = stitching.tile_fingerprints(self.new)
+        for row in read_rows(self.new / "decisions_carried.csv"):
+            self.assertEqual((row["fingerprint_a"], row["fingerprint_b"]), (known[row["tile_a"]], known[row["tile_b"]]))
         self.call("stitch_objects", "--work", str(self.new), "--decisions", str(self.new / "decisions_carried.csv"))
         self.assertEqual(self.object_of(self.new, RA, 1), self.object_of(self.new, self.rb2, 1))
         self.assertNotEqual(self.object_of(self.new, RA, 2), self.object_of(self.new, self.rb2, 2))

@@ -10,8 +10,12 @@ follows semantic versioning for tagged releases.
   into the new run, reports the invalidated ones with reasons
   (`carry_report.csv`) and lists the candidates that still need review
   (`needs_review.csv`, for `stitch_review --only`). Tiles of different sizes
-  sharing a seam were already supported and are now tested. No new
-  dependencies. See `docs/engineering/stitching.md`.
+  sharing a seam were already supported and are now tested. Decisions now
+  record which version of each tile they were made on (two new last columns
+  of `decisions.csv`, `fingerprint_a` and `fingerprint_b`), and `stitch_objects`
+  refuses to run when a tile changed since `stitch_ids` or since a decision
+  was made. Decision files exported earlier need `--allow-unfingerprinted`.
+  No new dependencies. See `docs/engineering/stitching.md`.
 - Add morphology columns to `stitch_measure`, `measure_volume` and the
   delivery (`mitochondria.csv`, appended after the existing columns): width
   mean/median/min/max from an anisotropic Euclidean distance transform sampled
