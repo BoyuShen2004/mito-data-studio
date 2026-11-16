@@ -217,8 +217,8 @@ class SmoothedLengthTests(SimpleTestCase):
         self.assertIn(f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}", METHOD_VERSION)
         self.assertIn("tortuosity: smoothed longest path / end-to-end", METHOD_VERSION)
         self.assertIn("short_object: smoothed length < 1.5 x largest width", METHOD_VERSION)
-        self.assertIn("ends carried to the surface along the local axis from 2 radii in, not at data edges",
-                      METHOD_VERSION)
+        self.assertIn("ends carried to the surface along the local axis from 2 radii in, not at data edges, "
+                      "short unbranched objects as a straight line without tortuosity", METHOD_VERSION)
 
     def test_short_object_flags_round_objects_only(self):
         ball = measure_morphology(sphere(), VOXEL)
@@ -261,6 +261,7 @@ class EndCapTests(SimpleTestCase):
                 self.assertAlmostEqual(m.end_to_end_nm, tip_to_tip, delta=0.03 * tip_to_tip)
                 self.assertAlmostEqual(m.tortuosity, 1.0, delta=0.01)
                 self.assertAlmostEqual(m.longest_path_smoothed_nm, m.tortuosity * m.end_to_end_nm, places=6)
+                self.assertEqual((m.length_method, m.row()["length_method"]), ("skeleton", "skeleton"))
 
     def test_short_rod_along_z_is_its_extent(self):
         # Too short for two end stretches: the chord along the principal axis. Along Z nothing
@@ -272,7 +273,38 @@ class EndCapTests(SimpleTestCase):
                 planes = int(mask.any(axis=(1, 2)).sum())
                 self.assertAlmostEqual(m.length_smoothed_nm, planes * VOXEL[0], delta=1.0)
                 self.assertAlmostEqual(m.length_smoothed_nm, tip_to_tip, delta=VOXEL[0] + 1.0)
-                self.assertAlmostEqual(m.tortuosity, 1.0, places=9)
+                # A straight line: said so in length_method, and no tortuosity (1 would only
+                # restate the method).
+                self.assertEqual((m.length_method, m.row()["length_method"]), ("straight_line", "straight_line"))
+                self.assertIsNone(m.tortuosity)
+                self.assertEqual(m.row()["tortuosity"], "")
+                self.assertAlmostEqual(m.end_to_end_nm, m.length_smoothed_nm, places=6)
+                self.assertAlmostEqual(m.longest_path_smoothed_nm, m.length_smoothed_nm, places=6)
+
+    def test_the_rule_that_picks_the_straight_line(self):
+        # Unbranched, and less than max(100 nm, one radius) of path left after 2 radii at each
+        # end: about 2.5 widths. Radius 100 nm: 400 nm long is a line, 800 nm is not.
+        self.assertEqual(measure_morphology(straight_capsule((0, 0, 1), 400.0, 100.0), VOXEL).length_method,
+                         "straight_line")
+        self.assertEqual(measure_morphology(straight_capsule((0, 0, 1), 800.0, 100.0), VOXEL).length_method, "skeleton")
+        # A sphere is a line (its diameter); a branched object never is; nothing without a skeleton.
+        ball = measure_morphology(sphere(), VOXEL)
+        self.assertEqual((ball.length_method, ball.tortuosity), ("straight_line", None))
+        self.assertAlmostEqual(ball.length_smoothed_nm, 600.0, delta=VOXEL[0])
+        self.assertEqual(measure_morphology(y_shape(), VOXEL).length_method, "skeleton")
+        self.assertEqual((Morphology().length_method, Morphology().row()["length_method"]), (None, ""))
+
+    def test_short_object_cut_off_at_the_data_edge_stays_on_the_skeleton(self):
+        # Short enough for a line, but one end is where the data stops: no line, nothing moved.
+        mask = straight_capsule((0, 0, 1), 400.0, 100.0)
+        last = int(np.flatnonzero(mask.any(axis=(0, 1)))[-1]) - 8
+        mask = mask[:, :, :last + 1]
+        layer = (0, mask.shape[0], 0, mask.shape[1], last, last + 1)
+        smoothed, (capped, straight_line) = self.capped(mask, [layer])
+        self.assertFalse(straight_line)
+        np.testing.assert_array_equal(capped, smoothed)
+        self.assertEqual(measure_morphology(mask, VOXEL, cut_boxes=[layer]).length_method, "skeleton")
+        self.assertEqual(measure_morphology(mask, VOXEL).length_method, "straight_line")
 
     def cut_capsule(self):
         """A capsule along X cut off by the array's +X face, and that face's voxel layer."""
@@ -290,7 +322,8 @@ class EndCapTests(SimpleTestCase):
 
     def test_end_on_a_data_edge_is_not_moved(self):
         mask, layer = self.cut_capsule()
-        smoothed, capped = self.capped(mask, [layer])
+        smoothed, (capped, straight_line) = self.capped(mask, [layer])
+        self.assertFalse(straight_line)
         at_cut, free = int(np.argmax(smoothed[:, 2])), int(np.argmin(smoothed[:, 2]))
         np.testing.assert_array_equal(capped[at_cut], smoothed[at_cut])
         # The free end goes to the rounded tip, on the axis (capsule_x: 4 voxels of padding).
@@ -298,7 +331,7 @@ class EndCapTests(SimpleTestCase):
         self.assertAlmostEqual(capped[free][2], tip_x, delta=VOXEL[2])
         self.assertGreater(np.linalg.norm(capped[free] - smoothed[free]), 30.0)
         # Without the layer the cut end would be treated as a tip too.
-        _, unaware = self.capped(mask, ())
+        _, (unaware, _) = self.capped(mask, ())
         self.assertGreater(np.linalg.norm(unaware[at_cut] - smoothed[at_cut]), 5.0)
         # measure_morphology passes the layers on.
         cut = measure_morphology(mask, VOXEL, cut_boxes=[layer])
@@ -580,6 +613,12 @@ class DeliveryColumnTests(SimpleTestCase):
         self.assertEqual(stitching_deliver.summarise([{**row, "short_object": "true"}, row],
                                                      [{n: False for n in stitching_deliver.NOT_CORE_REASONS}] * 2)
                          ["short_object"], 1)
+        self.assertEqual((row["length_method"], summary["length_method_skeleton"],
+                          summary["length_method_straight_line"]), ("", 0, 0))
+        counted = stitching_deliver.summarise(
+            [{**row, "length_method": "skeleton"}, {**row, "length_method": "straight_line"}, row],
+            [{n: False for n in stitching_deliver.NOT_CORE_REASONS}] * 3)
+        self.assertEqual((counted["length_method_skeleton"], counted["length_method_straight_line"]), (1, 1))
 
     def test_summary_metrics_only_grow_at_the_end(self):
         self.assertEqual(stitching_deliver.SUMMARY_METRICS[:14], (
@@ -587,9 +626,10 @@ class DeliveryColumnTests(SimpleTestCase):
             "crosses_region_boundary", "touches_unproofread_tile", "unresolved_contacts", "volume_um3_median",
             "volume_um3_p90", "volume_um3_max", "length_um_median", "length_um_p90", "length_um_max"))
         self.assertEqual(stitching_deliver.SUMMARY_METRICS[14:], (
-            "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max", "short_object"))
-        self.assertEqual(MORPHOLOGY_FIELDS[-3:],
-                         ("length_smoothed_um", "longest_path_smoothed_um", "short_object"))
+            "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max", "short_object",
+            "length_method_skeleton", "length_method_straight_line"))
+        self.assertEqual(MORPHOLOGY_FIELDS[-4:],
+                         ("length_smoothed_um", "longest_path_smoothed_um", "short_object", "length_method"))
 
     def test_readme_documents_every_morphology_column(self):
         docs = stitching_deliver._column_docs(VOXEL)
@@ -598,6 +638,9 @@ class DeliveryColumnTests(SimpleTestCase):
         self.assertIn("## How width and shape are measured", text)
         self.assertIn("**Two lengths.**", text)
         self.assertIn("**Ends.**", text)
+        self.assertIn("**Skeleton or straight line (`length_method`).**", text)
+        self.assertIn("less path is left between them than 100 nm or the largest radius", text)
+        self.assertIn("`tortuosity` is empty", text)
         self.assertIn("is not extended", text)
         self.assertIn("Euclidean distance", text)
 

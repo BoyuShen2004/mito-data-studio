@@ -9,8 +9,10 @@ follows semantic versioning for tagged releases.
   `longest_path_smoothed_um`, `end_to_end_um` and `tortuosity` are now
   measured tip to tip. Each skeleton end is carried along the object's local
   axis to its surface (a skeleton stops beside the tip, a little early), and
-  an unbranched object too short for that is measured as the chord along its
-  principal axis. Straight objects now have a tortuosity of 1.00 (was
+  an unbranched object too short for that is measured as one straight line
+  along its principal axis. The new last column `length_method` says which
+  (`skeleton` or `straight_line`; `summary.csv` counts both), and `tortuosity`
+  is empty for straight-line objects. Straight objects now have a tortuosity of 1.00 (was
   1.02-1.10) and objects lying along Z no longer read 2-9 % short. Ends at the
   edge of the data are not extended. `length_um` is unchanged. Method version
   `morphology/4`. Expect `length_smoothed_um` to change by a few percent

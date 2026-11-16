@@ -26,7 +26,10 @@ import numpy as np
 
 from annotation.measurements import CROP_PAD, DUST_SIZE, SKIPPED_CROP_LIMIT
 from annotation.morphology import (
+    END_DIRECTION_NM,
     END_TRIM_FACTOR,
+    METHOD_SKELETON,
+    METHOD_STRAIGHT_LINE,
     MORPHOLOGY_FIELDS,
     SHORT_OBJECT_ASPECT,
     SMOOTH_PASSES,
@@ -63,7 +66,7 @@ SUMMARY_METRICS = ("objects", "multi_tile", "length_measured", "length_skipped_t
                    "length_um_median", "length_um_p90", "length_um_max",
                    # Added later: new metrics go at the end.
                    "length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max",
-                   "short_object")
+                   "short_object", "length_method_skeleton", "length_method_straight_line")
 EXCLUDED_FIELDS = ("mito_id", "excluded_global_ids", "n_tiles", "tiles", "volume_um3", "reaches_region")
 DELIVERY_FILES = ("mitochondria.csv", "summary.csv", "excluded.csv", "README.md")
 MEASURED, SKIPPED_TOO_LARGE = "measured", "skipped_too_large"
@@ -220,6 +223,8 @@ def summarise(rows: list[dict], flags: list[dict]) -> dict[str, object]:
     out.update(zip(("length_smoothed_um_median", "length_smoothed_um_p90", "length_smoothed_um_max"),
                    _stats(smoothed)))
     out["short_object"] = sum(r.get("short_object") == "true" for r in rows)
+    for method in (METHOD_SKELETON, METHOD_STRAIGHT_LINE):
+        out[f"length_method_{method}"] = sum(r.get("length_method") == method for r in rows)
     return out
 
 
@@ -280,7 +285,8 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
         "end_to_end_um": "Straight-line distance in µm between the two ends of the main path, tip to tip (an "
                          "end at the data edge stays where the skeleton stops).",
         "tortuosity": "`longest_path_smoothed_um` ÷ `end_to_end_um`: 1 for a straight mitochondrion, larger the "
-                      "more its main path curves. Side branches do not count.",
+                      "more its main path curves. Side branches do not count. Empty when `length_method` is "
+                      "`straight_line`: a straight line has no curvature to measure.",
         "surface_area_um2": "Surface area in µm². Empty when `length_status` is `skipped_too_large`.",
         "sphericity": "How close the shape is to a sphere: the surface of a sphere of the same volume divided by "
                       "`surface_area_um2`. 1 for a sphere, about 0.6 for a rod five times longer than wide.",
@@ -293,9 +299,13 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
                                     "treatment. The numerator of `tortuosity`.",
         "short_object": f"`true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times `width_max_nm`: "
                         "the object is about as wide as it is long, so its length is closer to a diameter, "
-                        "its `tortuosity` is 1 by construction and `length_um` is at its least reliable (see "
+                        "it has no `tortuosity` and `length_um` is at its least reliable (see "
                         "*How length is measured*). Prefer volume and `width_max_nm` for these. Does not "
                         "affect `core`. Empty when there is no skeleton.",
+        "length_method": "How `length_smoothed_um` was measured: `skeleton` (along the smoothed skeleton, ends "
+                         "carried to the tips) or `straight_line` (a very short unbranched mitochondrion, measured "
+                         "as one line through its centre; `tortuosity` is then empty). The exact rule is under "
+                         "*How length is measured*. Empty when there is no skeleton. Does not affect `core`.",
     }
     return docs
 
@@ -318,7 +328,9 @@ SUMMARY_DOCS = {
     "length_smoothed_um_median": "median smoothed length (µm), over measured lengths",
     "length_smoothed_um_p90": "90th percentile of smoothed length (µm)",
     "length_smoothed_um_max": "largest smoothed length (µm)",
-    "short_object": "how many are flagged `short_object` (length unreliable)",
+    "short_object": "how many are flagged `short_object` (about as wide as long)",
+    "length_method_skeleton": "how many have `length_method` = `skeleton`",
+    "length_method_straight_line": "how many have `length_method` = `straight_line`",
 }
 EXCLUDED_DOCS = {
     "mito_id": "the excluded object",
@@ -430,11 +442,29 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "of a mitochondrion lying along Z is known to about one Z voxel, whatever its length. `length_um` is "
         "not changed by any of this.",
         "",
+        "**Skeleton or straight line (`length_method`).** A very short mitochondrion has no room for two such "
+        "end stretches. It is measured as one straight line instead, and `length_method` says which was used. "
+        "`straight_line` is used when all of this holds:",
+        "",
+        "1. the skeleton is a single unbranched path with two ends;",
+        f"2. after setting aside {END_TRIM_FACTOR:g} radii of path at each end, less path is left between them "
+        f"than {END_DIRECTION_NM:g} nm or the largest radius, whichever is larger (the radius of an end is the "
+        "largest inscribed radius along its stretch). In round numbers: the smoothed skeleton is shorter than "
+        f"2.5 times the largest width, or than 4 radii + {END_DIRECTION_NM:g} nm when the radius is under "
+        f"{END_DIRECTION_NM:g} nm;",
+        "3. neither end is at the edge of the imaged data.",
+        "",
+        "The line runs through the centre of mass along the direction in which the mitochondrion is longest "
+        "(its principal axis), from surface to surface. `length_smoothed_um`, `longest_path_smoothed_um` and "
+        "`end_to_end_um` are then all the length of that line, and `tortuosity` is empty: a straight line has "
+        "no curvature to measure. Every other mitochondrion has `length_method` = `skeleton`. A short "
+        "mitochondrion that is bent reads short as a straight line, by about 2 % for a 30 degree bend, 3 to "
+        "10 % for 60 degrees and 6 to 21 % for 90 degrees on test shapes; `summary.csv` counts both methods.",
+        "",
         "**Short objects.** A skeleton length means little for an object that is about as wide as it is long. "
         f"`short_object` is `true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times "
-        "`width_max_nm`. Such an object is measured as the straight line through its centre along its longest "
-        "direction: a diameter more than a length, with a `tortuosity` of 1 by construction, and for a nearly "
-        "round object the longest direction is arbitrary. On test capsules and near-spheres of known size, "
+        "`width_max_nm`. Such an object is measured as a straight line (above): a diameter more than a "
+        "length, with no `tortuosity`, and for a nearly round object the longest direction is arbitrary. On test capsules and near-spheres of known size, "
         "`length_smoothed_um` of flagged objects was within 10 % of the true size in all 159 cases (1.4 % on "
         "average), and of unflagged ones within 5 % in all 369; `length_um` read 15 to 40 % long on the same "
         "objects.",
@@ -457,7 +487,8 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "skeletoniser on bumpy surfaces count too, so treat small counts on thick objects with care.",
         "- **Tortuosity** is the smoothed length of the main path (the longest path through the skeleton) "
         "divided by the straight-line distance between its two ends. Side branches are left out, and the "
-        "smoothed length is used because the raw one runs long even on a straight object.",
+        "smoothed length is used because the raw one runs long even on a straight object. It is empty for "
+        "mitochondria measured as a straight line (`length_method`).",
         f"- **Surface area** is the area of a triangle mesh (marching cubes) around the voxels, after smoothing "
         f"them slightly (Gaussian, {SURFACE_SIGMA:g} voxel). Without smoothing, voxel steps inflate the area by "
         "5 to 19 %; with it, test spheres and cylinders are within about 3 %. Objects only one or two voxels "

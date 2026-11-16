@@ -45,7 +45,8 @@ from annotation.third_party.em_erl_skel import cable_length
 SURFACE_SIGMA = 1.0
 MORPHOLOGY_FIELDS = ("width_mean_nm", "width_median_nm", "width_min_nm", "width_max_nm", "branch_points",
                      "endpoints", "longest_path_um", "end_to_end_um", "tortuosity", "surface_area_um2",
-                     "sphericity", "length_smoothed_um", "longest_path_smoothed_um", "short_object")
+                     "sphericity", "length_smoothed_um", "longest_path_smoothed_um", "short_object",
+                     "length_method")
 # Smoothed length: moving average over this much path (nm), applied this many times.
 SMOOTH_WINDOW_NM = 200.0
 SMOOTH_PASSES = 2
@@ -69,11 +70,14 @@ END_SHARE_ONE = 0.8         # of a branch that ends at a branch point: the most 
 END_SECTION_FACTOR = 1.5    # a cross-section is the object within this many radii of the path
 END_AXIS_ROUNDS = 3         # times the two cross-sections are re-cut square to the axis they give
 RAY_STEP_NM = 1.0
+# ``length_method``: how ``length_smoothed_um`` was measured (see ``cap_ends``).
+METHOD_SKELETON, METHOD_STRAIGHT_LINE = "skeleton", "straight_line"
 # Identifies how the numbers were made; written to measure_run.json, the logs and the delivery
 # README. Raise the number whenever a definition or a parameter changes.
 METHOD_VERSION = (f"morphology/4 (length: TEASAR cable; smoothed length: branch moving average "
                   f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}, ends carried to the surface along the local axis "
-                  f"from {END_TRIM_FACTOR:g} radii in, not at data edges; "
+                  f"from {END_TRIM_FACTOR:g} radii in, not at data edges, short unbranched objects as a straight line "
+                  f"without tortuosity; "
                   f"tortuosity: smoothed longest path / end-to-end; "
                   f"width: anisotropic EDT, tips within {END_CAP_FACTOR:g} radii left out; "
                   f"surface: marching cubes, sigma {SURFACE_SIGMA:g} voxel; "
@@ -99,6 +103,7 @@ class Morphology:
     tortuosity: float | None = None
     surface_area_nm2: float | None = None
     sphericity: float | None = None
+    length_method: str | None = None        # METHOD_SKELETON or METHOD_STRAIGHT_LINE; None without a skeleton
 
     @property
     def short_object(self) -> bool | None:
@@ -122,6 +127,7 @@ class Morphology:
             "sphericity": text(self.sphericity), "length_smoothed_um": text(self.length_smoothed_nm, 1e3),
             "longest_path_smoothed_um": text(self.longest_path_smoothed_nm, 1e3),
             "short_object": "" if self.short_object is None else "true" if self.short_object else "false",
+            "length_method": self.length_method or "",
         }
 
 
@@ -420,8 +426,9 @@ def _principal_chord(mask: np.ndarray, voxel: np.ndarray):
 
 
 def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray, radii: np.ndarray,
-             *, cut_boxes=()) -> np.ndarray:
-    """``vertices_nm`` (a smoothed skeleton) with every skeleton end moved to the object's tip.
+             *, cut_boxes=()) -> tuple[np.ndarray, bool]:
+    """``vertices_nm`` (a smoothed skeleton) with every skeleton end moved to the object's tip,
+    and whether the object was measured as a straight line instead (below).
 
     A TEASAR skeleton does not end at the tip of a rounded end: it bends away from the axis
     inside the cap and stops at the surface beside the tip (68 nm off the axis and 24 nm short
@@ -437,10 +444,16 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
     point to the end is replaced by one straight line to the tip, its vertices spread along
     it, so the edges still apply.
 
-    An unbranched object too short for that (less than ``END_DIRECTION_NM`` or one radius of
-    path between the two outer cross-sections) becomes the chord of the object along its
-    principal axis through its centroid. When either end of that chord is cut off (below),
-    the object is left as it was.
+    **Straight line.** The object becomes the chord along its principal axis through its
+    centroid, from surface to surface, when all of this holds: its skeleton is one unbranched
+    path with two ends; after setting aside ``END_TRIM_FACTOR`` radii of path at each end
+    (the radius being the largest inscribed radius on that end's stretch, as ``trim`` finds
+    it), less than ``END_DIRECTION_NM`` or the path's largest radius, whichever is larger, is
+    left between the two; the chord's two rays leave the object; and neither end is cut off
+    (below). In round numbers: an unbranched object whose smoothed skeleton is shorter than
+    2.5 times its largest width (4 radii + 100 nm when the radius is under 100 nm). Such an
+    object is straight by construction, so it gets no tortuosity. A bent one reads short:
+    by the chord of its arc (see "Short curved objects" in docs/engineering/stitching.md).
 
     An end is left exactly as it was when its line leaves the object inside one of
     ``cut_boxes`` ((z0, z1, y0, y1, x0, x1) in mask voxels: the voxel layers where the data
@@ -449,6 +462,7 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
     voxel = np.asarray(voxel, float)
     vertices = np.asarray(vertices_nm, float)
     capped = vertices.copy()
+    straight_line = False
     edges = unique_edges(edges)
     degree = np.bincount(edges.ravel(), minlength=len(vertices))
     slack = 3 * float(voxel.max())
@@ -499,6 +513,7 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
                     continue
                 start = centroid - hits[0][0] * axis
                 capped[path] = start + np.linspace(0.0, 1.0, len(path))[:, None] * ((hits[0][0] + hits[1][0]) * axis)
+                straight_line = True
                 continue
         for is_end, order in zip(ends, (path, path[::-1])):
             if not is_end:
@@ -535,7 +550,7 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
             # sideways there would add length.
             tip = anchor + hit[0] * direction
             capped[order[:back + 1]] = tip + (along[:back + 1] / along[back])[:, None] * (pts[back] - tip)
-    return capped
+    return capped, straight_line
 
 
 # --- surface -----------------------------------------------------------------
@@ -591,7 +606,8 @@ def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
     radii = skeleton_radii_nm(mask, vertices, voxel)
     mean, median, low, high = width_stats_nm(radii, vertices, edges)
     # One main path, chosen on the smoothed and end-capped skeleton and measured both ways.
-    smoothed = cap_ends(mask, voxel, smooth_skeleton(vertices, edges), edges, radii, cut_boxes=cut_boxes)
+    smoothed, straight_line = cap_ends(mask, voxel, smooth_skeleton(vertices, edges), edges, radii,
+                                       cut_boxes=cut_boxes)
     main = longest_path(smoothed, edges)
     end_to_end = float(np.linalg.norm(smoothed[main[0]] - smoothed[main[-1]])) if main else 0.0
     has_path = end_to_end > 0
@@ -604,4 +620,6 @@ def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
         longest_path_nm=path_length_nm(vertices[main]) if has_path else None,
         longest_path_smoothed_nm=main_smoothed if has_path else None,
         end_to_end_nm=end_to_end if has_path else None,
-        tortuosity=main_smoothed / end_to_end if has_path else None, **shape)
+        # A straight line has no tortuosity to measure: 1 would only restate the method.
+        tortuosity=main_smoothed / end_to_end if has_path and not straight_line else None,
+        length_method=METHOD_STRAIGHT_LINE if straight_line else METHOD_SKELETON, **shape)

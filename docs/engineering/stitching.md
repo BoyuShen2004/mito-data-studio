@@ -417,9 +417,7 @@ is no skeleton (below the dust size, length 0).
   - the vertices of the replaced stretch are spread along one straight line
     from the inner point to the tip, so the edges still apply.
 
-  An unbranched object too short for two such stretches is measured as the
-  chord through its centroid along its principal axis. A terminal branch at
-  a branch point may replace at most 80 % of itself. An end is left exactly
+  A terminal branch at a branch point may replace at most 80 % of itself. An end is left exactly
   as it was when its line leaves the object in a voxel layer where the data
   stops, or when the end itself lies in one: `stitch_measure` passes the
   layer of every tile face in `edge_faces` (`edge_layers`), `measure_volume`
@@ -433,13 +431,38 @@ is no skeleton (below the dust size, length 0).
   (two sweeps per connected piece; the longest piece wins). One path is
   chosen, then measured three ways: its raw length, its smoothed length, and
   the straight distance between its two ends.
+- **Straight line** (`length_method`). An object too short for two end
+  stretches is measured as one straight line: the chord through its centroid
+  along its principal axis (the eigenvector of the largest eigenvalue of the
+  covariance of its voxel positions in nm), from surface to surface, both
+  ways from the centroid with the same nine-ray mean. `length_method` is
+  `straight_line` when all of this holds, and `skeleton` otherwise:
+  1. the skeleton is one connected, unbranched path with two ends;
+  2. with `cut` the first vertex at least 2 radii of path from each end (the
+     radius being the largest inscribed radius on the path from that end to
+     the inner cross-section, found by iterating), the path between the two
+     cuts is shorter than `max(100 nm, largest radius on the path)`;
+  3. both rays of the chord leave the object;
+  4. neither ray ends in a data-edge layer, and neither skeleton end lies in
+     one.
+
+  In round numbers, condition 2 is "the smoothed skeleton is shorter than 5
+  radii", 2.5 times the largest width (4 radii + 100 nm under 100 nm radius).
+  On the test capsules it selects everything up to 2 widths long, most at
+  2.5 and a few at 3. For such an object `length_smoothed_um`,
+  `longest_path_smoothed_um` and `end_to_end_um` are all the chord, and
+  `tortuosity` is empty: a line has none, and 1 would only restate the
+  method. `summary.csv` counts both methods. When condition 1 and 2 hold but
+  3 or 4 fails, the object is left as the smoothed skeleton has it
+  (`skeleton`). See *Short curved objects* under [Known limits](#known-limits)
+  for what the line costs on bent objects.
 - **`tortuosity`:** `longest_path_smoothed_um / end_to_end_um`. Side branches
   do not count, and the smoothed length is used because the raw one runs long
   on a straight object. Both use the end-capped skeleton, so a straight
-  capsule reads 1.00 in every orientation (median 1.0000, largest 1.010 over
-  1,320 test capsules); before end caps it read 1.02-1.10, because the path
+  capsule reads 1.00 in every orientation (largest 1.010 over the test
+  capsules); before end caps it read 1.02-1.10, because the path
   kept its two detours while the end-to-end distance was short. Two straight
-  arms at 120 degrees read 1.15 (2/√3).
+  arms at 120 degrees read 1.15 (2/√3). Empty for `straight_line` objects.
 - **Method version.** `morphology.METHOD_VERSION` names the definitions and
   parameters (smoothing window and passes, end caps, tortuosity definition,
   tip factor, surface sigma, short-object threshold). `stitch_measure` and `measure_volume` log it and write it to
@@ -1081,10 +1104,10 @@ It has no `decision` column, so importing it into a page decides nothing.
 `measurements.csv` — one row per object, sorted by `object_id`:
 
 ```text
-object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
+object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object,length_method
 ```
 
-- The last fourteen columns are the morphology columns (phase 6,
+- The last fifteen columns are the morphology columns (phase 6,
   **Morphology**): full-precision floats, or integers for the two counts.
   Region columns, when present, still come after them.
 
@@ -1144,7 +1167,7 @@ ranked_by,rank,object_id,member_count,tiles,length_um,volume_um3,bbox_z0,bbox_z1
 `delivery/mitochondria.csv` — from `stitch_deliver`, by `mito_id`:
 
 ```text
-mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
+mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object,length_method
 ```
 
 The delivery format only grows at the end: the first 22 columns are those of
@@ -1156,7 +1179,8 @@ before they existed delivers with them empty.
 length_measured, length_skipped_too_large, cut_off_at_data_edge,
 crosses_region_boundary, touches_unproofread_tile, unresolved_contacts,
 volume_um3_{median,p90,max}, length_um_{median,p90,max},
-length_smoothed_um_{median,p90,max}, short_object` (a count). Statistics are empty when there are no
+length_smoothed_um_{median,p90,max}, short_object, length_method_skeleton,
+length_method_straight_line` (counts). Statistics are empty when there are no
 values. New metrics are added at the end only.
 
 `delivery/excluded.csv`:
@@ -1354,8 +1378,44 @@ python manage.py test annotation.test_stitching annotation.test_morphology
   below 1.5 (`SHORT_OBJECT_ASPECT`), `false` otherwise and empty without a
   skeleton; `summary.csv` counts them. It does not change `core`. What it
   marks now: the object is about as wide as it is long, its "length" is a
-  diameter, its `tortuosity` is 1 by construction, the principal axis of a
+  diameter, it has no `tortuosity`, the principal axis of a
   near-sphere is arbitrary, and `length_um` is at its worst.
+- **Short curved objects.** 465 capsules 1.5 to 4 widths long (radii 60, 100,
+  150 nm), bent as an arc of 30, 60, 90 or 120 degrees or as two straight
+  halves meeting at 30, 60 or 90 degrees, in the XY, XZ and YZ planes and two
+  random orientations each, plus 75 straight ones. Error against the
+  centreline length plus two radii, mean in %:
+
+  | Bend | Before end caps | With end caps | Measured as a straight line |
+  |------|-----------------|---------------|-----------------------------|
+  | straight   | -0.4 (mean abs. 2.0) | -0.9 (mean abs. 1.1) | 46 of 75   |
+  | 30 degrees | -0.8  | -2.0  | 91 of 150 |
+  | 60 degrees | -3.9  | -5.9  | 82 of 135 |
+  | 90 degrees | -9.3  | -13.1 | 90 of 135 |
+  | 120 degrees | -7.3 | -13.7 | 20 of 45  |
+
+  - Every method reads a short bent object short, because the skeleton cuts
+    the inside of the bend. End caps add 1 to 6 points to that, on both
+    methods: a straight line is the chord of the arc (arc of 60 degrees: -3
+    to -4 %; 90: -6 to -10 %; a 90 degree corner: -11 to -27 %), and the
+    skeleton method replaces about 3 radii of path at each end by a straight
+    stretch (the 4-width objects, none of which is a line, go from -2.4 to
+    -5.1 % at an arc of 90 degrees).
+  - By plane the result is the same: mean -7.4 % in XY and XZ, -7.7 % in YZ,
+    -7.4 % in random orientations, over all bent shapes.
+  - A tighter rule does not help. Requiring half, a quarter or none of the
+    path between the cuts moves 68, 96 and 136 of the 283 bent line objects
+    to the skeleton method and makes the bent set worse (mean absolute error
+    7.5, 7.9, 8.2, 8.5 %), because the end stretches then overlap and are no
+    better than the chord; the strictest also brings back end errors on
+    straight ones (worst -6.2 % against -3.7 %). Keeping the skeleton's own
+    curve between the two cross-sections changes nothing either.
+  - Straight objects of the same sizes improve at every length (mean absolute
+    error 2.1 to 1.8 % at 1.5 widths, 1.4 to 0.6 % at 4).
+  - So for objects under about 4 widths, end caps trade a few percent on
+    strongly bent ones for the orientation errors on straight ones. An end
+    stretch that follows the bend would be needed to have both; it is not
+    built. `length_method` marks the objects measured as a line.
 - **Ends, by orientation.** Before end caps a capsule within about 15 degrees
   of Z read 2-9 % short on average (up to 14 %), because the skeleton stops
   one or two 30 nm planes before each tip. Error against the true tip-to-tip
@@ -1413,11 +1473,13 @@ python manage.py test annotation.test_stitching annotation.test_morphology
     longer, at the median, than the object's whole extent along its principal
     axis, which a straight object's centreline cannot exceed; capped, it is
     3 % under and 1 % over.
-  - *Chords.* 717 of the 1,286 objects are short enough to be measured as a
-    chord, so their `tortuosity` is exactly 1; the tile's median tortuosity
-    is 1.00 (it was 1.06 uncapped and 1.44 from the raw path), the 75th
-    percentile 1.05, the 95th 1.27. `short_object` is true for 414 objects
-    (317 with uncapped lengths, which were longer).
+  - *Straight lines.* 717 of the 1,286 objects have `length_method` =
+    `straight_line` and no tortuosity. They are a median 400 nm long (5th-95th
+    percentile 216-672 nm), 1.5 widths at the median and never over 2.8, and
+    hold 25 % of the tile's total smoothed length. The other 569 have a
+    median tortuosity of 1.06 (5th-95th percentile 1.00-1.79). `short_object`
+    is true for 414 objects (317 with uncapped lengths, which were longer):
+    381 of the straight-line ones and 33 of the others.
   - *Data edge.* 233 objects touch a face of the tile; 106 of them are left
     exactly as they were and the median change over all 233 is nil.
 - **Width accuracy** is about half a voxel, so half the Z voxel size for
