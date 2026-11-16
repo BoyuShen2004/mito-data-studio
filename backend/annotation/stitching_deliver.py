@@ -464,7 +464,8 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "**Short objects.** A skeleton length means little for an object that is about as wide as it is long. "
         f"`short_object` is `true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times "
         "`width_max_nm`. Such an object is measured as a straight line (above): a diameter more than a "
-        "length, with no `tortuosity`, and for a nearly round object the longest direction is arbitrary. On test capsules and near-spheres of known size, "
+        "length, with no `tortuosity`, and for a nearly round object the longest direction is arbitrary. On "
+        "test capsules and near-spheres of known size, "
         "`length_smoothed_um` of flagged objects was within 10 % of the true size in all 159 cases (1.4 % on "
         "average), and of unflagged ones within 5 % in all 369; `length_um` read 15 to 40 % long on the same "
         "objects.",
