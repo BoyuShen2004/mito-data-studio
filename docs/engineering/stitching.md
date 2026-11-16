@@ -403,23 +403,86 @@ is no skeleton (below the dust size, length 0).
 - **`length_smoothed_um`:** the cable length of the same skeleton after each
   branch (the path between two endpoints or branch points) is smoothed with a
   moving average over 200 nm of path, twice. Endpoints and branch points do
-  not move, and the window shrinks toward them. `skeleton_length_um` is
-  unchanged and still written; see *Cable length on anisotropic voxels* under
+  not move, and the window shrinks toward them. Then each skeleton end is
+  carried to the object's tip (next item). `skeleton_length_um` is unchanged
+  and still written; see *Cable length on anisotropic voxels* under
   [Known limits](#known-limits) for why both exist and how they compare.
-- **`branch_points`, `endpoints`:** skeleton vertices of degree >= 3 and 1.
-- **Main path** (`longest_path_um`, `longest_path_smoothed_um`,
-  `end_to_end_um`): the longest shortest path through the smoothed skeleton
-  (two sweeps per connected piece; the longest piece wins). One path is
-  chosen, then measured three ways: its raw length, its smoothed length, and
-  the straight distance between its two ends.
+- **End caps** (`morphology.cap_ends`). A TEASAR skeleton does not end at the
+  tip of a rounded end: it leaves the axis inside the cap and stops at the
+  surface beside the tip (68 nm off the axis and 24 nm short of the tip on a
+  120 nm capsule along X; along Z the whole skeleton of a short object can be
+  one diagonal from one side to the other). The detour adds about as much
+  path as the early stop removes, which is why the length was roughly right
+  while the end-to-end distance was short. For each end:
+  - the last 2 radii of path are not trusted (`END_TRIM_FACTOR`; the radius is
+    the largest inscribed radius on the path out to the point below, because
+    a skeleton that runs beside the axis has small radii of its own);
+  - two cross-sections of the object are cut, there and 100 nm (at least one
+    radius) further in, each the object's voxels within 1.35 radii of the path
+    in a slab one voxel thick; the line through their centroids, re-cut three
+    times, gives a starting point on the axis and a direction;
+  - from the inner cross-section the object's centreline is **followed**
+    (`_follow`): a step of a third of a radius (at least one voxel) along the
+    current direction, onto the centroid of the cross-section there, the
+    direction turned toward the step just made; so it goes round a bend
+    instead of across it;
+  - following stops where the cross-section shrinks under half the widest
+    seen (the rounded tip, where a few voxels' centroid is noise) or the next
+    step would leave the object. The tip is where the last direction leaves
+    the object: the mean over nine parallel rays a third of a voxel apart, so
+    the distance does not jump by a voxel as the object shifts on the grid,
+    and the last exit on each ray, so a dent in a rough surface is not taken
+    for the tip;
+  - the path from the inner point to the end is replaced by the followed
+    curve, its vertices spread along it, so the edges still apply.
+
+  A terminal branch at a branch point may replace at most 80 % of itself. An
+  end is left exactly as it was when its last ray leaves the object in a
+  voxel layer where the data stops, or when the end itself lies in one:
+  `stitch_measure` passes the layer of every tile face in `edge_faces`
+  (`edge_layers`), `measure_volume` the outer faces its box touches
+  (`outer_face_layers`). The assembled mask is the same whether or not the
+  object crosses a seam, so the result is too. `skeleton_length_um`,
+  `longest_path_um`, the widths and the counts do not use the capped skeleton.
+- **Centre curve** (`length_method`). An object too short for two end
+  stretches is measured without its skeleton, which at that size is mostly a
+  diagonal from one side to the other. `length_method` is `centre_curve` when
+  all of this holds, and `skeleton` otherwise:
+  1. the skeleton is one connected, unbranched path with two ends;
+  2. with `cut` the first vertex at least 2 radii of path from each end (the
+     radius being the largest inscribed radius on the path from that end to
+     the inner cross-section, found by iterating), the path between the two
+     cuts is shorter than `max(100 nm, largest radius on the path)`;
+  3. the curve reaches the surface both ways;
+  4. neither of its last rays ends in a data-edge layer, and neither skeleton
+     end lies in one.
+
+  In round numbers, condition 2 is "the smoothed skeleton is shorter than 5
+  radii", 2.5 times the largest width (4 radii + 100 nm under 100 nm radius).
+  On the test capsules it selects everything up to 2 widths long, most at
+  2.5 and a few at 3. The curve starts at the centroid of the cross-section
+  through the object's centroid, cut across its principal axis (the
+  eigenvector of the largest eigenvalue of the covariance of its voxel
+  positions in nm), and is followed both ways to the surface exactly as an
+  end is. `length_smoothed_um` and `longest_path_smoothed_um` are the length
+  of the curve, `end_to_end_um` the distance between its two tips, and
+  `tortuosity` is left empty: at 1 to 2.5 widths the ratio is mostly noise.
+  `summary.csv` counts both methods. When conditions 1 and 2 hold but 3 or 4
+  fails, the object is left as the smoothed skeleton has it (`skeleton`).
+  Before `morphology/5` these objects were a straight chord and the end
+  stretches straight lines, which read bent objects short (*Short curved
+  objects* under [Known limits](#known-limits)).
 - **`tortuosity`:** `longest_path_smoothed_um / end_to_end_um`. Side branches
   do not count, and the smoothed length is used because the raw one runs long
-  on a straight object. A straight capsule reads 1.00-1.04 (the skeleton's
-  ends sit slightly off the axis); two straight arms at 120 degrees read
-  1.15 (2/√3).
+  on a straight object. Both use the end-capped skeleton, so a straight
+  capsule reads 1.00 in every orientation (median 1.001, 95th percentile
+  1.010, largest 1.028 over 755 test capsules: the followed curve wobbles by
+  a few nm); before end caps it read 1.02-1.10, because the path
+  kept its two detours while the end-to-end distance was short. Two straight
+  arms at 120 degrees read 1.15 (2/√3). Empty for `centre_curve` objects.
 - **Method version.** `morphology.METHOD_VERSION` names the definitions and
-  parameters (smoothing window and passes, tortuosity definition, tip factor,
-  surface sigma). `stitch_measure` and `measure_volume` log it and write it to
+  parameters (smoothing window and passes, end caps, tortuosity definition,
+  tip factor, surface sigma, short-object threshold). `stitch_measure` and `measure_volume` log it and write it to
   `measure_run.json` (`method_version`); both delivery READMEs print it under
   Provenance. Raise its number whenever a definition or parameter changes.
 - **`surface_area_um2`:** marching cubes (`skimage.measure`) at level 0.5 on
@@ -1060,10 +1123,10 @@ It has no `decision` column, so importing it into a page decides nothing.
 `measurements.csv` — one row per object, sorted by `object_id`:
 
 ```text
-object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
+object_id,member_count,tiles,voxel_count,volume_um3,skeleton_length_um,touches_edge,edge_faces,skipped_reason,unresolved_contacts,unproofread_tiles,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object,length_method
 ```
 
-- The last fourteen columns are the morphology columns (phase 6,
+- The last fifteen columns are the morphology columns (phase 6,
   **Morphology**): full-precision floats, or integers for the two counts.
   Region columns, when present, still come after them.
 
@@ -1124,7 +1187,7 @@ ranked_by,rank,object_id,member_count,tiles,length_um,volume_um3,bbox_z0,bbox_z1
 `delivery/mitochondria.csv` — from `stitch_deliver`, by `mito_id`:
 
 ```text
-mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object
+mito_id,volume_um3,length_um,volume_in_region_um3,frac_in_region,n_tiles,tiles,cut_off_at_data_edge,crosses_region_boundary,touches_unproofread_tile,length_status,bbox_z0,bbox_z1,bbox_y0,bbox_y1,bbox_x0,bbox_x1,center_z_nm,center_y_nm,center_x_nm,core,not_core_reasons,width_mean_nm,width_median_nm,width_min_nm,width_max_nm,branch_points,endpoints,longest_path_um,end_to_end_um,tortuosity,surface_area_um2,sphericity,length_smoothed_um,longest_path_smoothed_um,short_object,length_method
 ```
 
 The delivery format only grows at the end: the first 22 columns are those of
@@ -1136,7 +1199,8 @@ before they existed delivers with them empty.
 length_measured, length_skipped_too_large, cut_off_at_data_edge,
 crosses_region_boundary, touches_unproofread_tile, unresolved_contacts,
 volume_um3_{median,p90,max}, length_um_{median,p90,max},
-length_smoothed_um_{median,p90,max}, short_object` (a count). Statistics are empty when there are no
+length_smoothed_um_{median,p90,max}, short_object, length_method_skeleton,
+length_method_centre_curve` (counts). Statistics are empty when there are no
 values. New metrics are added at the end only.
 
 `delivery/excluded.csv`:
@@ -1199,7 +1263,11 @@ in it.
   sphere and a Y-shaped branch, each against its known radius, length, area,
   sphericity and branch/end counts. Smoothed length is checked on the
   between-planes cylinder, capsules, a slanted tube, half-circle arcs in XY
-  and XZ and the Y branch, each against its known length. A cylinder split across an X seam and a Z
+  and XZ and the Y branch, each against its known length. End caps: straight
+  capsules in six orientations must read their tip-to-tip length within 3 %
+  with a tortuosity of 1.00, a short rod along Z its extent, a quarter circle
+  2 and 4 widths long its arc within 4 %, and an end on a data-edge layer
+  must not move. A cylinder split across an X seam and a Z
   seam must give exactly the columns of the unsplit one, and so must
   `measure_volume`.
 
@@ -1257,15 +1325,15 @@ python manage.py test annotation.test_stitching annotation.test_morphology
     axis, about 150 nm extra per end on that cylinder. Rounded ends do not
     have this.
 
-  `length_smoothed_um` removes the first two. On the same shapes it reads:
-  capsules and slanted tubes -1.5 to +0.6 %; arcs with a radius of curvature
-  of 600-1000 nm -1.4 to +0.2 %; helix and wavy tube under 1 %; Y branches
-  +0.4 %; rough tubes -0.1 to +8.4 %; the flat-ended cylinder +7 to +8 % (the
-  corner dive remains). It reads short where smoothing cuts a corner: 2-6 %
-  on bends tighter than about 2.5 tube radii. A capsule shorter than about
-  two widths lying along Z reads up to 8 % short, because the skeleton stops
-  before the tips there. `tortuosity` uses the smoothed main path for this
-  reason.
+  `length_smoothed_um` removes all three: smoothing the first two, end caps
+  the third. On the same shapes it reads: capsules and slanted tubes -0.6 to
+  0.0 %; flat-ended cylinders -0.5 to +0.4 % (+7 to +8 % before end caps);
+  arcs with a radius of curvature of 400-1000 nm -1.5 to -0.3 %; helix and
+  wavy tube within 1.2 %; Y branches within 0.3 %; rough tubes -4.5 to +4.8 %.
+  It reads short where smoothing cuts a corner: 2-6 % on bends tighter than
+  about 2.5 tube radii in the middle of a long object (the end stretches
+  follow bends; the smoothed middle does not). `tortuosity` uses the smoothed,
+  end-capped main path.
 - **Why 200 nm, twice.** The window was swept from 100 to 400 nm, one and two
   passes, over the 39 shapes used to choose it and over 34 held-out shapes
   generated afterwards with other radii (70-190 nm), lengths, random 3D
@@ -1290,46 +1358,167 @@ python manage.py test annotation.test_stitching annotation.test_morphology
   shape at 400 nm x 2 is a tight arc, -6.9 %). 32 of the 34 held-out shapes are
   within 3 % at 200 nm x 2. The held-out mean includes one Y shape that reads
   27 % short at every window because the skeleton has no third arm (next
-  item).
+  item). The table was measured before end caps; with them the 200 nm x 2
+  row reads -0.2 / 0.6 and -0.1 / 1.5 (38 of 39 and 31 of 34 within 3 %, all
+  but that Y shape within 5 %).
 - **Short side arms are not skeletonised.** With the lab's TEASAR parameters
   (`const` 500 nm, `scale` 1.5) a side arm shorter than about 600-700 nm from
   junction to tip (roughly 500 nm + 1.5 radii) gets no branch: tested at radius
   80 and 120 nm, arms up to 580 / 620 nm are missed, from 680 / 720 nm found.
   Both lengths then leave the arm out and `branch_points` undercounts. This is
-  the existing skeleton, not the smoothing. `--teasar-const` exists to try
-  lower values (300 finds arms from 400-450 nm); the default is unchanged
-  until a lower value has been checked by eye on real objects.
+  the existing skeleton, not the smoothing.
+  A sweep of `const` (not applied; the pipeline still uses 500) on tubes of
+  radius 80 and 120 nm with one side arm of 150-800 nm, five orientations
+  each: an arm is found once it is longer, from the main axis to its tip, than
+  about `const` plus one radius. All orientations are found from 600-650 nm at
+  500, 500-550 at 400, 400-450 at 300, 300-350 at 200 and 200 at 100. A lost
+  arm leaves these shapes 10-23 % short. From 200 to 500 no control without
+  arms (capsules, arcs, near-spheres, 12 rough tubes) gets a branch and no
+  unbranched length changes at all; at 100 one rough tube gets four branch
+  points (+41 %) and the tubes with a real arm get extra ones. On the real
+  tile, lowering `const` changes the branch count of 37 (400), 71 (300), 122
+  (200) and 278 (100) of 1,286 objects and raises the total smoothed length
+  by 2.5, 6.4, 14.7 and 44 %; nothing says how many of those branches are
+  real. Changing `const` would change `length_um` too. `--teasar-const` exists to
+  try lower values; the default is unchanged until a lower value has been
+  checked by eye on real objects.
+- **Spurs.** Terminal branches the skeletoniser makes on bumps are not pruned.
+  On 24 rough tubes (bumps of 20-50 nm) there is none at `const` 200-500; at
+  100 there are 7, 65-349 nm long (0.6-1.5 widths at their junction). A rule
+  "drop terminal branches shorter than 1.5 widths" would remove 6 of them and,
+  at `const` 200-500, no true arm that was skeletonised whole (they are
+  1.65 widths or more), only fragments of arms right at the detection limit.
 - **Short and round objects.** Capsules 200-1000 nm long, radii 60-150 nm,
-  seven orientations, plus ellipsoids with axis ratios 1.0-1.5. Taking the
-  measured aspect as `length_smoothed_um / (width_max_nm / 1000)`: at 1.5 or
-  more, 363 of 366 cases are within 10 % (worst 13 %, an object along Z);
-  below 1.5, 136 of 162 are, and errors reach 17 %. The raw length reads
-  20-36 % long on average across the same capsules. Near-spherical blobs read
-  1-15 % above their diameter. The `short_object` column is `true` below
+  seven orientations, plus ellipsoids with axis ratios 1.0-1.5, at random
+  positions on the grid. Taking the measured aspect as `length_smoothed_um /
+  (width_max_nm / 1000)`: at 1.5 or more, all 372 cases are within 5.2 % (mean
+  absolute error 0.8 %); below 1.5, all 156 are within 10 % (mean 1.4 %).
+  Before end caps the same test gave 363 of 366 and 136 of 162 within 10 %,
+  with errors to 17 %, and near-spheres read 1-15 % above their diameter; they
+  now read -6 to +4 % of it. The raw length still reads 15-27 % long on the
+  capsules and 37-40 % on spheres. The `short_object` column is `true` below
   1.5 (`SHORT_OBJECT_ASPECT`), `false` otherwise and empty without a
-  skeleton; `summary.csv` counts them. It does not change `core` and does not
-  cover the Z bias below.
-- **Objects along Z read short.** A capsule whose axis is within about 15
-  degrees of Z reads 3-13 % short in the smoothed length (mean -5 % at five
-  widths long, -8 to -11 % at two), because the skeleton stops one or two
-  30 nm planes before each tip.
-- **Rough surfaces.** On straight rough tubes (radius 140 nm, bumps of 30 nm)
-  the smoothed length reads +1.6 to +8.4 % over six seeds. The middle 60 % is
-  within 2.3 %; the rest is at the two ends, where the skeleton runs to an
-  off-axis bump (up to 120 nm off, +140 nm in the worst case), and part is
-  real: the bumps make the object longer than its nominal length (slab
-  centroids of the same object read +3.1 %). Wider windows (to 600 nm) and
-  recentring vertices on the local centroid do not remove it. Bumps of 40 nm
-  spawn a 294 nm side spur; the main path (`longest_path_smoothed_um`) then
-  reads +4.2 % while the total reads +20 %.
+  skeleton; `summary.csv` counts them. It does not change `core`. What it
+  marks now: the object is about as wide as it is long, its "length" is a
+  diameter, it has no `tortuosity`, the principal axis of a
+  near-sphere is arbitrary, and `length_um` is at its worst.
+- **Short curved objects.** 465 capsules 1.5 to 4 widths long (radii 60, 100,
+  150 nm), bent as an arc of 30, 60, 90 or 120 degrees or as two straight
+  halves meeting at 30, 60 or 90 degrees, in the XY, XZ and YZ planes and two
+  random orientations each, plus 75 straight ones. 283 of the bent and 46 of
+  the straight ones are measured by centre curve, the rest by skeleton. Error
+  against the centreline length plus two radii, mean (mean absolute) in %:
+
+  | Shape | Before end caps | Straight end stretches and chord (`morphology/4`) | Followed (`morphology/5`) |
+  |-------|-----------------|---------------------------------------------------|---------------------------|
+  | straight, 75       | -0.4 (2.0)   | -0.9 (1.1)   | -0.5 (0.9) |
+  | arc 30 degrees, 75 | -0.2 (1.8)   | -1.4 (1.5)   | -0.8 (0.9) |
+  | arc 60, 60         | -1.8 (2.3)   | -3.6 (3.6)   | -0.5 (0.9) |
+  | arc 90, 60         | -4.0 (4.0)   | -7.2 (7.2)   | -0.8 (1.5) |
+  | arc 120, 45        | -7.3 (7.3)   | -13.7 (13.7) | -1.4 (2.1) |
+  | corner 30, 75      | -1.5 (2.3)   | -2.6 (2.6)   | -0.8 (1.1) |
+  | corner 60, 75      | -5.6 (5.6)   | -7.6 (7.6)   | -2.4 (2.6) |
+  | corner 90, 75      | -13.6 (13.6) | -17.8 (17.8) | -5.8 (6.1) |
+  | all bent, 465      | -4.8 (5.3)   | -7.5 (7.5)   | -1.9 (2.2) |
+
+  - 342 of the 465 bent shapes are within 3 % and 407 within 5 % (207 and 289
+    before end caps). The worst single case is -15 %, a 90 degree corner 1.5
+    widths long at 60 nm radius (4 Z planes thick).
+  - What is left at a sharp corner is real geometry: a cross-section at the
+    corner takes in both legs, so its centroid sits inside the turn and the
+    curve rounds it. By length the bent set reads -3.8 % at 1.5 widths, -2.6
+    at 2, -2.1 at 2.5, -1.0 at 3 and -0.9 at 4.
+  - Parameters were chosen on this set: step a third of a radius (a half:
+    2.4 %; one radius: 3.4 %; 1.5: 4.8 % mean absolute error) and
+    cross-sections of 1.35 radii (1.5: the 90 degree corner reads -6.3 %; 1.1
+    and 1.25: one or two thin objects are lost at the corner and read -30 %).
+    Smoothing the followed curve makes bends worse and straight objects no
+    straighter, so it is not done. The capsule sets under *Ends, by
+    orientation* and the 73 shapes of the earlier battery were not used for
+    this choice and are no worse than with straight end stretches.
+- **Ends, by orientation.** Before end caps a capsule within about 15 degrees
+  of Z read 2-9 % short on average (up to 14 %), because the skeleton stops
+  one or two 30 nm planes before each tip. Error against the true tip-to-tip
+  length, mean [min, max] in %, and how many are within 3 %, over 480
+  held-out capsules (radii 75, 125, 180 nm; 1.6 to 8 widths long; random
+  position on the grid; the 840 capsules used while developing give the same
+  picture: 626 within 3 % before, 802 after). "Voxel limit" is the chord
+  along the true axis through the true centre of the same voxel object: what
+  a single line can do without modelling the tip below voxel size.
+
+  | Orientation, length in widths | Before end caps | After | Voxel limit |
+  |-------------------------------|-----------------|-------|-------------|
+  | In the XY plane, 1.5-3  | +0.7 [-4.9, +4.9], 53/72   | -0.8 [-3.3, +0.8], 69/72   | 69/72   |
+  | In the XY plane, over 3 | +0.4 [-1.8, +2.3], 108/108 | 0.0 [-1.1, +1.2], 108/108  | 108/108 |
+  | Oblique, 1.5-3          | +0.2 [-7.9, +3.4], 66/72   | -0.6 [-4.7, +1.1], 70/72   | 55/72   |
+  | Oblique, over 3         | +0.3 [-1.5, +1.5], 108/108 | -0.1 [-1.8, +1.6], 108/108 | 106/108 |
+  | 10 degrees off Z, 1.5-3 | -6.2 [-12.3, -3.2], 0/24   | 0.0 [-7.2, +2.5], 23/24    | 21/24   |
+  | 10 degrees off Z, over 3 | -2.3 [-6.1, -0.3], 27/36  | -0.3 [-2.8, +1.4], 36/36   | 36/36   |
+  | Along Z, 1.5-3          | -8.4 [-12.9, -4.2], 0/24   | 0.0 [-9.1, +5.1], 19/24    | 18/24   |
+  | Along Z, over 3         | -2.2 [-10.8, -0.4], 30/36  | -0.2 [-2.8, +2.9], 36/36   | 36/36   |
+
+  Along Z the remaining error is one section, and that is the limit of this
+  method: at most 30 nm in any of the 330 capsules near Z in both sets. That
+  is under 3 % from 1,000 nm up (every such capsule is within 2.2 %), and up
+  to 4.2 % at 500-1,000 nm and 12 % below 500 nm, where 30 nm is simply a
+  larger share. No sub-voxel model of the tip is used. All 480: 392 within
+  3 % before, 469 after; mean absolute error 1.9 to 0.65 %. With straight end
+  stretches (`morphology/4`) the same set gave 470 and 0.65 %.
+- **Rough surfaces.** On straight rough tubes (radius 140 nm, six seeds) the
+  smoothed length read +1.5 to +5.1 % with bumps of 30 nm and +3.3 to +6.7 %
+  with 40 nm before end caps: no spurious branch, the excess sat at the two
+  ends, where the skeleton runs to an off-axis bump. With end caps the same
+  tubes read -1.7 to +4.8 % and +1.0 to +4.1 % (mean absolute error 3.2 to
+  1.9 % and 4.6 to 2.5 %). What remains is partly real: the bumps move the
+  true ends by up to their own size, and the nominal length does not know;
+  and a followed centreline goes toward a large bump. A spur, when the
+  skeletoniser makes one, still counts in `length_smoothed_um` and
+  `branch_points`; `longest_path_smoothed_um` leaves it out.
 - **One real tile.** On the nag_p10 prediction tile
   `96-352_8192-10240_19456-21504` (1,286 labels, not proofread; voxel size
-  assumed 30, 8, 8), smoothed / raw length has median 0.75 (5th-95th
-  percentile 0.65-0.85), with no dependence on length. By orientation of the
-  long axis: 0.76 in the XY plane, 0.75 oblique, 0.78 steep, 0.84 along Z.
-  Median tortuosity is 1.06 from the smoothed main path and 1.44 from the raw
-  one. There is no ground truth for real objects, so this shows how far the
-  two lengths differ, not which is right.
+  30, 8, 8), read only. There is no ground truth for real objects, so these
+  show how far the numbers differ, not which is right.
+  - *Smoothing.* Before end caps, smoothed / raw length had median 0.75
+    (5th-95th percentile 0.65-0.85), with no dependence on length; by
+    orientation of the long axis 0.76 in the XY plane, 0.75 oblique, 0.78
+    steep, 0.84 along Z.
+  - *End caps.* Capped / uncapped `length_smoothed_um` has median 0.98
+    (5th-95th percentile 0.86-1.08); the total goes from 1,234 to 1,224 µm
+    (-0.8 %) and the median object from 510 to 492 nm. Short objects move
+    most (median 0.95 under 600 nm, 0.99 above). Shorter, because predicted
+    objects end bluntly and the skeleton runs into a corner of the end, as on
+    the flat-ended test cylinder (+7 % before, 0 % after). With the straight
+    end stretches of `morphology/4` the total was 1,186 µm: 3.2 % less than
+    now, the part that bends account for.
+  - *Centre curve.* 717 of the 1,286 objects have `length_method` =
+    `centre_curve` and no tortuosity. They are a median 401 nm long (5th-95th
+    percentile 216-708 nm), 1.5 widths at the median and never over 2.9, and
+    hold 25 % of the tile's total smoothed length. The other 569 have a
+    median tortuosity of 1.08 (5th-95th percentile 1.02-2.31). `short_object`
+    is true for 404 objects: 371 of the centre-curve ones and 33 of the
+    others.
+  - *How bent the objects are.* Taking the chord-to-path ratio of each
+    object's main path (`end_to_end_um / longest_path_smoothed_um`) and the
+    arc angle with that ratio:
+
+    | Bend | Objects | Share of total length | `skeleton` objects (share of length) | `centre_curve` objects (share of length) |
+    |------|---------|-----------------------|--------------------------------------|------------------------------------------|
+    | under 30 degrees | 417 | 14.0 % | 12 (0.9 %)   | 405 (13.1 %) |
+    | 30-60            | 357 | 26.1 % | 149 (18.4 %) | 208 (7.7 %)  |
+    | 60-90            | 269 | 21.9 % | 197 (19.2 %) | 72 (2.8 %)   |
+    | 90-120           | 107 | 12.2 % | 85 (11.2 %)  | 22 (1.0 %)   |
+    | over 120         | 136 | 25.9 % | 126 (25.3 %) | 10 (0.5 %)   |
+    | 60 and over      | 512 | 60.0 % | 408 (55.6 %) | 104 (4.3 %)  |
+
+    So 40 % of the objects, holding 60 % of the length, are bent by 60
+    degrees or more by this measure, nearly all of it on the skeleton method.
+    Read it as an upper bound: the ratio is taken on the main path only, 57
+    branched objects (24 % of the length, 51 of them over 60 degrees) are
+    often several mitochondria merged by the prediction, and a straight test
+    capsule already reads up to 1.03 (an arc of about 45 degrees), so the
+    30-60 class is not distinguishable from straight.
+  - *Data edge.* 233 objects touch a face of the tile; all are on the
+    skeleton method, and 107 of them are left exactly as they were.
 - **Width accuracy** is about half a voxel, so half the Z voxel size for
   objects lying in the XY plane. `width_min_nm` is the least stable of the
   four: a flat end or a skeleton spur can still pull it down.

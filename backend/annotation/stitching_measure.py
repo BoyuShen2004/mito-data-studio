@@ -92,9 +92,11 @@ class StitchedObject:
     coord_sums: tuple[int, int, int] = (0, 0, 0)    # sum of z, y, x over the object's voxels
     morphology: Morphology | None = None            # None when skipped (crop_limit)
 
-    def measure(self, mask: np.ndarray, voxel_size, *, teasar_const_nm: float = TEASAR_CONST_NM) -> None:
-        """Cable length and morphology from the object's assembled mask."""
-        self.morphology = measure_morphology(mask, voxel_size, teasar_const_nm=teasar_const_nm)
+    def measure(self, mask: np.ndarray, voxel_size, *, cut_boxes=(),
+                teasar_const_nm: float = TEASAR_CONST_NM) -> None:
+        """Cable length and morphology from the object's assembled mask. ``cut_boxes`` are the
+        voxel layers of the mask where the data stops (``edge_layers``)."""
+        self.morphology = measure_morphology(mask, voxel_size, cut_boxes=cut_boxes, teasar_const_nm=teasar_const_nm)
         self.skeleton_length_um = self.morphology.length_nm / 1000.0
 
     def row(self, voxel_size) -> dict:
@@ -130,6 +132,23 @@ def padded_window(box, region) -> tuple[int, ...]:
     """``box`` padded by ``CROP_PAD`` and clipped to ``region`` (per-volume crop rule)."""
     return tuple(v for a in range(3)
                  for v in (max(region[2 * a], box[2 * a] - CROP_PAD), min(region[2 * a + 1], box[2 * a + 1] + CROP_PAD)))
+
+
+def edge_layers(edge_faces, tiles_by_name, window) -> list[tuple[int, ...]]:
+    """The one-voxel layer of each ``(order, face, tile name)`` in ``edge_faces``, as a box in
+    the coordinates of ``window``: where an object on that face is cut off. Skeleton ends
+    there are not extended to a tip (``morphology.cap_ends``)."""
+    layers = []
+    for _, face, name in sorted(edge_faces):
+        axis, upper = divmod(face, 2)
+        tile = tiles_by_name[name]
+        box = [bound - window[2 * a] for a in range(3) for bound in (tile.lo(a), tile.hi(a))]
+        if upper:
+            box[2 * axis] = box[2 * axis + 1] - 1
+        else:
+            box[2 * axis + 1] = box[2 * axis] + 1
+        layers.append(tuple(box))
+    return layers
 
 
 def box_union(boxes) -> tuple[int, ...]:
@@ -333,6 +352,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
     single = {o.members[0]: o for o in objects.values() if len(o.members) == 1}
     started = time.monotonic()
 
+    by_name = {t.name: t for t in tiles}
     # Pass 1: one read of every tile for label boxes, edges and single-tile objects.
     for index, tile in enumerate(tiles, 1):
         t0 = time.monotonic()
@@ -370,14 +390,14 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
                     continue
                 mask = assemble_mask(window, parts)
                 _set_moments(obj, mask_moments(mask, window))
-                obj.measure(mask, voxel_size, teasar_const_nm=teasar_const_nm)
+                obj.measure(mask, voxel_size, cut_boxes=edge_layers(obj.edge_faces, by_name, window),
+                            teasar_const_nm=teasar_const_nm)
                 measured += 1
         log(f"tile {index}/{len(tiles)} {tile.name}: {len(summary['bboxes'])} label(s), "
             f"{measured} single-tile object(s) measured, {skipped} skipped (crop_limit) "
             f"in {time.monotonic() - t0:.1f}s")
 
     # Pass 2: assemble and skeletonise each multi-tile object.
-    by_name = {t.name: t for t in tiles}
     multi = [o for o in objects.values() if len(o.members) > 1]
     for index, obj in enumerate(multi, 1):
         t0 = time.monotonic()
@@ -401,7 +421,8 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
             log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.tiles)} tiles, crop {size} "
                 f"= {box_voxels(window)} voxels > {max_crop_voxels}; skipped (crop_limit)")
             continue
-        obj.measure(mask, voxel_size, teasar_const_nm=teasar_const_nm)
+        obj.measure(mask, voxel_size, cut_boxes=edge_layers(obj.edge_faces, by_name, window),
+                    teasar_const_nm=teasar_const_nm)
         log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.members)} label(s) in {len(obj.tiles)} tiles, "
             f"crop {size}, {obj.skeleton_length_um:.4g} um in {time.monotonic() - t0:.1f}s")
 

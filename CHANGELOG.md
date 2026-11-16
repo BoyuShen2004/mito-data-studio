@@ -9,6 +9,22 @@ follows semantic versioning for tagged releases.
   (default 500, unchanged results). A lower value skeletonises shorter side
   arms. The value is logged, recorded in `measure_run.json` and stated in the
   delivery README when it is not 500. See `docs/engineering/stitching.md`.
+- Stitching and `measure_volume`: `length_smoothed_um`,
+  `longest_path_smoothed_um`, `end_to_end_um` and `tortuosity` are now
+  measured tip to tip. Each skeleton end is replaced by the object's own
+  centreline, followed from cross-section centre to cross-section centre
+  round any bend to the surface (a skeleton stops beside the tip, a little
+  early). An unbranched object too short for that is measured along the same
+  kind of curve through its centre. The new last column `length_method` says
+  which (`skeleton` or `centre_curve`; `summary.csv` counts both), and
+  `tortuosity` is empty for centre-curve objects. Straight objects now have a
+  tortuosity of 1.00-1.03 (was 1.02-1.10), objects lying along Z no longer
+  read 2-9 % short, and short bent objects read 2 % short on average instead
+  of 5 %. Ends at the edge of the data are not extended. `length_um` is
+  unchanged. Method version `morphology/5`. Expect `length_smoothed_um` to
+  change by a few percent against `morphology/3` (-0.8 % in total, -2 % at
+  the median, on the one real tile measured). See
+  `docs/engineering/stitching.md`.
 - Add morphology columns to `stitch_measure`, `measure_volume` and the
   delivery (`mitochondria.csv`, appended after the existing columns): width
   mean/median/min/max from an anisotropic Euclidean distance transform sampled
