@@ -67,17 +67,19 @@ SHORT_OBJECT_ASPECT = 1.5
 END_TRIM_FACTOR = 2.0
 END_DIRECTION_NM = 100.0
 END_SHARE_ONE = 0.8         # of a branch that ends at a branch point: the most its end may replace
-END_SECTION_FACTOR = 1.5    # a cross-section is the object within this many radii of the path
+END_SECTION_FACTOR = 1.35   # a cross-section is the object within this many radii of the path
+END_STEP_FACTOR = 1 / 3     # the centreline is followed in steps of this many radii (at least one voxel)
+END_TIP_SHARE = 0.5         # following stops where the cross-section falls under this share of the widest
 END_AXIS_ROUNDS = 3         # times the two cross-sections are re-cut square to the axis they give
 RAY_STEP_NM = 1.0
 # ``length_method``: how ``length_smoothed_um`` was measured (see ``cap_ends``).
-METHOD_SKELETON, METHOD_STRAIGHT_LINE = "skeleton", "straight_line"
+METHOD_SKELETON, METHOD_CENTRE_CURVE = "skeleton", "centre_curve"
 # Identifies how the numbers were made; written to measure_run.json, the logs and the delivery
 # README. Raise the number whenever a definition or a parameter changes.
-METHOD_VERSION = (f"morphology/4 (length: TEASAR cable; smoothed length: branch moving average "
+METHOD_VERSION = (f"morphology/5 (length: TEASAR cable; smoothed length: branch moving average "
                   f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}, ends carried to the surface along the local axis "
-                  f"from {END_TRIM_FACTOR:g} radii in, not at data edges, short unbranched objects as a straight line "
-                  f"without tortuosity; "
+                  f"from {END_TRIM_FACTOR:g} radii in by following cross-section centres round bends, not at data "
+                  f"edges, short unbranched objects along their centre curve without tortuosity; "
                   f"tortuosity: smoothed longest path / end-to-end; "
                   f"width: anisotropic EDT, tips within {END_CAP_FACTOR:g} radii left out; "
                   f"surface: marching cubes, sigma {SURFACE_SIGMA:g} voxel; "
@@ -103,7 +105,7 @@ class Morphology:
     tortuosity: float | None = None
     surface_area_nm2: float | None = None
     sphericity: float | None = None
-    length_method: str | None = None        # METHOD_SKELETON or METHOD_STRAIGHT_LINE; None without a skeleton
+    length_method: str | None = None        # METHOD_SKELETON or METHOD_CENTRE_CURVE; None without a skeleton
 
     @property
     def short_object(self) -> bool | None:
@@ -408,16 +410,65 @@ def _recentre(mask: np.ndarray, voxel: np.ndarray, point: np.ndarray, normal: np
     within ``END_SECTION_FACTOR`` radii of it in a slab one voxel thick across ``normal``. A
     skeleton point can sit a good part of a radius off the axis near an end; the centroid of
     a (possibly slanted) cut through a tube is on the axis."""
+    return _section(mask, voxel, point, normal, radius_nm)[0]
+
+
+def _section(mask: np.ndarray, voxel: np.ndarray, point: np.ndarray, normal: np.ndarray,
+             radius_nm: float) -> tuple[np.ndarray, int]:
+    """Centroid and voxel count of the cross-section through ``point`` (see ``_recentre``)."""
     near = _voxels_near(mask, voxel, point, END_SECTION_FACTOR * radius_nm)
     near = near[np.abs(near @ normal) <= float(voxel.max()) / 2]
-    return point + near.mean(axis=0) if len(near) else point
+    return (point + near.mean(axis=0) if len(near) else point), len(near)
+
+
+def _follow(mask: np.ndarray, voxel: np.ndarray, start: np.ndarray, direction: np.ndarray, radius_nm: float,
+            reach_nm: float) -> tuple[list[np.ndarray], tuple[int, ...]] | None:
+    """The object's centreline from ``start`` to its surface, following bends: a list of points
+    ending at the tip, and the last voxel inside. Each step goes ``END_STEP`` along the current
+    direction, moves onto the centroid of the cross-section there (``_recentre``), and turns
+    the direction toward the step just made. When the next step would leave the object, the
+    tip is where the last direction leaves it (``_tip_along``). ``None`` when no tip is found
+    within ``reach_nm`` of path."""
+    step = max(float(voxel.max()), END_STEP_FACTOR * radius_nm)
+    points, centre, tangent, travelled = [], np.asarray(start, float), np.asarray(direction, float), 0.0
+    widest = _section(mask, voxel, centre, tangent, radius_nm)[1]
+    while travelled < reach_nm:
+        ahead = centre + step * tangent
+        index = np.rint(ahead / voxel).astype(np.int64)
+        if ((index < 0) | (index >= mask.shape)).any() or not mask[tuple(index)]:
+            break
+        section, count = _section(mask, voxel, ahead, tangent, radius_nm)
+        widest = max(widest, count)
+        if count < END_TIP_SHARE * widest:
+            break       # inside the rounded tip: a few voxels' centroid is noise, the ray is not
+        moved = section - centre
+        length = float(np.linalg.norm(moved))
+        if length < step / 4 or moved @ tangent <= 0:
+            break
+        centre = centre + moved
+        tangent = tangent + moved / length
+        tangent /= np.linalg.norm(tangent)
+        points.append(centre)
+        travelled += length
+    hit = _tip_along(mask, voxel, centre, tangent, step + 2 * radius_nm + 3 * float(voxel.max()))
+    if hit is None:
+        return None
+    return [*points, centre + hit[0] * tangent], hit[1]
+
+
+def _spread(polyline: np.ndarray, fractions: np.ndarray) -> np.ndarray:
+    """Points at the given fractions (0 = first point, 1 = last) of a polyline's length."""
+    steps = np.linalg.norm(np.diff(polyline, axis=0), axis=1)
+    along = np.concatenate([[0.0], np.cumsum(steps)])
+    targets = np.clip(fractions, 0.0, 1.0) * along[-1]
+    return np.stack([np.interp(targets, along, polyline[:, a]) for a in range(3)], axis=1)
 
 
 def _in_boxes(index, boxes) -> bool:
     return any(all(box[2 * a] <= index[a] < box[2 * a + 1] for a in range(3)) for box in boxes)
 
 
-def _principal_chord(mask: np.ndarray, voxel: np.ndarray):
+def _principal_axis(mask: np.ndarray, voxel: np.ndarray):
     """``(centroid, unit axis)`` of the object's voxels: the axis of largest spread."""
     points = np.argwhere(mask) * voxel
     centroid = points.mean(axis=0)
@@ -428,7 +479,7 @@ def _principal_chord(mask: np.ndarray, voxel: np.ndarray):
 def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray, radii: np.ndarray,
              *, cut_boxes=()) -> tuple[np.ndarray, bool]:
     """``vertices_nm`` (a smoothed skeleton) with every skeleton end moved to the object's tip,
-    and whether the object was measured as a straight line instead (below).
+    and whether the object was measured along its centre curve instead (below).
 
     A TEASAR skeleton does not end at the tip of a rounded end: it bends away from the axis
     inside the cap and stops at the surface beside the tip (68 nm off the axis and 24 nm short
@@ -437,32 +488,32 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
     length is roughly right by accident for most orientations, but not along Z, and the
     end-to-end distance is always short.
 
-    For each end, the object's axis is the line through the centroids of two cross-sections
-    (``_recentre``): one ``END_TRIM_FACTOR`` radii of path from the end, one
-    ``END_DIRECTION_NM`` (at least one radius) further in. The tip is where that line, from
-    the outer cross-section, leaves the object (``_tip_along``). The path from the inner
-    point to the end is replaced by one straight line to the tip, its vertices spread along
-    it, so the edges still apply.
+    For each end, two cross-sections of the object are cut (``_recentre``): one
+    ``END_TRIM_FACTOR`` radii of path from the end, one ``END_DIRECTION_NM`` (at least one
+    radius) further in. The line through their centroids gives a point on the axis and a
+    direction. From the inner one the object's centreline is followed to the surface
+    (``_follow``), round any bend, and replaces the path from there to the end, its vertices
+    spread along it, so the edges still apply.
 
-    **Straight line.** The object becomes the chord along its principal axis through its
-    centroid, from surface to surface, when all of this holds: its skeleton is one unbranched
-    path with two ends; after setting aside ``END_TRIM_FACTOR`` radii of path at each end
-    (the radius being the largest inscribed radius on that end's stretch, as ``trim`` finds
-    it), less than ``END_DIRECTION_NM`` or the path's largest radius, whichever is larger, is
-    left between the two; the chord's two rays leave the object; and neither end is cut off
-    (below). In round numbers: an unbranched object whose smoothed skeleton is shorter than
-    2.5 times its largest width (4 radii + 100 nm when the radius is under 100 nm). Such an
-    object is straight by construction, so it gets no tortuosity. A bent one reads short:
-    by the chord of its arc (see "Short curved objects" in docs/engineering/stitching.md).
+    **Centre curve.** The object is measured along a curve followed both ways from the
+    cross-section through its centroid, cut across its principal axis, when all of this
+    holds: its skeleton is one unbranched path with two ends; after setting aside
+    ``END_TRIM_FACTOR`` radii of path at each end (the radius being the largest inscribed
+    radius on that end's stretch, as ``trim`` finds it), less than ``END_DIRECTION_NM`` or
+    the path's largest radius, whichever is larger, is left between the two; the curve
+    reaches the surface both ways; and neither end is cut off (below). In round numbers: an
+    unbranched object whose smoothed skeleton is shorter than 2.5 times its largest width
+    (4 radii + 100 nm when the radius is under 100 nm). The second return value says so; such
+    an object gets no tortuosity.
 
-    An end is left exactly as it was when its line leaves the object inside one of
+    An end is left exactly as it was when its last ray leaves the object inside one of
     ``cut_boxes`` ((z0, z1, y0, y1, x0, x1) in mask voxels: the voxel layers where the data
     stops), or when the end itself is in one: the object is cut off there and has no tip.
     It is also left alone when no axis can be found (a branch of two or three points)."""
     voxel = np.asarray(voxel, float)
     vertices = np.asarray(vertices_nm, float)
     capped = vertices.copy()
-    straight_line = False
+    centre_curve = False
     edges = unique_edges(edges)
     degree = np.bincount(edges.ravel(), minlength=len(vertices))
     slack = 3 * float(voxel.max())
@@ -501,19 +552,23 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
             second = trim(total - forward[::-1], path[::-1], len(path) - 1)[0]
             middle = forward[len(path) - 1 - second] - forward[first]
             if middle < max(END_DIRECTION_NM, radii[path].max()):
-                # Short rod: the chord along the principal axis, both ways from the centroid.
+                # Short rod: its centre curve, followed both ways from the middle cross-section.
                 if len(branches) != 1:
                     continue
-                centroid, axis = _principal_chord(mask, voxel)
+                centroid, axis = _principal_axis(mask, voxel)
                 if axis @ (points[-1] - points[0]) < 0:
                     axis = -axis
                 reach = total + 2 * float(radii[path].max()) + slack
-                hits = [_tip_along(mask, voxel, centroid, sign * axis, reach) for sign in (-1.0, 1.0)]
-                if None in hits or cut_off(points[0], hits[0][1]) or cut_off(points[-1], hits[1][1]):
+                widest = float(radii[path].max())
+                middle_point = centroid
+                for _ in range(END_AXIS_ROUNDS):
+                    middle_point = _recentre(mask, voxel, middle_point, axis, widest)
+                sides = [_follow(mask, voxel, middle_point, sign * axis, widest, reach) for sign in (-1.0, 1.0)]
+                if None in sides or cut_off(points[0], sides[0][1]) or cut_off(points[-1], sides[1][1]):
                     continue
-                start = centroid - hits[0][0] * axis
-                capped[path] = start + np.linspace(0.0, 1.0, len(path))[:, None] * ((hits[0][0] + hits[1][0]) * axis)
-                straight_line = True
+                curve = np.array([*sides[0][0][::-1], middle_point, *sides[1][0]])
+                capped[path] = _spread(curve, np.linspace(0.0, 1.0, len(path)))
+                centre_curve = True
                 continue
         for is_end, order in zip(ends, (path, path[::-1])):
             if not is_end:
@@ -540,17 +595,17 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
                 direction = (anchor - behind) / norm
             if norm <= 0:
                 continue
-            # The tip cannot be further from the cut than the skeleton's own end plus a radius.
-            hit = _tip_along(mask, voxel, anchor, direction, along[cut] + radius + slack)
-            if hit is None or cut_off(pts[0], hit[1]):
+            # From the inner cross-section the object's own centreline is followed to the tip.
+            # The path's last stretch is replaced by it, vertices spread along it. It starts at
+            # the path's own point, not at the centroid beside it: a skeleton keeps to voxel
+            # centres, up to half a voxel off the axis, and a step sideways there would add
+            # length.
+            followed = _follow(mask, voxel, behind, direction, radius, along[back] + radius + slack)
+            if followed is None or cut_off(pts[0], followed[1]):
                 continue
-            # One straight line to the tip from the path where the direction was taken, vertices
-            # spread along it. It starts at the path's own point, not at the centroid beside it:
-            # a skeleton keeps to voxel centres, up to half a voxel off the axis, and a step
-            # sideways there would add length.
-            tip = anchor + hit[0] * direction
-            capped[order[:back + 1]] = tip + (along[:back + 1] / along[back])[:, None] * (pts[back] - tip)
-    return capped, straight_line
+            curve = np.array([*followed[0][::-1], pts[back]])
+            capped[order[:back + 1]] = _spread(curve, along[:back + 1] / along[back])
+    return capped, centre_curve
 
 
 # --- surface -----------------------------------------------------------------
@@ -606,7 +661,7 @@ def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
     radii = skeleton_radii_nm(mask, vertices, voxel)
     mean, median, low, high = width_stats_nm(radii, vertices, edges)
     # One main path, chosen on the smoothed and end-capped skeleton and measured both ways.
-    smoothed, straight_line = cap_ends(mask, voxel, smooth_skeleton(vertices, edges), edges, radii,
+    smoothed, centre_curve = cap_ends(mask, voxel, smooth_skeleton(vertices, edges), edges, radii,
                                        cut_boxes=cut_boxes)
     main = longest_path(smoothed, edges)
     end_to_end = float(np.linalg.norm(smoothed[main[0]] - smoothed[main[-1]])) if main else 0.0
@@ -620,6 +675,7 @@ def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
         longest_path_nm=path_length_nm(vertices[main]) if has_path else None,
         longest_path_smoothed_nm=main_smoothed if has_path else None,
         end_to_end_nm=end_to_end if has_path else None,
-        # A straight line has no tortuosity to measure: 1 would only restate the method.
-        tortuosity=main_smoothed / end_to_end if has_path and not straight_line else None,
-        length_method=METHOD_STRAIGHT_LINE if straight_line else METHOD_SKELETON, **shape)
+        # No tortuosity for objects measured along their centre curve: they are at most about
+        # 2.5 widths long, and the ratio would mostly be noise.
+        tortuosity=main_smoothed / end_to_end if has_path and not centre_curve else None,
+        length_method=METHOD_CENTRE_CURVE if centre_curve else METHOD_SKELETON, **shape)
