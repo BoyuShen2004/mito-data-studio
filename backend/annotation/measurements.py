@@ -47,12 +47,30 @@ def validate_voxel_size(voxel_size_zyx) -> tuple[float, float, float]:
     return values
 
 
-def skeletonize_mask(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE):
+# TEASAR ``const`` (nm) of the lab's parameters. A side arm is skeletonised only when it is
+# longer, from the main axis to its tip, than about this plus one tube radius.
+TEASAR_CONST_NM = 500.0
+
+
+def validate_teasar_const(value) -> float:
+    try:
+        const = float(value)
+    except (TypeError, ValueError):
+        raise MeasurementError("TEASAR const must be a number of nm") from None
+    if not math.isfinite(const) or const <= 0:
+        raise MeasurementError("TEASAR const must be a positive number of nm")
+    return const
+
+
+def skeletonize_mask(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE,
+                     teasar_const_nm: float = TEASAR_CONST_NM):
     """The TEASAR skeleton of a binary (Z, Y, X) mask, vertices in nm, or
-    ``None`` when there is none (empty mask, or below the dust size)."""
+    ``None`` when there is none (empty mask, or below the dust size).
+    ``teasar_const_nm`` is the lab's 500 nm unless a run asks otherwise."""
     res = validate_voxel_size(voxel_size_zyx)
     labels = (np.asarray(mask) > 0).astype(np.uint8)
-    skels = vol_to_skel(labels, obj_ids=[1], res=res, dust_size=dust_size, progress=False)
+    skels = vol_to_skel(labels, obj_ids=[1], res=res, dust_size=dust_size, progress=False,
+                        const=validate_teasar_const(teasar_const_nm))
     return skels[1] if skels else None
 
 

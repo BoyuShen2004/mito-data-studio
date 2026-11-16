@@ -34,7 +34,9 @@ from annotation.cellable_port.labels_3d import _derive_summary, _scan_stats
 from annotation.measurements import (
     CROP_PAD,
     SKIPPED_CROP_LIMIT,
+    TEASAR_CONST_NM,
     MeasurementError,
+    validate_teasar_const,
     validate_voxel_size,
 )
 from annotation.morphology import EMPTY_ROW, METHOD_VERSION, MORPHOLOGY_FIELDS, Morphology, measure_morphology
@@ -90,9 +92,9 @@ class StitchedObject:
     coord_sums: tuple[int, int, int] = (0, 0, 0)    # sum of z, y, x over the object's voxels
     morphology: Morphology | None = None            # None when skipped (crop_limit)
 
-    def measure(self, mask: np.ndarray, voxel_size) -> None:
+    def measure(self, mask: np.ndarray, voxel_size, *, teasar_const_nm: float = TEASAR_CONST_NM) -> None:
         """Cable length and morphology from the object's assembled mask."""
-        self.morphology = measure_morphology(mask, voxel_size)
+        self.morphology = measure_morphology(mask, voxel_size, teasar_const_nm=teasar_const_nm)
         self.skeleton_length_um = self.morphology.length_nm / 1000.0
 
     def row(self, voxel_size) -> dict:
@@ -265,12 +267,14 @@ class MeasureResult:
 
 
 def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS,
-                    region_only: bool = False, log=lambda message: None) -> MeasureResult:
+                    region_only: bool = False, teasar_const_nm: float = TEASAR_CONST_NM,
+                    log=lambda message: None) -> MeasureResult:
     """Measure every object, or with ``region_only`` only objects reaching into
     the region (total ``region_voxels`` > 0; needs ``stitch_ids --regions``)."""
     work = Path(work)
     try:
         voxel_size = validate_voxel_size(voxel_size_zyx)
+        teasar_const_nm = validate_teasar_const(teasar_const_nm)
     except MeasurementError as exc:
         raise StitchingError(str(exc)) from None
     if max_crop_voxels < 1:
@@ -366,7 +370,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
                     continue
                 mask = assemble_mask(window, parts)
                 _set_moments(obj, mask_moments(mask, window))
-                obj.measure(mask, voxel_size)
+                obj.measure(mask, voxel_size, teasar_const_nm=teasar_const_nm)
                 measured += 1
         log(f"tile {index}/{len(tiles)} {tile.name}: {len(summary['bboxes'])} label(s), "
             f"{measured} single-tile object(s) measured, {skipped} skipped (crop_limit) "
@@ -397,7 +401,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
             log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.tiles)} tiles, crop {size} "
                 f"= {box_voxels(window)} voxels > {max_crop_voxels}; skipped (crop_limit)")
             continue
-        obj.measure(mask, voxel_size)
+        obj.measure(mask, voxel_size, teasar_const_nm=teasar_const_nm)
         log(f"object {index}/{len(multi)} {obj.object_id}: {len(obj.members)} label(s) in {len(obj.tiles)} tiles, "
             f"crop {size}, {obj.skeleton_length_um:.4g} um in {time.monotonic() - t0:.1f}s")
 
@@ -419,7 +423,7 @@ def measure_objects(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: 
         "voxel_size_zyx_nm": list(voxel_size), "region_only": region_only, "max_crop_voxels": max_crop_voxels,
         "unproofread_tiles": [t.name for t in tiles if t.name in unproofread_names],
         "code_revision": code_revision(), "finished_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "method_version": METHOD_VERSION,
+        "method_version": METHOD_VERSION, "teasar_const_nm": teasar_const_nm,
     }
     return MeasureResult(ordered, [o.row(voxel_size) for o in ordered], counts, fields, unresolved_rows,
                          label_boxes, run)
@@ -441,9 +445,10 @@ def _touches_uncovered(volume, tile: Tile, lid: int, local_box, face: int, cover
 
 
 def run_measure(work, voxel_size_zyx, *, unproofread=None, max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS,
-                region_only: bool = False, log=lambda message: None, command: str = "") -> MeasureResult:
+                region_only: bool = False, teasar_const_nm: float = TEASAR_CONST_NM,
+                log=lambda message: None, command: str = "") -> MeasureResult:
     result = measure_objects(work, voxel_size_zyx, unproofread=unproofread, max_crop_voxels=max_crop_voxels,
-                             region_only=region_only, log=log)
+                             region_only=region_only, teasar_const_nm=teasar_const_nm, log=log)
     work = Path(work)
     write_csv(work / "measurements.csv", result.fields, result.rows)
     write_csv(work / "unresolved_candidates.csv", UNRESOLVED_FIELDS, result.unresolved)

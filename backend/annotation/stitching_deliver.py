@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from annotation.measurements import CROP_PAD, DUST_SIZE, SKIPPED_CROP_LIMIT
+from annotation.measurements import CROP_PAD, DUST_SIZE, SKIPPED_CROP_LIMIT, TEASAR_CONST_NM
 from annotation.morphology import (
     MORPHOLOGY_FIELDS,
     SHORT_OBJECT_ASPECT,
@@ -388,17 +388,26 @@ def readme_tables_lines(column_docs: dict[str, str], excluded_intro: str,
     ]
 
 
-def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
+def readme_length_lines(crop_sentence: str, max_crop_voxels: int,
+                        teasar_const_nm: float = TEASAR_CONST_NM) -> list[str]:
+    changed = [] if teasar_const_nm == TEASAR_CONST_NM else [
+        f"**This run used TEASAR const {teasar_const_nm:g} nm instead of the lab's {TEASAR_CONST_NM:g} nm.** A "
+        "lower value skeletonises shorter side arms (an arm is found once it is longer, from the main axis to "
+        "its tip, than about const plus one tube radius), so `length_um`, `length_smoothed_um`, `branch_points` "
+        f"and `endpoints` are not comparable with a run at {TEASAR_CONST_NM:g} nm.",
+        "",
+    ]
     return [
         "## How length is measured",
         "",
         "Each mitochondrion is turned into a one-voxel-wide centreline skeleton with the TEASAR algorithm, "
         "using the kimimaro library with the lab's parameters (the same code and parameters Mito Data Studio "
-        "uses for single volumes; TEASAR scale 1.5, const 500 nm). The voxel size above is passed in, so the "
-        "skeleton is in nm. Length is the **cable length**: the sum of the lengths of all skeleton edges, so "
+        "uses for single volumes; TEASAR scale 1.5, const 500 nm unless stated below). The voxel size above is "
+        "passed in, so the skeleton is in nm. Length is the **cable length**: the sum of the lengths of all skeleton edges, so "
         f"branches count. Pieces smaller than {DUST_SIZE} voxels are ignored by the skeletoniser, so a very "
         "small mitochondrion can have length 0.",
         "",
+        *changed,
         f"{crop_sentence} Objects whose box would exceed "
         f"{max_crop_voxels:,} voxels are not skeletonised (`length_status` = `skipped_too_large`); their "
         "volume, box and centroid are still exact.",
@@ -479,7 +488,7 @@ def build_readme(ctx: dict) -> str:
                              "the whole stitched object it belongs to. Columns:"),
         *readme_length_lines(f"A stitched mitochondrion is skeletonised once, as one piece, from a box around all "
                              f"of it (padded by {CROP_PAD} voxels), so the path across tile seams counts.",
-                             ctx["max_crop_voxels"]),
+                             ctx["max_crop_voxels"], float(ctx["run"].get("teasar_const_nm", TEASAR_CONST_NM))),
         "## How stitching works",
         "",
         "The data arrive as tiles that were segmented one at a time, so a mitochondrion crossing a tile "

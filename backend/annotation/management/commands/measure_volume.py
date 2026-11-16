@@ -20,6 +20,7 @@ import shlex
 
 from django.core.management.base import BaseCommand, CommandError
 
+from annotation.measurements import TEASAR_CONST_NM
 from annotation.stitching import StitchingError
 from annotation.stitching_deliver import DELIVERY_FILES
 from annotation.stitching_measure import DEFAULT_MAX_CROP_VOXELS
@@ -40,6 +41,8 @@ def _command_line(opts) -> str:
         args += ["--max-crop-voxels", str(opts["max_crop_voxels"])]
     if opts["region_only"]:
         args.append("--region-only")
+    if opts["teasar_const"] != TEASAR_CONST_NM:
+        args += ["--teasar-const", f"{opts['teasar_const']:g}"]
     if opts["exclude_label_ids"]:
         args += ["--exclude-label-ids", str(opts["exclude_label_ids"])]
     if opts["volume_name"]:
@@ -75,6 +78,12 @@ class Command(BaseCommand):
             help=f"Skip cable length for labels whose padded crop is larger (default {DEFAULT_MAX_CROP_VOXELS:,}).",
         )
         parser.add_argument(
+            "--teasar-const", type=float, default=TEASAR_CONST_NM, metavar="NM",
+            help=f"TEASAR const in nm for the skeletons (default {TEASAR_CONST_NM:g}, the lab's value). Lower "
+                 "values skeletonise shorter side arms and change every length; for trials. The value is "
+                 "recorded in measure_run.json and the delivery README.",
+        )
+        parser.add_argument(
             "--region-only", action="store_true",
             help="Measure and list only labels with voxels inside the region (needs --region).",
         )
@@ -106,7 +115,7 @@ class Command(BaseCommand):
                 opts["labels"], opts["work"], opts["voxel_size_zyx"], region=opts["region"],
                 region_only=opts["region_only"], max_crop_voxels=opts["max_crop_voxels"],
                 exclude_label_ids=opts["exclude_label_ids"], name=opts["volume_name"], out=opts["out"],
-                overwrite=opts["overwrite"], command=_command_line(opts), log=log)
+                overwrite=opts["overwrite"], command=_command_line(opts), teasar_const_nm=opts["teasar_const"], log=log)
         except StitchingError as exc:
             raise CommandError(str(exc))
 

@@ -36,7 +36,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components, dijkstra
 from scipy.spatial import cKDTree
 
-from annotation.measurements import DUST_SIZE, skeletonize_mask, validate_voxel_size
+from annotation.measurements import DUST_SIZE, TEASAR_CONST_NM, skeletonize_mask, validate_voxel_size
 from annotation.third_party.em_erl_skel import cable_length
 
 # Gaussian smoothing (in voxels) of the mask before marching cubes. The raw
@@ -355,7 +355,8 @@ def sphericity(volume_nm3: float, area_nm2: float) -> float:
 
 # --- entry point -------------------------------------------------------------
 
-def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE) -> Morphology:
+def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE,
+                       teasar_const_nm: float = TEASAR_CONST_NM) -> Morphology:
     """Cable length and morphology of a binary (Z, Y, X) mask.
 
     ``length_nm`` is exactly ``measurements.skeleton_length_nm`` of the same
@@ -369,7 +370,7 @@ def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
     area = surface_area_nm2(mask, voxel)
     shape = {"surface_area_nm2": area,
              "sphericity": sphericity(count * voxel[0] * voxel[1] * voxel[2], area) if area else None}
-    skeleton = skeletonize_mask(mask, voxel, dust_size=dust_size)
+    skeleton = skeletonize_mask(mask, voxel, dust_size=dust_size, teasar_const_nm=teasar_const_nm)
     if skeleton is None or not len(skeleton.vertices):
         return Morphology(**shape)
 

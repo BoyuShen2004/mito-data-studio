@@ -5,6 +5,10 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- `stitch_measure` and `measure_volume`: new trial option `--teasar-const NM`
+  (default 500, unchanged results). A lower value skeletonises shorter side
+  arms. The value is logged, recorded in `measure_run.json` and stated in the
+  delivery README when it is not 500. See `docs/engineering/stitching.md`.
 - Add morphology columns to `stitch_measure`, `measure_volume` and the
   delivery (`mitochondria.csv`, appended after the existing columns): width
   mean/median/min/max from an anisotropic Euclidean distance transform sampled
