@@ -760,7 +760,8 @@ class ReviewPageTests(StitchedGridMixin, SimpleTestCase):
         self.assertEqual(len(data["cards"]), 6)
         self.assertEqual(data["cards"][3], {
             "id": "c000003", "key": "3:1:70000", "seam": "3", "tile_a": T1, "label_a": "1",
-            "tile_b": T5, "label_b": "70000", "global_a": "4", "global_b": "70008"})
+            "tile_b": T5, "label_b": "70000", "global_a": "4", "global_b": "70008",
+            **stitching.decision_fingerprints(self.candidates[3], stitching.tile_fingerprints(self.work))})
         for card in data["cards"]:
             self.assertTrue(all(isinstance(v, str) for v in card.values()))
             self.assertIn(f'id="{card["id"]}"', page)
@@ -916,6 +917,10 @@ console.log(JSON.stringify({ imported, exported, reviewer: el("reviewer").value,
         self.assertEqual([(r["seam"], r["decision"], r["reviewer"]) for r in rows], [
             ("0", "yes", rule), ("1", "yes", "late"), ("2", "yes", rule), ("3", "yes", rule)])
         self.assertEqual(rows[0]["decided_at"], "2026-11-05T00:00:00Z")
+        # Imported auto decisions keep their fingerprints; the one made on the page gets the page's.
+        known = stitching.tile_fingerprints(self.work)
+        for row in rows:
+            self.assertEqual((row["fingerprint_a"], row["fingerprint_b"]), (known[row["tile_a"]], known[row["tile_b"]]))
         self.assertEqual(result["reviewer"], "late")          # saved with progress
         self.assertEqual(result["progress"], "4 / 6 decided")
 
@@ -944,24 +949,37 @@ console.log(JSON.stringify({ imported, exported, reviewer: el("reviewer").value,
             ("1", T0, "2", T2, "1", "2", "5", "unsure", "rv"),
             ("2", T0, "3", T1, "1", "3", "4", "yes", "rv"),
         ])
+        known = stitching.tile_fingerprints(self.work)
         for row in rows:
             self.assertRegex(row["decided_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+            # Decided on this page: the fingerprints of the tiles the page was built from.
+            self.assertEqual((row["fingerprint_a"], row["fingerprint_b"]), (known[row["tile_a"]], known[row["tile_b"]]))
         stored = json.loads(next(iter(result["stored"].values())))
+        # Imported from a file without fingerprints: none are invented for it.
+        self.assertEqual((stored["decisions"]["5:2:2"]["fingerprint_a"], stored["decisions"]["5:2:2"]["fingerprint_b"]),
+                         ("", ""))
         self.assertEqual(stored["decisions"]["5:2:2"]["decision"], "no")
         self.assertEqual(stored["reviewer"], "rv")
 
 
 # --- phase 5: objects ------------------------------------------------------------
 
-def write_decisions(path, candidates, decisions: dict[int, str], *, reviewer="r1", overrides=None):
+def write_decisions(path, candidates, decisions: dict[int, str], *, reviewer="r1", overrides=None,
+                    fingerprints=True):
     """decisions.csv for the candidate rows at the given indices; ``overrides``
-    replaces fields per index."""
+    replaces fields per index. The rows carry the fingerprints of the tiles as
+    ``tile_ids.csv`` beside ``path`` records them (as the review page would),
+    or none with ``fingerprints=False`` (a file from before they existed)."""
+    known = stitching.tile_fingerprints(Path(path).parent) if fingerprints else None
+    fields = stitching.DECISION_FIELDS if fingerprints else stitching.DECISION_FIELDS[:-2]
     with open(path, "w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=stitching.DECISION_FIELDS)
+        writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
         for index, decision in decisions.items():
             row = {f: candidates[index][f] for f in stitching.DECISION_FIELDS[:7]}
             row.update(decision=decision, reviewer=reviewer, decided_at="2026-11-04T10:00:00Z")
+            if known is not None:
+                row.update(stitching.decision_fingerprints(candidates[index], known))
             row.update((overrides or {}).get(index, {}))
             writer.writerow(row)
     return path
@@ -1063,6 +1081,72 @@ class ObjectsTests(StitchedGridMixin, SimpleTestCase):
         bad.write_text("seam,tile_a,label_a,decision\n0,x,1,yes\n")
         with self.assertRaisesMessage(CommandError, "missing column(s) tile_b, label_b, global_a, global_b"):
             self.objects(str(bad))
+
+    def rewrite_tile(self, name):
+        """Save a tile file again in place: same bytes, a later modification time. To the
+        fingerprint (size and mtime) that is a changed tile, as a relabelled one would be."""
+        path = self.tiles_dir / f"{name}.tif"
+        path.write_bytes(path.read_bytes())
+        later = os.stat(path).st_mtime_ns + 5_000_000_000
+        os.utime(path, ns=(later, later))
+
+    def test_decisions_without_fingerprints_need_the_flag(self):
+        old = self.decisions(ALL_DECIDED, "old.csv", fingerprints=False)
+        self.assertNotIn("fingerprint_a", Path(old).read_text().splitlines()[0])
+        with self.assertRaises(CommandError) as ctx:
+            self.objects(old)
+        message = str(ctx.exception)
+        self.assertIn("decisions without tile fingerprints", message)
+        self.assertIn(f"({len(ALL_DECIDED)})", message)
+        self.assertIn("--allow-unfingerprinted", message)
+        self.assertFalse((self.work / "objects.csv").exists())
+        err = self.objects(old, extra=("--allow-unfingerprinted",))
+        self.assertIn(f"{len(ALL_DECIDED)} decision(s) accepted without tile fingerprints", err)
+        self.assertEqual(as_tuples(read_rows(self.work / "objects_summary.csv"), stitching.OBJECTS_SUMMARY_FIELDS),
+                         EXPECTED_SUMMARY)
+        # A blank in one of the two columns counts as none.
+        half = self.decisions({0: "yes"}, "half.csv", overrides={0: {"fingerprint_b": ""}})
+        with self.assertRaisesMessage(CommandError, "decisions without tile fingerprints"):
+            self.objects(half)
+
+    def test_tile_changed_after_stitch_ids_is_refused(self):
+        path = self.decisions(ALL_DECIDED)
+        self.rewrite_tile(T2)
+        with self.assertRaisesMessage(CommandError, "changed since stitch_ids; rerun stitch_ids"):
+            self.objects(path)
+        self.assertFalse((self.work / "objects.csv").exists())
+
+    def test_decisions_made_before_a_tile_changed_are_refused(self):
+        # The tile is rewritten and phases 2-3 rerun in the same work directory: the
+        # candidates and their keys are the same, so only the fingerprints can tell.
+        path = self.decisions(ALL_DECIDED)
+        was = stitching.tile_fingerprints(self.work)[T2]
+        self.rewrite_tile(T2)
+        self.call("stitch_ids", "--work", str(self.work))
+        self.call("stitch_candidates", "--work", str(self.work))
+        self.assertEqual(read_rows(self.work / "candidates.csv"), self.candidates)
+        now = stitching.tile_fingerprints(self.work)[T2]
+        self.assertNotEqual(was, now)
+        with self.assertRaises(CommandError) as ctx:
+            self.objects(path)
+        message = str(ctx.exception)
+        on_t2 = [i for i, c in enumerate(self.candidates) if T2 in (c["tile_a"], c["tile_b"]) and i in ALL_DECIDED]
+        self.assertIn("decisions recorded on another version of a tile", message)
+        self.assertIn(f"({len(on_t2)})", message)
+        self.assertIn(f"{T2} was {was}, is now {now}", message)
+        for index in on_t2:
+            self.assertIn(f"{path}:{list(ALL_DECIDED).index(index) + 2}:", message)
+        self.assertFalse((self.work / "objects.csv").exists())
+        # --allow-unfingerprinted is not a way around it: these rows have fingerprints.
+        with self.assertRaisesMessage(CommandError, "decisions recorded on another version of a tile"):
+            self.objects(path, extra=("--allow-unfingerprinted",))
+        # Decisions that do not involve the changed tile are still good.
+        stale_lines = {list(ALL_DECIDED).index(i) + 1 for i in on_t2}
+        others = self.work / "others.csv"
+        others.write_text("".join(line for n, line in enumerate(Path(path).read_text().splitlines(True))
+                                  if n not in stale_lines))
+        err = self.objects(str(others))
+        self.assertIn(f"undecided {len(on_t2)}", err)
 
     def test_decisions_are_case_and_space_tolerant(self):
         self.objects(self.decisions({0: " Yes ", 5: "NO"}))

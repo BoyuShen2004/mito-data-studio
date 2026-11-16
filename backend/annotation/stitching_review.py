@@ -34,6 +34,7 @@ from annotation.stitching import (
     build_inventory,
     check_seams_csv,
     face_plane,
+    fingerprint_text,
     load_tile_ids,
     load_tiles_csv,
     open_tile,
@@ -328,9 +329,14 @@ def build_review(work, image_dirs, out=None, *, crop: int = DEFAULT_CROP, shard:
             plane_b = face_plane(labels["b"], tile_b, seam, side="b")
             sources = {side: (t, labels[side], images[side], tile_ids[t.name]["id_offset"])
                        for side, t in (("a", tile_a), ("b", tile_b))}
+            # Which version of each tile the cards show; exported with every decision made on them.
+            shown = {f"fingerprint_{side}": fingerprint_text(tile_ids[t.name]["file_size"],
+                                                             tile_ids[t.name]["file_mtime_ns"])
+                     for side, t in (("a", tile_a), ("b", tile_b))}
             uint8_source = all(v is None or np.dtype(v.dtype) == np.uint8 for v in images.values())
             for index, row in by_seam[seam_id]:
-                cards.append(_render_card(out, index, row, seam, plane_a, plane_b, sources, uint8_source, crop))
+                cards.append({**_render_card(out, index, row, seam, plane_a, plane_b, sources, uint8_source, crop),
+                              **shown})
 
     cards.sort(key=lambda c: c["index"])
     only_bytes = Path(only).read_bytes() if only is not None else b""
@@ -380,7 +386,8 @@ def _render_card(out, index, row, seam, plane_a, plane_b, sources, uint8_source,
 
 def page_data(cards: list[dict], *, store: str, export_name: str) -> dict:
     """The JSON the page script reads. IDs stay strings: they can exceed 2**53."""
-    keep = ("id", "key", "seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b")
+    keep = ("id", "key", "seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
+            "fingerprint_a", "fingerprint_b")
     return {"store": store, "export_name": export_name, "fields": list(DECISION_FIELDS),
             "cards": [{k: str(c[k]) for k in keep} for c in cards]}
 
@@ -569,7 +576,8 @@ figcaption { color: var(--muted); margin-top: 4px; }
   function decide(value) {
     if (!cards.length || !shown(current)) return;
     state.decisions[cards[current].key] = {
-      decision: value, reviewer: $("reviewer").value, decided_at: new Date().toISOString() };
+      decision: value, reviewer: $("reviewer").value, decided_at: new Date().toISOString(),
+      fingerprint_a: cards[current].fingerprint_a, fingerprint_b: cards[current].fingerprint_b };
     var i = find(current, 1);
     if (i >= 0) current = i;
     settle();
@@ -616,6 +624,8 @@ figcaption { color: var(--muted); margin-top: 4px; }
       if (!d) return;
       lines.push(data.fields.map(function (f) {
         if (f === "reviewer") return csvField(d.reviewer || $("reviewer").value);
+        // The tiles the decision was made on, never the ones this page was built from.
+        if (f === "fingerprint_a" || f === "fingerprint_b") return csvField(d[f] || "");
         return csvField(f in d ? d[f] : c[f]);
       }).join(","));
     });
@@ -642,7 +652,8 @@ figcaption { color: var(--muted); margin-top: 4px; }
         if (!c || c.tile_a !== o.tile_a || c.tile_b !== o.tile_b || ["yes", "no", "unsure"].indexOf(o.decision) < 0) {
           skipped++; return;
         }
-        state.decisions[c.key] = { decision: o.decision, reviewer: o.reviewer, decided_at: o.decided_at };
+        state.decisions[c.key] = { decision: o.decision, reviewer: o.reviewer, decided_at: o.decided_at,
+          fingerprint_a: o.fingerprint_a || "", fingerprint_b: o.fingerprint_b || "" };
         used++;
       });
       $("message").textContent = "Imported " + used + " decision(s); skipped " + skipped + " row(s) not on this page.";

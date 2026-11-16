@@ -4,7 +4,9 @@ Reads candidates.csv and id_map.csv from the work directory and one or more
 decisions.csv files from stitch_review. Union-find over global IDs merges only
 "yes" pairs; each object's id is its smallest global id. Refuses decisions
 that match no candidate and conflicting decisions for the same pair. Writes
-objects.csv and objects_summary.csv. See docs/engineering/stitching.md.
+objects.csv and objects_summary.csv. Refuses when a tile file changed since
+stitch_ids, and when a decision was recorded on another version of a tile
+(the fingerprint columns of decisions.csv). See docs/engineering/stitching.md.
 
     python manage.py stitch_objects --work stitch_p10 --decisions decisions.csv
     python manage.py stitch_objects --work stitch_p10 --decisions a.csv --decisions b.csv --require-complete
@@ -32,9 +34,16 @@ class Command(BaseCommand):
             help="Refuse if any candidate has no decision.",
         )
 
+        parser.add_argument(
+            "--allow-unfingerprinted", action="store_true",
+            help="Accept decisions that carry no tile fingerprints (files exported before fingerprints "
+                 "existed). Nothing then shows that they were made on the current tiles.",
+        )
+
     def handle(self, *args, **opts):
         try:
-            result = run_objects(opts["work"], opts["decisions"], require_complete=opts["require_complete"])
+            result = run_objects(opts["work"], opts["decisions"], require_complete=opts["require_complete"],
+                                 allow_unfingerprinted=opts["allow_unfingerprinted"])
         except StitchingError as exc:
             raise CommandError(str(exc))
 
@@ -43,6 +52,10 @@ class Command(BaseCommand):
             f"decisions: yes {c['yes']}, no {c['no']}, unsure {c['unsure']}, undecided {c['undecided']}"
         )
         self.stderr.write(f"{c['objects']} object(s), {c['merged_objects']} built from more than one label")
+        if c["unfingerprinted"]:
+            self.stderr.write(self.style.WARNING(
+                f"{c['unfingerprinted']} decision(s) accepted without tile fingerprints (--allow-unfingerprinted)"
+            ))
         if result.repeated_tile_objects:
             self.stderr.write(self.style.WARNING(
                 f"{len(result.repeated_tile_objects)} object(s) hold two labels from the same tile; "

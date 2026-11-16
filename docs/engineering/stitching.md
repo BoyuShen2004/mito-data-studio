@@ -51,7 +51,9 @@ tiles only.
 - Final runs should use the approved official labels.
 
 Changing the label source changes the label IDs, so rerun every phase from 1.
-Decisions from one set of tiles do not carry over to another.
+Decision files from one run do not match another run's candidates;
+`stitch_carry_decisions` carries over the ones that are still valid (see
+[Re-runs](#re-runs)).
 
 **Region-only run on the proofread labels (phases 1-6, before phase 7):**
 
@@ -309,6 +311,29 @@ together; agreeing duplicates are fine.
   - pairs given different decisions anywhere in the inputs.
 
   The same decision repeated is fine.
+- **Tile fingerprints.** A decision is about two labels as they were when the
+  reviewer saw them. Every decision row therefore carries the fingerprint
+  (`file_size:file_mtime_ns`, as `stitch_ids` recorded it in `tile_ids.csv`)
+  of its two tiles at the time it was made: the review page writes the
+  fingerprints of the tiles it was built from, `stitch_auto_decisions` and
+  `stitch_carry_decisions` those of their work directory. `stitch_objects`
+  fingerprints the tiles again and refuses, before writing anything:
+  - when a tile file no longer matches `tile_ids.csv` ("changed since
+    stitch_ids; rerun stitch_ids"), as phases 3, 4 and 6 already did;
+  - every decision whose recorded fingerprint differs from the current one
+    for either tile, listed with `file:line`, the tile, and both values. This
+    is the case of a tile relabelled in place and phases 1-3 rerun in the same
+    work directory: seam numbers, labels and global IDs can all still match;
+  - every decision with no fingerprint (a file exported before this existed,
+    or with the columns removed), unless `--allow-unfingerprinted` is given;
+    the command then warns with their number. The flag does not accept
+    decisions whose fingerprints are present and wrong.
+
+  A fingerprint is size and modification time, not content: a tile that was
+  saved again unchanged, or copied without keeping its modification time,
+  counts as changed. Rerun in a new work directory and use
+  `stitch_carry_decisions`, which compares the labels themselves (voxel counts
+  and contacts) and gives the decisions it carries the new fingerprints.
 - It reports counts of yes, no, unsure and undecided. `--require-complete`
   refuses if any candidate is undecided; `unsure` counts as decided but never
   merges.
@@ -866,6 +891,109 @@ slow with the fixture's 3,000,000,123 ID. The tests cover:
 - refusal of a region on another grid, unexpected files and sharded scales;
 - column sets identical to `stitch_deliver`'s.
 
+## Re-runs
+
+Tiles get added (the 55 volumes filling the nag_p10 z slab 864-1120) and
+relabelled (a proofreader fixes a tile). Either changes seam numbers and
+global IDs, so every phase is rerun from 1 and the earlier `decisions.csv`
+files no longer match `candidates.csv`.
+
+**What already existed.** Decisions are keyed by seam number, tile names,
+local labels and global IDs. Seam numbers follow tile order and global IDs
+follow each earlier tile's largest local ID, so one added tile shifts both for
+most candidates. `stitch_objects` then refuses the earlier files ("match no
+candidates.csv row"), and the review page's import skips every row whose seam
+number and tile names no longer line up. Nothing carried
+a decision forward: every card had to be answered again. One case was worse:
+a tile relabelled *in place* (same name, same largest ID) keeps every key, so
+an earlier decision file was accepted without anyone seeing the change.
+`stitch_objects` now refuses such a file by tile fingerprint (phase 5), but
+only the carry step says which of its decisions still hold.
+
+**`stitch_carry_decisions`** closes both gaps. Rerun phases 1-3 (and
+`stitch_auto_decisions`) in a **new work directory**, then:
+
+```bash
+python manage.py stitch_carry_decisions --old-work /scratch/stitch_p10 --work /scratch/stitch_p10_v2 \
+    --decisions /scratch/stitch_p10/decisions_region.csv --region-only
+python manage.py stitch_review --work /scratch/stitch_p10_v2 --images /data/nag_p10/images \
+    --only /scratch/stitch_p10_v2/needs_review.csv
+python manage.py stitch_objects --work /scratch/stitch_p10_v2 --decisions decisions_auto.csv \
+    --decisions decisions_carried.csv --decisions decisions_needs_review.csv
+```
+
+It reads only the two work directories (`tiles.csv`, `seams.csv`,
+`tile_ids.csv`, `id_map.csv`, `candidates.csv`) and the earlier decision files. No tile is
+read, so the earlier tiles may be gone.
+
+**When a decision is still valid.** A decision is about two labels touching
+across one tile face. It is carried only when all of this holds in the new
+run:
+
+1. both tiles exist, matched by box (the suffix may differ, for example
+   `_prediction` → `_proofread`);
+2. both labels exist in their tiles under the same local ID, with the same
+   voxel count as before;
+3. the pair is a candidate again with the same `contact_voxels`, `area_a` and
+   `area_b`.
+
+Otherwise it is invalidated, with every reason that applies:
+
+| Reason | Meaning |
+|--------|---------|
+| `tile_removed` | A tile of the pair is not in the new run. |
+| `label_removed` | A label's local ID is no longer in its tile. |
+| `label_changed` | A label's voxel count changed: it was edited somewhere. |
+| `no_longer_touching` | Both labels exist but no longer touch across this face. |
+| `contact_changed` | They touch, but the contact or a face area changed. |
+
+The test is deliberately strict. A label edited far from the seam is
+invalidated too (`label_changed`), because the reviewer judged it as it was;
+re-reviewing one card is cheaper than a wrong carried answer. A label that got
+a new ID is `label_removed`, and its new ID appears as a new candidate.
+
+**Auto-rule decisions are not carried** (a `reviewer` starting with `auto:`,
+with no human row for the pair). Whether a pair is one-to-one depends on the
+new neighbours, so rerun `stitch_auto_decisions`. `--include-auto` carries
+them anyway.
+
+**Outputs**, all in the new work directory:
+
+- `decisions_carried.csv` — `decisions.csv` format, re-keyed to the new seam
+  numbers, tile names and global IDs, with the original decision, reviewer and
+  time. `stitch_objects` and the review page's import accept it.
+- `carry_report.csv` — one row per earlier decision: `carried`, `invalidated`
+  (with `reason` and `detail`) or `skipped_auto`. The command also prints the
+  counts and the first 20 invalidated decisions.
+- `needs_review.csv` — the new candidates without a carried decision and not
+  decided by the new `decisions_auto.csv` (found in the work directory, or
+  `--auto-decisions`). `why` says: `new_seam` (the two tiles shared no face
+  before), `new_candidate` (a pair that did not exist), `changed:<reasons>` (its
+  earlier decision was invalidated) or `not_decided_before`. With
+  `--region-only`, only `in_region` candidates are listed. `stitch_review
+  --only` builds a page for exactly these cards.
+- `carry_run.json` — inputs, counts, code revision and time. `stitch_deliver`
+  reads it and reports the carried decisions in the delivery README.
+
+**A carried decision against the new auto rule.** If a reviewer said `no` and
+the rerun auto rule says `yes`, the command warns and counts it. Passing both
+files to `stitch_objects` is refused as a conflict, as always. The reviewer's
+answer must win: import `decisions_auto.csv` into the review page first, then
+`decisions_carried.csv` (a later import replaces an earlier one), and pass the
+page's export to `stitch_objects`; or remove the pair from the auto file.
+
+### Tiles of different sizes
+
+Nothing assumes one tile size (p0 has 256- and 408-slice tiles, 2048 and 3072
+wide). A seam is the rectangle two tiles share, so between a small and a large
+tile it covers the small tile's whole face and part of the large one's.
+Candidates, review cards, objects and measurements use that rectangle. The rest
+of the large tile's face has no neighbour and is a volume edge
+(`touches_edge`), until another tile covers it. Phase 1 reports such an axis
+as `irregular_axis` and skips missing-position detection there; that is a
+report, not a refusal. Tests cover a seam between tiles of two sizes and
+adding a tile of a third size next to them.
+
 ## CLI
 
 All commands are offline, read-only for inputs, and write into a work
@@ -911,10 +1039,12 @@ box.
   `--overwrite` is given, which replaces only `index.html` and `crops/`.
 - **Pairing file:** it also writes `<work>/image_pairing.csv`.
 
-`stitch_objects` reads `tiles.csv`, `candidates.csv` and `id_map.csv`, plus
-the files given with `--decisions` (repeatable). Add `--require-complete` to
-refuse undecided candidates. It writes `objects.csv`, `objects_summary.csv`
-and `decisions_resolved.csv`.
+`stitch_objects` reads `tiles.csv`, `tile_ids.csv`, `candidates.csv` and
+`id_map.csv`, plus the files given with `--decisions` (repeatable), and stats
+every tile file (it reads none). Add `--require-complete` to refuse undecided
+candidates, and `--allow-unfingerprinted` to accept decision files exported
+before tile fingerprints existed. It writes `objects.csv`,
+`objects_summary.csv` and `decisions_resolved.csv`.
 
 `stitch_auto_decisions` reads `candidates.csv`. Its options:
 
@@ -951,6 +1081,11 @@ python manage.py stitch_validate --work /scratch/stitch_p10
 python manage.py stitch_deliver --work /scratch/stitch_p10 --exclude-global-ids not_mito.txt \
     --spot-check /scratch/stitch_p10/decisions_auto_sample_50_seed1.csv
 ```
+
+`stitch_carry_decisions` takes `--old-work DIR`, `--work DIR` (a different
+directory) and `--decisions FILE` (repeatable), plus `--auto-decisions FILE`
+(default `<work>/decisions_auto.csv` if present), `--include-auto`,
+`--region-only` and `--out FILE` (default `<work>/decisions_carried.csv`).
 
 `stitch_validate` takes `--top N` (default 20). `stitch_deliver` takes
 `--exclude-global-ids FILE`, `--out DIR` (default `<work>/delivery`),
@@ -1063,11 +1198,17 @@ empty).
 `decisions.csv` — exported by the review page, one row per decided card:
 
 ```text
-seam,tile_a,label_a,tile_b,label_b,global_a,global_b,decision,reviewer,decided_at
+seam,tile_a,label_a,tile_b,label_b,global_a,global_b,decision,reviewer,decided_at,fingerprint_a,fingerprint_b
 ```
 
 `decision` is `yes`, `no` or `unsure`. `decided_at` is an ISO 8601 UTC
-timestamp from the reviewer's browser. Shard pages name their export
+timestamp from the reviewer's browser. `fingerprint_a` and `fingerprint_b`
+are `file_size:file_mtime_ns` of the two tiles when the decision was made
+(phase 5, *Tile fingerprints*); they are the last two columns and are missing
+from files exported before they existed, which every reader still accepts
+(`stitch_objects` only with `--allow-unfingerprinted`). The page keeps the
+fingerprints of an imported decision and exports them blank when the imported
+file had none. Shard pages name their export
 `decisions_<i>of<n>.csv`.
 
 `objects.csv` — one row per `global_id` in `id_map.csv`, sorted by
@@ -1154,6 +1295,31 @@ global_id,tile,local_id,z0,z1,y0,y1,x0,x1
 `region_only`, `max_crop_voxels`, `unproofread_tiles` (names, tile order),
 `code_revision`, `finished_at` (UTC), `method_version`, `command`.
 
+`decisions_carried.csv` — from `stitch_carry_decisions`, `decisions.csv`
+format, in the new `candidates.csv` order.
+
+`carry_report.csv` — one row per earlier decided candidate, in the earlier
+`candidates.csv` order:
+
+```text
+status,reason,detail,decision,reviewer,decided_at,old_seam,old_tile_a,label_a,old_tile_b,label_b,old_global_a,old_global_b,new_seam,new_tile_a,new_tile_b,new_global_a,new_global_b
+```
+
+`status` is `carried`, `invalidated` or `skipped_auto`; `reason` lists the
+reasons separated by `;`. The `new_*` columns are empty where there is no new
+counterpart.
+
+`needs_review.csv` — new candidates still to be reviewed, in `candidates.csv`
+order; it has no `decision` column:
+
+```text
+seam,tile_a,label_a,tile_b,label_b,global_a,global_b,contact_voxels,frac_a,frac_b,why
+```
+
+`carry_run.json` — `old_work`, `decisions`, `include_auto`, `region_only`,
+`auto_decisions`, `carried_file`, `counts`, `code_revision`, `finished_at`,
+`command`.
+
 `validate_repeated_tile.csv` — from `stitch_validate`, by `object_id` then
 tile order:
 
@@ -1217,6 +1383,9 @@ in it.
 - `backend/annotation/volume_measure.py` and
   `management/commands/measure_volume.py` — measuring an upstream-stitched
   Neuroglancer volume (tensorstore reads, chunk listing, both passes, README).
+- `backend/annotation/stitching_rerun.py` and
+  `management/commands/stitch_carry_decisions.py` — carrying decisions into a
+  re-run: matching by box, the validity test, the report and `needs_review.csv`.
 - `backend/annotation/stitching_review.py` — image pairing, card geometry, PNG
   rendering (Pillow), and the review page (HTML, CSS and a small script inlined
   in one template).
@@ -1246,6 +1415,13 @@ in it.
     exclusions; the core flag and reasons on a region layout that produces
     every reason; the README naming every column.
 
+- `backend/annotation/test_stitching_rerun.py` — a tile set with a missing Z
+  slab that is then filled (decisions carried, only the new seams need review,
+  the tube that was cut at the slab becomes one object); a relabelled tile
+  producing each invalidation reason; the in-place relabel, which
+  `stitch_objects` must refuse by fingerprint; tiles
+  of two sizes sharing a seam, and a tile of a third size added later, with
+  measurements checked against the untiled volume.
 - `backend/annotation/test_morphology.py` — analytic shapes on (30, 8, 8) nm
   voxels, placed off the grid: flat-ended cylinders along X and Z, a capsule, a
   sphere and a Y-shaped branch, each against its known radius, length, area,
@@ -1260,7 +1436,7 @@ in it.
   `measure_volume`.
 
 ```bash
-python manage.py test annotation.test_stitching annotation.test_morphology
+python manage.py test annotation.test_stitching annotation.test_stitching_rerun annotation.test_morphology
 ```
 
 ## Known limits
@@ -1295,6 +1471,23 @@ python manage.py test annotation.test_stitching annotation.test_morphology
   each repeated-tile object's labels in that tile; `stitch_deliver` reads no
   tile. Over-limit objects in phase 6 cost one extra read of their window
   (for the centroid).
+- **Re-runs match labels by local ID.** A tile whose labels were renumbered
+  (even with identical voxels) has all its decisions invalidated and reviewed
+  again. Matching by footprint would need the earlier tiles.
+- **In-place relabels.** Rerunning phases 1-3 in the *same* work directory
+  overwrites the earlier `candidates.csv`, and earlier decision files may still
+  match by key. `stitch_objects` now refuses them by tile fingerprint, but it
+  cannot say which are still valid, and the earlier work files that
+  `stitch_carry_decisions` needs are gone. Always rerun in a new work
+  directory. Decision files without fingerprints accepted with
+  `--allow-unfingerprinted` have no such protection.
+- **Fingerprints are not content hashes.** Size and modification time, as in
+  phases 3 and 6: cheap for 440 tiles, but a tile rewritten with the same
+  bytes counts as changed, and one changed with its size and modification
+  time restored would not.
+- **Region masks in re-runs.** The validity test does not look at region
+  masks. If a mask changes, `in_region` changes and more candidates may need
+  review; carried decisions stay valid.
 - **Cable length on anisotropic voxels.** A skeleton is a chain of voxel
   centres, so the raw cable length (`skeleton_length_um`, the delivery's
   `length_um`) runs long wherever the true centreline is not a row of voxels.

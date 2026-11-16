@@ -51,7 +51,11 @@ ID_MAP_FIELDS = ("tile", "local_id", "global_id", "voxel_count")
 CANDIDATES_FIELDS = ("seam", "axis", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
                      "contact_voxels", "area_a", "area_b", "frac_a", "frac_b")
 DECISION_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b",
-                   "decision", "reviewer", "decided_at")
+                   "decision", "reviewer", "decided_at", "fingerprint_a", "fingerprint_b")
+# The last two say which version of each tile the decision was made on (``tile_fingerprints``).
+# Files exported before they existed lack them; every reader accepts that, stitch_objects only
+# with --allow-unfingerprinted.
+DECISION_FINGERPRINT_FIELDS = DECISION_FIELDS[-2:]
 DECISION_VALUES = ("yes", "no", "unsure")
 RESOLVED_FIELDS = ("seam", "tile_a", "label_a", "tile_b", "label_b", "global_a", "global_b", "decision")
 OBJECTS_FIELDS = ("global_id", "object_id")
@@ -525,6 +529,22 @@ def _file_fingerprint(path) -> tuple[int, int]:
     return st.st_size, st.st_mtime_ns
 
 
+def fingerprint_text(file_size, file_mtime_ns) -> str:
+    """A tile file's fingerprint as written to decision files: ``size:mtime_ns``."""
+    return f"{int(file_size)}:{int(file_mtime_ns)}"
+
+
+def tile_fingerprints(work) -> dict[str, str]:
+    """``{tile: fingerprint}`` as stitch_ids recorded them in tile_ids.csv. Reads no tile."""
+    return {r["tile"]: fingerprint_text(r["file_size"], r["file_mtime_ns"])
+            for r in read_csv(Path(work) / "tile_ids.csv")}
+
+
+def decision_fingerprints(row: dict, fingerprints: dict[str, str]) -> dict[str, str]:
+    """The two fingerprint columns of a decision on ``row``'s pair made now."""
+    return {"fingerprint_a": fingerprints[row["tile_a"]], "fingerprint_b": fingerprints[row["tile_b"]]}
+
+
 def assign_global_ids(inventory: Inventory, regions: dict[str, Tile | None] | None = None) -> tuple[list[dict], list[dict]]:
     """Return ``(tile_ids_rows, id_map_rows)``: per-tile offsets, then one row per
     (tile, nonzero local label). See docs/engineering/stitching.md, phase 2.
@@ -645,7 +665,7 @@ def read_decisions(paths) -> list[dict]:
         path = Path(path)
         file_rows = read_csv(path)
         if file_rows:
-            missing = [f for f in DECISION_FIELDS if f not in file_rows[0]]
+            missing = [f for f in DECISION_FIELDS if f not in file_rows[0] and f not in DECISION_FINGERPRINT_FIELDS]
             if missing:
                 raise StitchingError(f"{path}: missing column(s) {', '.join(missing)}")
         for lineno, row in enumerate(file_rows, 2):
@@ -653,15 +673,22 @@ def read_decisions(paths) -> list[dict]:
     return rows
 
 
-def resolve_decisions(candidates: list[dict], decision_rows: list[dict]) -> dict[tuple, str]:
+def resolve_decisions(candidates: list[dict], decision_rows: list[dict], *,
+                      fingerprints: dict[str, str] | None = None, allow_unfingerprinted: bool = False,
+                      unfingerprinted: list[str] | None = None) -> dict[tuple, str]:
     """``{candidate key: decision}`` for every decided candidate.
 
     Blank decisions count as undecided. Refuses (listing every offender) rows
     that match no candidates.csv row, invalid decision values, and pairs given
     different decisions anywhere in the inputs.
+
+    With ``fingerprints`` (``tile_fingerprints`` of the work directory) it also
+    refuses decisions recorded on another version of either tile, and those
+    recorded without a fingerprint unless ``allow_unfingerprinted``; their
+    sources are appended to ``unfingerprinted`` when a list is passed.
     """
     by_key = {_pair_key(c): c for c in candidates}
-    unknown, invalid = [], []
+    unknown, invalid, stale, unsigned = [], [], [], []
     seen: dict[tuple, dict[str, list[str]]] = {}
     for row in decision_rows:
         source = row["_source"]
@@ -682,6 +709,18 @@ def resolve_decisions(candidates: list[dict], decision_rows: list[dict]) -> dict
             unknown.append(f"{source}: seam {key[0]} {key[1]}:{key[2]} -> {key[3]}:{key[4]} "
                            f"(global {row.get('global_a')} -> {row.get('global_b')}) is not in candidates.csv")
             continue
+        if fingerprints is not None:
+            recorded = [(row.get(f) or "").strip() for f in DECISION_FINGERPRINT_FIELDS]
+            current = [fingerprints[key[1]], fingerprints[key[3]]]
+            if not all(recorded):
+                unsigned.append(f"{source}: seam {key[0]} {key[1]}:{key[2]} -> {key[3]}:{key[4]}")
+                if not allow_unfingerprinted:
+                    continue
+            elif recorded != current:
+                changed = [f"{tile} was {was}, is now {now}"
+                           for tile, was, now in zip((key[1], key[3]), recorded, current) if was != now]
+                stale.append(f"{source}: seam {key[0]} {key[1]}:{key[2]} -> {key[3]}:{key[4]}: " + "; ".join(changed))
+                continue
         seen.setdefault(key, {}).setdefault(decision, []).append(source)
 
     conflicts = [
@@ -696,6 +735,16 @@ def resolve_decisions(candidates: list[dict], decision_rows: list[dict]) -> dict
         problems.append(_listing("invalid decision values", invalid))
     if conflicts:
         problems.append(_listing("conflicting decisions for the same pair", conflicts))
+    if stale:
+        problems.append(_listing("decisions recorded on another version of a tile (size:mtime_ns); the tile "
+                                 "changed after they were made, so review these pairs again, or carry the "
+                                 "still-valid ones with stitch_carry_decisions", stale))
+    if unsigned and not allow_unfingerprinted:
+        problems.append(_listing("decisions without tile fingerprints (exported before fingerprints existed, "
+                                 "or edited); nothing shows they were made on these tiles. Pass "
+                                 "--allow-unfingerprinted to accept them", unsigned))
+    if unfingerprinted is not None:
+        unfingerprinted.extend(unsigned)
     if problems:
         raise StitchingError("\n".join(problems))
     return {key: next(iter(decisions)) for key, decisions in seen.items()}
@@ -929,13 +978,20 @@ def run_candidates(work) -> list[dict]:
     return rows
 
 
-def run_objects(work, decision_paths, *, require_complete: bool = False) -> ObjectsResult:
+def run_objects(work, decision_paths, *, require_complete: bool = False,
+                allow_unfingerprinted: bool = False) -> ObjectsResult:
+    """Phase 5. The tiles are fingerprinted again here: the run is refused when a
+    tile file changed since stitch_ids, and when a decision was recorded on
+    another version of one of its two tiles."""
     work = Path(work)
     if not decision_paths:
         raise StitchingError("pass at least one decisions.csv")
     tiles = load_tiles_csv(work)
+    load_tile_ids(work, tiles)           # refuses when a tile file changed since stitch_ids
     candidates = read_csv(work / "candidates.csv")
-    decisions = resolve_decisions(candidates, read_decisions(decision_paths))
+    unfingerprinted: list[str] = []
+    decisions = resolve_decisions(candidates, read_decisions(decision_paths), fingerprints=tile_fingerprints(work),
+                                  allow_unfingerprinted=allow_unfingerprinted, unfingerprinted=unfingerprinted)
     result = build_objects(sorted(tiles, key=lambda t: t.sort_key), read_csv(work / "id_map.csv"),
                            candidates, decisions)
     if require_complete and result.counts["undecided"]:
@@ -946,6 +1002,7 @@ def run_objects(work, decision_paths, *, require_complete: bool = False) -> Obje
     write_csv(work / "decisions_resolved.csv", RESOLVED_FIELDS,
               [{**{f: c[f] for f in RESOLVED_FIELDS[:-1]}, "decision": decisions.get(_pair_key(c), "undecided")}
                for c in candidates])
+    result.counts["unfingerprinted"] = len(unfingerprinted)
     return result
 
 
@@ -994,9 +1051,10 @@ def run_auto_decisions(work, out=None, *, min_frac: float = 0.5, min_contact: in
     reviewer = auto_rule_name(min_frac, min_contact, region_only)
     decided_at = decided_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     out = Path(out) if out else work / "decisions_auto.csv"
+    fingerprints = tile_fingerprints(work)
     write_csv(out, DECISION_FIELDS, [
         {**{f: candidates[i][f] for f in DECISION_FIELDS[:7]}, "decision": "yes", "reviewer": reviewer,
-         "decided_at": decided_at} for i in accepted])
+         "decided_at": decided_at, **decision_fingerprints(candidates[i], fingerprints)} for i in accepted])
     result = {"candidates": len(candidates), "accepted": len(accepted), "out": out, "reviewer": reviewer,
               "sample": 0, "sample_out": None}
     if sample:

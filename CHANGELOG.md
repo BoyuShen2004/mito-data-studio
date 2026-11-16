@@ -5,6 +5,17 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add `stitch_carry_decisions` for stitching re-runs: after tiles are added or
+  relabelled, it carries every earlier human seam decision that is still valid
+  into the new run, reports the invalidated ones with reasons
+  (`carry_report.csv`) and lists the candidates that still need review
+  (`needs_review.csv`, for `stitch_review --only`). Tiles of different sizes
+  sharing a seam were already supported and are now tested. Decisions now
+  record which version of each tile they were made on (two new last columns
+  of `decisions.csv`, `fingerprint_a` and `fingerprint_b`), and `stitch_objects`
+  refuses to run when a tile changed since `stitch_ids` or since a decision
+  was made. Decision files exported earlier need `--allow-unfingerprinted`.
+  No new dependencies. See `docs/engineering/stitching.md`.
 - Stitching and `measure_volume`: `length_smoothed_um`,
   `longest_path_smoothed_um`, `end_to_end_um` and `tortuosity` are now
   measured tip to tip. Each skeleton end is replaced by the object's own
