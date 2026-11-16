@@ -5,6 +5,15 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Measurements (`stitch_measure`, `measure_volume` and the per-volume
+  measurement): objects cut off at the edge of the data are now skeletonised
+  whole. kimimaro's border handling rooted their skeleton on the cut face,
+  which with the 500 nm invalidation left part of the object without a path.
+  **`length_um` changes for objects that touch the data edge** (on one real
+  tile: +16.5 % in total over 233 such objects, median +28 %, a few shorter);
+  every other object is unchanged. TEASAR parameters and the vendored wrapper
+  are untouched. `tortuosity` is now also given for `centre_curve` objects.
+  Method version `morphology/6`. See `docs/engineering/stitching.md`.
 - Stitching and `measure_volume`: `length_smoothed_um`,
   `longest_path_smoothed_um`, `end_to_end_um` and `tortuosity` are now
   measured tip to tip. Each skeleton end is replaced by the object's own

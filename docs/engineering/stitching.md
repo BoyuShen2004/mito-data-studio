@@ -362,6 +362,32 @@ volume.
   union of its members' boxes, padded and clipped. The mask is assembled from
   one read per member tile (the part of the window inside it) and skeletonised
   once as a whole. Summing per-tile lengths would miss the path across seams.
+- **Objects on a face of their crop.** A crop is padded by `CROP_PAD` voxels and
+  clipped to the region (to the volume in `measure_volume` and in the
+  per-volume code), so an object touches a face of its crop array only where
+  the crop was clipped: at the outer faces of the region's bounding box.
+  kimimaro treats array faces as the borders of a chunk that will be joined
+  to its neighbour (`fix_borders`, which the lab's wrapper turns on): the
+  contact on the face becomes the root of the skeleton, and a second contact
+  is traced first. With the 500 nm invalidation that leaves much of a cut-off
+  object without a path: a root in the middle of a body lying against the
+  face covers one half of it, and two contacts 107 nm apart gave a 217 nm
+  skeleton for an 829 nm object (label 10 of the real tile).
+  `measurements.skeletonize_mask` therefore skeletonises a mask that touches
+  a face of its array inside one voxel of background (`BORDER_PAD`) and moves
+  the vertices back; the vendored wrapper and the TEASAR parameters are
+  untouched. A mask that touches no face is passed exactly as before, so every
+  other object has the same skeleton as it always had.
+  - *Who can hit it.* Single-tile and stitched objects alike, but only at the
+    outer faces of the region's bounding box. A stitched object assembled
+    across tiles never touches an array face at a seam (its crop holds all its
+    tiles), and an object cut at a tile face with no neighbour inside the
+    bounding box (the missing z slab of nag_p10) does not either: its crop
+    extends two voxels past that face. Those objects are `touches_edge` but
+    were always skeletonised whole.
+  - *Split equals unsplit.* The assembled mask and its crop are the same
+    however the object is tiled, so the padding decision and the skeleton are
+    too (tested on objects that do and do not reach the region's edge).
 - **Crop limit:** `--max-crop-voxels` (default 512,000,000) caps the padded
   window, for both kinds. An object over the cap keeps `voxel_count` and
   `volume_um3`, but `skeleton_length_um` is empty and `skipped_reason` is
@@ -457,7 +483,8 @@ is no skeleton (below the dust size, length 0).
   positions in nm), and is followed both ways to the surface exactly as an
   end is. `length_smoothed_um` and `longest_path_smoothed_um` are the length
   of the curve, `end_to_end_um` the distance between its two tips, and
-  `tortuosity` is left empty: at 1 to 2.5 widths the ratio is mostly noise.
+  `tortuosity` is their ratio (straight test objects this short read 1.00 to
+  1.01; a quarter-circle arc 1.04 to 1.12 against 1.11 for its centreline).
   `summary.csv` counts both methods. When conditions 1 and 2 hold but 3 or 4
   fails, the object is left as the smoothed skeleton has it (`skeleton`).
   Before `morphology/5` these objects were a straight chord and the end
@@ -470,7 +497,9 @@ is no skeleton (below the dust size, length 0).
   1.010, largest 1.028 over 755 test capsules: the followed curve wobbles by
   a few nm); before end caps it read 1.02-1.10, because the path
   kept its two detours while the end-to-end distance was short. Two straight
-  arms at 120 degrees read 1.15 (2/√3). Empty for `centre_curve` objects.
+  arms at 120 degrees read 1.15 (2/√3). For `centre_curve` objects it is the
+  curve over the distance between its tips; it was empty for them in
+  `morphology/5`.
 - **Method version.** `morphology.METHOD_VERSION` names the definitions and
   parameters (smoothing window and passes, end caps, tortuosity definition,
   tip factor, surface sigma, short-object threshold). `stitch_measure` and `measure_volume` log it and write it to
@@ -1476,13 +1505,14 @@ python manage.py test annotation.test_stitching annotation.test_morphology
     the flat-ended test cylinder (+7 % before, 0 % after). With the straight
     end stretches of `morphology/4` the total was 1,186 µm: 3.2 % less than
     now, the part that bends account for.
-  - *Centre curve.* 717 of the 1,286 objects have `length_method` =
-    `centre_curve` and no tortuosity. They are a median 401 nm long (5th-95th
-    percentile 216-708 nm), 1.5 widths at the median and never over 2.9, and
-    hold 25 % of the tile's total smoothed length. The other 569 have a
-    median tortuosity of 1.08 (5th-95th percentile 1.02-2.31). `short_object`
-    is true for 404 objects: 371 of the centre-curve ones and 33 of the
-    others.
+  - *Centre curve.* 727 of the 1,286 objects have `length_method` =
+    `centre_curve` (717 before the array-face fix, which adds 10 cut-off
+    ones). They are 1.5 widths long at the median and never over 2.9, and
+    hold about a quarter of the tile's total smoothed length. Their
+    tortuosity has median 1.01 (5th-95th percentile 1.00-1.11); 102 are over
+    1.05 and 33 over 1.11, the value of a quarter-circle arc. The other 559
+    have a median tortuosity of 1.08 (5th-95th percentile 1.02-2.31), and all
+    1,286 together 1.03. `short_object` is true for 379 objects.
   - *How bent the objects are.* Taking the chord-to-path ratio of each
     object's main path (`end_to_end_um / longest_path_smoothed_um`) and the
     arc angle with that ratio:
@@ -1503,8 +1533,16 @@ python manage.py test annotation.test_stitching annotation.test_morphology
     often several mitochondria merged by the prediction, and a straight test
     capsule already reads up to 1.03 (an arc of about 45 degrees), so the
     30-60 class is not distinguishable from straight.
-  - *Data edge.* 233 objects touch a face of the tile; all are on the
-    skeleton method, and 107 of them are left exactly as they were.
+  - *Data edge.* 233 objects touch a face of the tile, and their crop touches
+    a face of its array. Before the array-face fix (`morphology/6`) the
+    skeleton spanned a median 75 % of such an object's long axis (under 60 %
+    for 82 of them); now 98 % (under 60 % for 11). Their raw cable length goes
+    from 440 to 513 µm in total (+16.5 %; median object 695 to 995 nm; 126 are
+    more than 25 % longer, 35 more than twice as long, 4 more than 10 %
+    shorter, where the old skeleton had an extra path along the cut face) and
+    their smoothed length from 330 to 360 µm (+9 %). Branch points on them go
+    from 63 to 34. All 1,053 other objects are identical in every column. The
+    bend table above was made before this fix.
 - **Width accuracy** is about half a voxel, so half the Z voxel size for
   objects lying in the XY plane. `width_min_nm` is the least stable of the
   four: a flat end or a skeleton spur can still pull it down.

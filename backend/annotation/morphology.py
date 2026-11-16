@@ -36,7 +36,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components, dijkstra
 from scipy.spatial import cKDTree
 
-from annotation.measurements import DUST_SIZE, skeletonize_mask, validate_voxel_size
+from annotation.measurements import BORDER_PAD, DUST_SIZE, skeletonize_mask, validate_voxel_size
 from annotation.third_party.em_erl_skel import cable_length
 
 # Gaussian smoothing (in voxels) of the mask before marching cubes. The raw
@@ -76,10 +76,11 @@ RAY_STEP_NM = 1.0
 METHOD_SKELETON, METHOD_CENTRE_CURVE = "skeleton", "centre_curve"
 # Identifies how the numbers were made; written to measure_run.json, the logs and the delivery
 # README. Raise the number whenever a definition or a parameter changes.
-METHOD_VERSION = (f"morphology/5 (length: TEASAR cable; smoothed length: branch moving average "
+METHOD_VERSION = (f"morphology/6 (length: TEASAR cable, objects on an array face skeletonised inside a "
+                  f"{BORDER_PAD}-voxel margin; smoothed length: branch moving average "
                   f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}, ends carried to the surface along the local axis "
                   f"from {END_TRIM_FACTOR:g} radii in by following cross-section centres round bends, not at data "
-                  f"edges, short unbranched objects along their centre curve without tortuosity; "
+                  f"edges, short unbranched objects along their centre curve; "
                   f"tortuosity: smoothed longest path / end-to-end; "
                   f"width: anisotropic EDT, tips within {END_CAP_FACTOR:g} radii left out; "
                   f"surface: marching cubes, sigma {SURFACE_SIGMA:g} voxel; "
@@ -503,8 +504,7 @@ def cap_ends(mask: np.ndarray, voxel, vertices_nm: np.ndarray, edges: np.ndarray
     the path's largest radius, whichever is larger, is left between the two; the curve
     reaches the surface both ways; and neither end is cut off (below). In round numbers: an
     unbranched object whose smoothed skeleton is shorter than 2.5 times its largest width
-    (4 radii + 100 nm when the radius is under 100 nm). The second return value says so; such
-    an object gets no tortuosity.
+    (4 radii + 100 nm when the radius is under 100 nm). The second return value says so.
 
     An end is left exactly as it was when its last ray leaves the object inside one of
     ``cut_boxes`` ((z0, z1, y0, y1, x0, x1) in mask voxels: the voxel layers where the data
@@ -675,7 +675,5 @@ def measure_morphology(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUS
         longest_path_nm=path_length_nm(vertices[main]) if has_path else None,
         longest_path_smoothed_nm=main_smoothed if has_path else None,
         end_to_end_nm=end_to_end if has_path else None,
-        # No tortuosity for objects measured along their centre curve: they are at most about
-        # 2.5 widths long, and the ratio would mostly be noise.
-        tortuosity=main_smoothed / end_to_end if has_path and not centre_curve else None,
+        tortuosity=main_smoothed / end_to_end if has_path else None,
         length_method=METHOD_CENTRE_CURVE if centre_curve else METHOD_SKELETON, **shape)
