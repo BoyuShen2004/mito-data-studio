@@ -213,13 +213,14 @@ class SmoothedLengthTests(SimpleTestCase):
     def test_method_version_names_the_parameters(self):
         from annotation.morphology import METHOD_VERSION, SMOOTH_PASSES, SMOOTH_WINDOW_NM
 
-        self.assertTrue(METHOD_VERSION.startswith("morphology/5 "))
+        self.assertTrue(METHOD_VERSION.startswith("morphology/6 "))
         self.assertIn(f"{SMOOTH_WINDOW_NM:g} nm x {SMOOTH_PASSES}", METHOD_VERSION)
         self.assertIn("tortuosity: smoothed longest path / end-to-end", METHOD_VERSION)
         self.assertIn("short_object: smoothed length < 1.5 x largest width", METHOD_VERSION)
         self.assertIn("ends carried to the surface along the local axis from 2 radii in by following "
                       "cross-section centres round bends, not at data edges, short unbranched objects along "
-                      "their centre curve without tortuosity", METHOD_VERSION)
+                      "their centre curve;", METHOD_VERSION)
+        self.assertIn("objects on an array face skeletonised inside a 1-voxel margin", METHOD_VERSION)
 
     def test_short_object_flags_round_objects_only(self):
         ball = measure_morphology(sphere(), VOXEL)
@@ -274,10 +275,11 @@ class EndCapTests(SimpleTestCase):
                 planes = int(mask.any(axis=(1, 2)).sum())
                 self.assertAlmostEqual(m.length_smoothed_nm, planes * VOXEL[0], delta=1.0)
                 self.assertAlmostEqual(m.length_smoothed_nm, tip_to_tip, delta=VOXEL[0] + 1.0)
-                # Measured along its centre curve: said so in length_method, and no tortuosity.
+                # Measured along its centre curve: said so in length_method. Straight, so the
+                # curve is its own chord.
                 self.assertEqual((m.length_method, m.row()["length_method"]), ("centre_curve", "centre_curve"))
-                self.assertIsNone(m.tortuosity)
-                self.assertEqual(m.row()["tortuosity"], "")
+                self.assertAlmostEqual(m.tortuosity, 1.0, places=6)
+                self.assertEqual(m.row()["tortuosity"], repr(m.tortuosity))
                 self.assertAlmostEqual(m.end_to_end_nm, m.length_smoothed_nm, places=6)
                 self.assertAlmostEqual(m.longest_path_smoothed_nm, m.length_smoothed_nm, places=6)
 
@@ -289,7 +291,8 @@ class EndCapTests(SimpleTestCase):
         self.assertEqual(measure_morphology(straight_capsule((0, 0, 1), 800.0, 100.0), VOXEL).length_method, "skeleton")
         # A sphere is a line (its diameter); a branched object never is; nothing without a skeleton.
         ball = measure_morphology(sphere(), VOXEL)
-        self.assertEqual((ball.length_method, ball.tortuosity), ("centre_curve", None))
+        self.assertEqual(ball.length_method, "centre_curve")
+        self.assertAlmostEqual(ball.tortuosity, 1.0, delta=0.02)
         self.assertAlmostEqual(ball.length_smoothed_nm, 600.0, delta=VOXEL[0])
         self.assertEqual(measure_morphology(y_shape(), VOXEL).length_method, "skeleton")
         self.assertEqual((Morphology().length_method, Morphology().row()["length_method"]), (None, ""))
@@ -308,8 +311,12 @@ class EndCapTests(SimpleTestCase):
                 true = centre_length + 2 * radius
                 self.assertEqual(m.length_method, method)
                 self.assertAlmostEqual(m.length_smoothed_nm, true, delta=0.04 * true)
-                # The two tips are a chord apart, clearly less than the path.
+                # The two tips are a chord apart, clearly less than the path; tortuosity says so
+                # on both methods (the centreline's arc over its chord is 1.11).
                 self.assertLess(m.end_to_end_nm, 0.97 * m.length_smoothed_nm)
+                self.assertEqual(m.tortuosity, m.longest_path_smoothed_nm / m.end_to_end_nm)
+                self.assertGreater(m.tortuosity, 1.03)
+                self.assertLess(m.tortuosity, 1.2)
 
     def test_short_object_cut_off_at_the_data_edge_stays_on_the_skeleton(self):
         # Short enough for the centre curve, but one end is where the data stops: nothing moved.
@@ -369,6 +376,68 @@ class EndCapTests(SimpleTestCase):
         self.assertEqual(outer_face_layers((0, 18, 152, 248, 562, 600), volume, window),
                          [(0, 1, 0, 100, 0, 40), (0, 20, 0, 100, 39, 40)])
         self.assertEqual(outer_face_layers((2, 18, 152, 248, 562, 598), volume, window), [])
+
+
+class ArrayFaceTests(SimpleTestCase):
+    """An object on a face of its array is cut off where the data stops; kimimaro's border
+    handling must not leave part of it without a skeleton."""
+
+    def half_capsule(self):
+        """A capsule 900 nm long along X lying against the +Z face of its array: the upper half
+        is cut away. Each half of its length is within the 500 nm invalidation of the other."""
+        mask = capsule_x(length=self.STRAIGHT)
+        return mask[:mask.shape[0] // 2 + 1]
+
+    STRAIGHT = 660.0
+
+    def skeleton(self, mask, pad):
+        from unittest import mock
+
+        from annotation import measurements
+
+        with mock.patch.object(measurements, "BORDER_PAD", pad):
+            s = skeletonize_mask(mask, VOXEL)
+        vertices, edges = np.asarray(s.vertices, float), np.asarray(s.edges, np.int64).reshape(-1, 2)
+        return vertices, edges, float(np.linalg.norm(vertices[edges[:, 0]] - vertices[edges[:, 1]], axis=1).sum())
+
+    def test_touches_array_face(self):
+        from annotation.measurements import touches_array_face
+
+        mask = np.zeros((5, 6, 7), bool)
+        mask[2, 3, 3] = True
+        self.assertFalse(touches_array_face(mask))
+        for index in ((0, 3, 3), (4, 3, 3), (2, 0, 3), (2, 5, 3), (2, 3, 0), (2, 3, 6)):
+            with self.subTest(index):
+                face = mask.copy()
+                face[index] = True
+                self.assertTrue(touches_array_face(face))
+
+    def test_object_lying_on_a_face_is_covered_end_to_end(self):
+        mask = self.half_capsule()
+        self.assertTrue(mask[-1].any())
+        tip_to_tip = self.STRAIGHT + 2 * RADIUS
+        vertices, _, cable = self.skeleton(mask, 1)
+        extent = vertices[:, 2].max() - vertices[:, 2].min()
+        self.assertGreater(extent, 0.9 * tip_to_tip)
+        # In the array's own coordinates, inside the object.
+        index = np.rint(vertices / np.array(VOXEL)).astype(int)
+        self.assertTrue((index >= 0).all() and (index < mask.shape).all())
+        self.assertTrue(mask[tuple(index.T)].all())
+        # What kimimaro's border handling did with it: rooted on the face in mid-body, the
+        # skeleton reached one end only.
+        old_vertices, _, old_cable = self.skeleton(mask, 0)
+        self.assertLess(old_vertices[:, 2].max() - old_vertices[:, 2].min(), 0.75 * extent)
+        self.assertLess(old_cable, 0.75 * cable)
+        m = measure_morphology(mask, VOXEL)
+        self.assertEqual(m.length_nm, skeleton_length_nm(mask, VOXEL))
+        self.assertGreater(m.length_nm, 0.9 * tip_to_tip)
+
+    def test_object_touching_no_face_is_skeletonised_exactly_as_before(self):
+        mask = capsule_x()
+        new, new_edges, _ = self.skeleton(mask, 1)
+        old, old_edges, _ = self.skeleton(mask, 0)
+        np.testing.assert_array_equal(new, old)
+        np.testing.assert_array_equal(new_edges, old_edges)
 
 
 class WidthTests(SimpleTestCase):
@@ -657,7 +726,7 @@ class DeliveryColumnTests(SimpleTestCase):
         self.assertIn("**Ends.**", text)
         self.assertIn("**Skeleton or centre curve (`length_method`).**", text)
         self.assertIn("less path is left between them than 100 nm or the largest radius", text)
-        self.assertIn("`tortuosity` is left empty", text)
+        self.assertIn("`tortuosity` their ratio", text)
         self.assertIn("is not extended", text)
         self.assertIn("Euclidean distance", text)
 

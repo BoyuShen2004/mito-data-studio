@@ -285,8 +285,9 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
         "end_to_end_um": "Straight-line distance in µm between the two ends of the main path, tip to tip (an "
                          "end at the data edge stays where the skeleton stops).",
         "tortuosity": "`longest_path_smoothed_um` ÷ `end_to_end_um`: 1 for a straight mitochondrion, larger the "
-                      "more its main path curves. Side branches do not count. Empty when `length_method` is "
-                      "`centre_curve`: those objects are too short for the ratio to mean much.",
+                      "more its main path curves. Side branches do not count. For `centre_curve` objects it is "
+                      "the length of the curve ÷ the distance between its two tips (straight test objects "
+                      "that short read 1.00 to 1.01).",
         "surface_area_um2": "Surface area in µm². Empty when `length_status` is `skipped_too_large`.",
         "sphericity": "How close the shape is to a sphere: the surface of a sphere of the same volume divided by "
                       "`surface_area_um2`. 1 for a sphere, about 0.6 for a rod five times longer than wide.",
@@ -299,13 +300,12 @@ def _column_docs(voxel: tuple[float, float, float]) -> dict[str, str]:
                                     "treatment. The numerator of `tortuosity`.",
         "short_object": f"`true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times `width_max_nm`: "
                         "the object is about as wide as it is long, so its length is closer to a diameter, "
-                        "it has no `tortuosity` and `length_um` is at its least reliable (see "
+                        "its `tortuosity` says little and `length_um` is at its least reliable (see "
                         "*How length is measured*). Prefer volume and `width_max_nm` for these. Does not "
                         "affect `core`. Empty when there is no skeleton.",
         "length_method": "How `length_smoothed_um` was measured: `skeleton` (along the smoothed skeleton, ends "
                          "carried to the tips) or `centre_curve` (a very short unbranched mitochondrion, measured "
-                         "along the curve through the centres of its cross-sections; `tortuosity` is then "
-                         "empty). The exact rule is under "
+                         "along the curve through the centres of its cross-sections). The exact rule is under "
                          "*How length is measured*. Empty when there is no skeleton. Does not affect `core`.",
     }
     return docs
@@ -416,11 +416,19 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         f"branches count. Pieces smaller than {DUST_SIZE} voxels are ignored by the skeletoniser, so a very "
         "small mitochondrion can have length 0.",
         "",
+        "A mitochondrion that is cut off at the edge of the imaged data is skeletonised like any other. The "
+        "skeletoniser would otherwise treat the cut as a joint to a neighbouring block and start the skeleton "
+        "there, which left part of such an object without a path: before this was changed (method version "
+        "`morphology/6`), `length_um` of cut-off mitochondria was a median 22 % shorter on one test tile, and "
+        "in the worst cases under half. Their length is still only that of the visible part, and they are not "
+        "`core`.",
+        "",
         f"{crop_sentence} Objects whose box would exceed "
         f"{max_crop_voxels:,} voxels are not skeletonised (`length_status` = `skipped_too_large`); their "
         "volume, box and centroid are still exact.",
         "",
-        "**Two lengths.** `length_um` is the raw cable length, as in earlier deliveries. A skeleton is a chain "
+        "**Two lengths.** `length_um` is the raw cable length, as in earlier deliveries (except for cut-off "
+        "mitochondria, above). A skeleton is a chain "
         "of voxel centres, so the raw length runs long wherever the true centreline is not a straight row of "
         "voxels: it hops between neighbouring rows and climbs slanted or curved stretches in voxel steps. On "
         "test tubes of known length it reads 6 to 40 % long, least for objects running along Z and most for "
@@ -460,15 +468,15 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "The curve starts at the centre of the cross-section through the centre of mass, across the direction "
         "in which the mitochondrion is longest, and follows the cross-section centres both ways to the "
         "surface, round any bend. `length_smoothed_um` and `longest_path_smoothed_um` are the length of that "
-        "curve and `end_to_end_um` the distance between its two ends; `tortuosity` is left empty, because on "
-        "objects this short it is mostly noise. Every other mitochondrion has `length_method` = `skeleton`. "
+        "curve, `end_to_end_um` the distance between its two tips and `tortuosity` their ratio. Every other "
+        "mitochondrion has `length_method` = `skeleton`. "
         "`summary.csv` counts both methods. On short bent test shapes (1.5 to 4 widths long, bent by 30 to 120 "
         "degrees) both methods together read 2 % short on average, and 6 % short at a sharp 90 degree corner.",
         "",
         "**Short objects.** A skeleton length means little for an object that is about as wide as it is long. "
         f"`short_object` is `true` when `length_smoothed_um` is below {SHORT_OBJECT_ASPECT:g} times "
         "`width_max_nm`. Such an object is measured along its centre curve (above): a diameter more than a "
-        "length, with no `tortuosity`, and for a nearly round object the longest direction is arbitrary. On "
+        "length, and for a nearly round object the longest direction is arbitrary. On "
         "test capsules and near-spheres of known size, "
         "`length_smoothed_um` of flagged objects was within 10 % of the true size in all 159 cases (1.4 % on "
         "average), and of unflagged ones within 5 % in all 369; `length_um` read 15 to 40 % long on the same "
@@ -492,8 +500,9 @@ def readme_length_lines(crop_sentence: str, max_crop_voxels: int) -> list[str]:
         "skeletoniser on bumpy surfaces count too, so treat small counts on thick objects with care.",
         "- **Tortuosity** is the smoothed length of the main path (the longest path through the skeleton) "
         "divided by the straight-line distance between its two ends. Side branches are left out, and the "
-        "smoothed length is used because the raw one runs long even on a straight object. It is empty for "
-        "mitochondria measured along their centre curve (`length_method`).",
+        "smoothed length is used because the raw one runs long even on a straight object. For mitochondria "
+        "measured along their centre curve (`length_method`) it is that curve over the distance between its "
+        "tips.",
         f"- **Surface area** is the area of a triangle mesh (marching cubes) around the voxels, after smoothing "
         f"them slightly (Gaussian, {SURFACE_SIGMA:g} voxel). Without smoothing, voxel steps inflate the area by "
         "5 to 19 %; with it, test spheres and cylinders are within about 3 %. Objects only one or two voxels "

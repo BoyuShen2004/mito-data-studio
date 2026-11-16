@@ -47,13 +47,45 @@ def validate_voxel_size(voxel_size_zyx) -> tuple[float, float, float]:
     return values
 
 
+# Voxels of background put round a mask that touches a face of its array before it is
+# skeletonised (see ``skeletonize_mask``). One is enough to take the object off the face.
+BORDER_PAD = 1
+
+
+def touches_array_face(mask: np.ndarray) -> bool:
+    """Whether a 3D boolean mask has a voxel on any of the six faces of its array."""
+    return any(bool(np.take(mask, index, axis=axis).any()) for axis in range(3) for index in (0, -1))
+
+
 def skeletonize_mask(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE):
     """The TEASAR skeleton of a binary (Z, Y, X) mask, vertices in nm, or
-    ``None`` when there is none (empty mask, or below the dust size)."""
+    ``None`` when there is none (empty mask, or below the dust size).
+
+    A mask that touches a face of its array is an object cut off where the data
+    stops (crops are padded everywhere else). kimimaro treats array faces as the
+    borders of a chunk to be joined to its neighbour: it roots the skeleton at
+    the contact on the face and traces a second contact first (``fix_borders``,
+    which the lab's wrapper turns on). With the 500 nm invalidation that leaves
+    much of a cut-off object without a path: a root in the middle of a body
+    lying against the face covers one half of it, and two contacts 100 nm apart
+    give a 200 nm skeleton for an 800 nm object. Such a mask is therefore
+    skeletonised inside ``BORDER_PAD`` voxels of background, so it touches no
+    face and is treated like any other object; the vertices are moved back.
+    The TEASAR parameters are the lab's, unchanged. A mask that touches no
+    face is passed as it is and gives exactly the skeleton it always did."""
     res = validate_voxel_size(voxel_size_zyx)
     labels = (np.asarray(mask) > 0).astype(np.uint8)
+    pad = BORDER_PAD if labels.ndim == 3 and labels.size and touches_array_face(labels) else 0
+    if pad:
+        labels = np.pad(labels, pad)
     skels = vol_to_skel(labels, obj_ids=[1], res=res, dust_size=dust_size, progress=False)
-    return skels[1] if skels else None
+    if not skels:
+        return None
+    skeleton = skels[1]
+    if pad:
+        vertices = np.asarray(skeleton.vertices)
+        skeleton.vertices = vertices - (pad * np.asarray(res, vertices.dtype))
+    return skeleton
 
 
 def skeleton_length_nm(mask: np.ndarray, voxel_size_zyx, *, dust_size: int = DUST_SIZE) -> float:
