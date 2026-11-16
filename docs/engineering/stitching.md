@@ -366,6 +366,15 @@ volume.
   window, for both kinds. An object over the cap keeps `voxel_count` and
   `volume_um3`, but `skeleton_length_um` is empty and `skipped_reason` is
   `crop_limit` (as in the per-volume code).
+- **TEASAR const (trial option):** `--teasar-const NM` on `stitch_measure` and
+  `measure_volume` (default 500, the lab's value, which gives exactly the
+  numbers of earlier runs). A side arm is skeletonised only when it is longer,
+  from the main axis to its tip, than about `const` plus one tube radius, so a
+  lower value finds shorter arms and changes `skeleton_length_um`, every
+  smoothed length and the branch and end counts. The value is logged, written
+  to `measure_run.json` (`teasar_const_nm`) and, when it is not 500, stated in
+  bold in the delivery README. The per-volume measurement in the application
+  is not affected. Do not mix deliveries made with different values.
 
 **Morphology.** The mask that gives the cable length also gives the shape
 columns (`annotation/morphology.py`, one skeletonisation per object). They are
@@ -750,6 +759,7 @@ python manage.py measure_volume --labels /data/p7/labels --region /data/p7/regio
   `measure_run.json` (`voxel_size_matches_metadata: false`,
   `voxel_size_note`) and the README record it.
 - `--work DIR`; `--max-crop-voxels N` (default 512,000,000, commas allowed);
+  `--teasar-const NM` (default 500; phase 6, *TEASAR const*);
   `--region-only` (needs `--region`); `--exclude-label-ids FILE`;
   `--volume-name NAME` (default: the labels directory name); `--out DIR`
   (default `<work>/delivery`); and `--overwrite`, needed for a non-empty
@@ -832,7 +842,7 @@ of [7b](#7b-stitch_deliver), and `core` follows the same rule.
 command, `labels` and `region` (path, scale key, size, offset, chunk size,
 metadata resolution, encoding, data type), `volume_name`,
 `voxel_size_zyx_nm`, `voxel_size_matches_metadata`, `voxel_size_note`,
-`method_version`,
+`method_version`, `teasar_const_nm`,
 `region_only`, `max_crop_voxels`, `crop_pad`, the exclusion file and IDs, the
 delivery folder, `tensorstore_version`, `code_revision`, `started_at`,
 `finished_at`, and counts (chunk files, labels, listed, excluded, core, flags,
@@ -927,6 +937,7 @@ and `decisions_resolved.csv`.
 - `--voxel-size-zyx Z Y X`, in nm and required (nag_p10: `30 8 8`);
 - `--unproofread-tiles FILE`;
 - `--max-crop-voxels N` (default 512,000,000; commas allowed);
+- `--teasar-const NM` (default 500; a trial option, see phase 6);
 - `--region-only` (see [Regions](#regions-roi)).
 
 It writes `measurements.csv`. A run looks like:
@@ -1152,7 +1163,8 @@ global_id,tile,local_id,z0,z1,y0,y1,x0,x1
 
 `measure_run.json` — from `stitch_measure`: `voxel_size_zyx_nm`,
 `region_only`, `max_crop_voxels`, `unproofread_tiles` (names, tile order),
-`code_revision`, `finished_at` (UTC), `method_version`, `command`.
+`code_revision`, `finished_at` (UTC), `method_version`, `teasar_const_nm`,
+`command`. A run made before `teasar_const_nm` existed used 500.
 
 `validate_repeated_tile.csv` — from `stitch_validate`, by `object_id` then
 tile order:
@@ -1367,7 +1379,9 @@ python manage.py test annotation.test_stitching annotation.test_morphology
   tile, lowering `const` changes the branch count of 37 (400), 71 (300), 122
   (200) and 278 (100) of 1,286 objects and raises the total smoothed length
   by 2.5, 6.4, 14.7 and 44 %; nothing says how many of those branches are
-  real. Changing `const` would change `length_um` too.
+  real. Changing `const` would change `length_um` too. `--teasar-const` exists to
+  try lower values; the default is unchanged until a lower value has been
+  checked by eye on real objects.
 - **Spurs.** Terminal branches the skeletoniser makes on bumps are not pruned.
   On 24 rough tubes (bumps of 20-50 nm) there is none at `const` 200-500; at
   100 there are 7, 65-349 nm long (0.6-1.5 widths at their junction). A rule

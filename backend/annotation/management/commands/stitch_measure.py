@@ -22,6 +22,7 @@ import shlex
 
 from django.core.management.base import BaseCommand, CommandError
 
+from annotation.measurements import TEASAR_CONST_NM
 from annotation.morphology import METHOD_VERSION
 from annotation.stitching import StitchingError
 from annotation.stitching_measure import DEFAULT_MAX_CROP_VOXELS, run_measure
@@ -41,6 +42,8 @@ def _command_line(opts) -> str:
         args += ["--max-crop-voxels", str(opts["max_crop_voxels"])]
     if opts["region_only"]:
         args.append("--region-only")
+    if opts["teasar_const"] != TEASAR_CONST_NM:
+        args += ["--teasar-const", f"{opts['teasar_const']:g}"]
     return shlex.join(args)
 
 
@@ -65,6 +68,12 @@ class Command(BaseCommand):
             help=f"Skip cable length for objects whose padded crop is larger (default {DEFAULT_MAX_CROP_VOXELS:,}).",
         )
         parser.add_argument(
+            "--teasar-const", type=float, default=TEASAR_CONST_NM, metavar="NM",
+            help=f"TEASAR const in nm for the skeletons (default {TEASAR_CONST_NM:g}, the lab's value). Lower "
+                 "values skeletonise shorter side arms and change every length; for trials. The value is "
+                 "recorded in measure_run.json and the delivery README.",
+        )
+        parser.add_argument(
             "--region-only", action="store_true",
             help="Only objects reaching into the region (needs stitch_ids --regions); "
                  "unresolved_contacts then counts only in-region candidates.",
@@ -78,10 +87,12 @@ class Command(BaseCommand):
         # Always say which voxel size is used: recorded resolutions have been wrong before (p7 was off by 4x).
         log("voxel size used: {:g} x {:g} x {:g} nm (Z, Y, X), from --voxel-size-zyx".format(*opts["voxel_size_zyx"]))
         log(f"method: {METHOD_VERSION}")
+        log(f"TEASAR const used: {opts['teasar_const']:g} nm"
+            + ("" if opts["teasar_const"] == TEASAR_CONST_NM else f" (not the lab's {TEASAR_CONST_NM:g} nm)"))
         try:
             result = run_measure(opts["work"], opts["voxel_size_zyx"], unproofread=opts["unproofread_tiles"],
                                  max_crop_voxels=opts["max_crop_voxels"], region_only=opts["region_only"],
-                                 log=log, command=_command_line(opts))
+                                 teasar_const_nm=opts["teasar_const"], log=log, command=_command_line(opts))
         except StitchingError as exc:
             raise CommandError(str(exc))
 

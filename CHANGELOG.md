@@ -5,6 +5,10 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- `stitch_measure` and `measure_volume`: new trial option `--teasar-const NM`
+  (default 500, unchanged results). A lower value skeletonises shorter side
+  arms. The value is logged, recorded in `measure_run.json` and stated in the
+  delivery README when it is not 500. See `docs/engineering/stitching.md`.
 - Stitching and `measure_volume`: `length_smoothed_um`,
   `longest_path_smoothed_um`, `end_to_end_um` and `tortuosity` are now
   measured tip to tip. Each skeleton end is replaced by the object's own

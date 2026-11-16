@@ -15,6 +15,7 @@ from unittest import skipUnless
 
 import numpy as np
 import scipy.ndimage as ndi
+from django.core.management import CommandError
 from django.test import SimpleTestCase
 from scipy.spatial import cKDTree
 
@@ -371,6 +372,76 @@ class EndCapTests(SimpleTestCase):
         self.assertEqual(outer_face_layers((2, 18, 152, 248, 562, 598), volume, window), [])
 
 
+def tube_with_arm(arm_nm, radius=80.0, main_nm=2000.0):
+    """A straight tube along X with one side arm along Y; ``arm_nm`` is from the main axis to the arm's tip."""
+    start = np.array([11.0, 3.0, 5.0])
+    main = np.linspace(start, start + np.array([0.0, 0.0, main_nm]), 2000)
+    middle = start + np.array([0.0, 0.0, main_nm / 2])
+    arm = np.linspace(middle, middle + np.array([0.0, arm_nm - radius, 0.0]), 800)
+    return tube(np.vstack([main, arm]), radius)
+
+
+class TeasarConstTests(StitchRunMixin, SimpleTestCase):
+    """--teasar-const is a trial option: the default is the lab's 500 nm and gives the same numbers."""
+
+    def test_default_is_the_labs_value(self):
+        from annotation.measurements import TEASAR_CONST_NM
+
+        mask = capsule_x()
+        self.assertEqual(TEASAR_CONST_NM, 500.0)
+        self.assertEqual(measure_morphology(mask, VOXEL), measure_morphology(mask, VOXEL, teasar_const_nm=500.0))
+        self.assertEqual(skeleton_length_nm(mask, VOXEL), measure_morphology(mask, VOXEL).length_nm)
+
+    def test_lower_const_finds_a_shorter_side_arm(self):
+        # 450 nm from axis to tip at radius 80: lost at 500 (needs about const + radius), found at 300.
+        mask = tube_with_arm(450.0)
+        lab, trial = measure_morphology(mask, VOXEL), measure_morphology(mask, VOXEL, teasar_const_nm=300.0)
+        self.assertEqual((lab.branch_points, lab.endpoints), (0, 2))
+        self.assertEqual((trial.branch_points, trial.endpoints), (1, 3))
+        true = 2000.0 + 2 * 80.0 + 450.0
+        self.assertLess(lab.length_smoothed_nm, 0.88 * true)
+        self.assertAlmostEqual(trial.length_smoothed_nm, true, delta=0.04 * true)
+        # An unbranched object does not change.
+        self.assertEqual(measure_morphology(capsule_x(), VOXEL, teasar_const_nm=300.0).length_nm,
+                         measure_morphology(capsule_x(), VOXEL).length_nm)
+
+    def test_invalid_values_are_refused(self):
+        from annotation.measurements import MeasurementError
+
+        for bad in (0, -5, float("nan"), "x"):
+            with self.subTest(bad), self.assertRaises(MeasurementError):
+                measure_morphology(capsule_x(), VOXEL, teasar_const_nm=bad)
+
+    def test_stitch_measure_records_the_value(self):
+        mask = region_cylinder((16, 40, 128), 2, 100.0, margin=4)
+        tiles_dir = self.make_dir()
+        write_mask_tiles(tiles_dir, SEAM_TILES_X, mask)
+        work = self.stitch(tiles_dir, decide_all("yes"))
+        err = self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", "30", "8", "8")
+        self.assertIn("TEASAR const used: 500 nm\n", err)
+        run = json.loads((work / "measure_run.json").read_text())
+        self.assertEqual(run["teasar_const_nm"], 500.0)
+        self.assertNotIn("--teasar-const", run["command"])
+        default_rows = read_rows(work / "measurements.csv")
+        err = self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", "30", "8", "8",
+                        "--teasar-const", "300")
+        self.assertIn("TEASAR const used: 300 nm (not the lab's 500 nm)", err)
+        run = json.loads((work / "measure_run.json").read_text())
+        self.assertEqual(run["teasar_const_nm"], 300.0)
+        self.assertIn("--teasar-const 300", run["command"])
+        self.assertEqual(read_rows(work / "measurements.csv"), default_rows)     # unbranched: same numbers
+        with self.assertRaisesMessage(CommandError, "TEASAR const must be a positive number of nm"):
+            self.call("stitch_measure", "--work", str(work), "--voxel-size-zyx", "30", "8", "8", "--teasar-const", "0")
+
+    def test_readme_says_so_only_when_it_differs(self):
+        default = "\n".join(stitching_deliver.readme_length_lines("Crop sentence.", 1000))
+        self.assertNotIn("This run used TEASAR const", default)
+        self.assertEqual(default, "\n".join(stitching_deliver.readme_length_lines("Crop sentence.", 1000, 500.0)))
+        trial = "\n".join(stitching_deliver.readme_length_lines("Crop sentence.", 1000, 300.0))
+        self.assertIn("**This run used TEASAR const 300 nm instead of the lab's 500 nm.**", trial)
+        self.assertIn("not comparable", trial)
+
+
 class WidthTests(SimpleTestCase):
     def test_unrefined_radius_is_the_anisotropic_distance_transform(self):
         mask = cylinder_x()
@@ -689,5 +760,8 @@ class MeasureVolumeMorphologyTests(SimpleTestCase):
         self.assertIn(f"- Method version: `{METHOD_VERSION}`.", (result.out / "README.md").read_text())
         self.assertEqual(result.run["method_version"], METHOD_VERSION)
         self.assertIn(f"method: {METHOD_VERSION}", logs)
+        self.assertEqual(result.run["teasar_const_nm"], 500.0)
+        self.assertIn("TEASAR const used: 500 nm", logs)
+        self.assertNotIn("This run used TEASAR const", (result.out / "README.md").read_text())
         # The resolution used is always reported (the metadata here is wrong on purpose).
         self.assertTrue(any("voxel size" in line for line in logs))

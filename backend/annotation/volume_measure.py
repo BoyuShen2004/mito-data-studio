@@ -39,7 +39,9 @@ import scipy.ndimage as ndi
 from annotation.measurements import (
     CROP_PAD,
     SKIPPED_CROP_LIMIT,
+    TEASAR_CONST_NM,
     MeasurementError,
+    validate_teasar_const,
     validate_voxel_size,
 )
 from annotation.morphology import EMPTY_ROW, METHOD_VERSION, Morphology, measure_morphology
@@ -325,7 +327,7 @@ def outer_face_layers(box, volume_box, window) -> list[tuple[int, ...]]:
 
 
 def measure_label(store, lid: int, stats: LabelStats, volume_box, voxel, max_crop_voxels: int,
-                  *, has_region: bool) -> LabelMeasurement:
+                  *, has_region: bool, teasar_const_nm: float = TEASAR_CONST_NM) -> LabelMeasurement:
     box = tuple(stats.box)
     m = LabelMeasurement(lid, stats.voxel_count, stats.region_voxels if has_region else None, box,
                          touches_outer_face(box, volume_box))
@@ -350,7 +352,8 @@ def measure_label(store, lid: int, stats: LabelStats, volume_box, voxel, max_cro
                                  "did the volume change during the run?")
     m.coord_sums = moments[1]
     if not m.skipped_reason:
-        m.morphology = measure_morphology(mask, voxel, cut_boxes=outer_face_layers(box, volume_box, window))
+        m.morphology = measure_morphology(mask, voxel, cut_boxes=outer_face_layers(box, volume_box, window),
+                                          teasar_const_nm=teasar_const_nm)
         m.skeleton_length_um = m.morphology.length_nm / 1000.0
     return m
 
@@ -489,7 +492,8 @@ def build_volume_readme(ctx: dict) -> str:
                                                      "the stitched deliveries, where it holds global label IDs)",
                               "n_tiles": "always 1", "tiles": "the volume name"}),
         *readme_length_lines(f"Each mitochondrion is skeletonised once, as one piece, from a box around all of it "
-                             f"(padded by {CROP_PAD} voxels and clipped to the volume).", ctx["max_crop_voxels"]),
+                             f"(padded by {CROP_PAD} voxels and clipped to the volume).", ctx["max_crop_voxels"],
+                             ctx["teasar_const_nm"]),
         "## Constant columns",
         "",
         "These columns exist so that this delivery lines up column for column with the deliveries stitched "
@@ -553,7 +557,7 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
                        max_crop_voxels: int = DEFAULT_MAX_CROP_VOXELS, exclude_label_ids=None,
                        name: str | None = None, out=None, overwrite: bool = False, command: str = "",
                        generated_at: str | None = None, cache_bytes: int = CACHE_BYTES,
-                       log=lambda message: None) -> VolumeResult:
+                       teasar_const_nm: float = TEASAR_CONST_NM, log=lambda message: None) -> VolumeResult:
     started_at = datetime.now(timezone.utc)
     try:
         voxel = validate_voxel_size(voxel_size_zyx)
@@ -561,6 +565,10 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
         raise VolumeMeasureError(str(exc)) from None
     if max_crop_voxels < 1:
         raise VolumeMeasureError("--max-crop-voxels must be positive")
+    try:
+        teasar_const_nm = validate_teasar_const(teasar_const_nm)
+    except MeasurementError as exc:
+        raise VolumeMeasureError(str(exc)) from None
     if region_only and region is None:
         raise VolumeMeasureError("--region-only needs --region")
     label_vol = read_info(labels, what="labels")
@@ -582,6 +590,8 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
 
     matches = _same(label_vol.resolution, voxel)
     log(f"method: {METHOD_VERSION}")
+    log(f"TEASAR const used: {teasar_const_nm:g} nm"
+        + ("" if teasar_const_nm == TEASAR_CONST_NM else f" (not the lab's {TEASAR_CONST_NM:g} nm)"))
     # Always say which voxel size is used: p7's recorded resolution was off by 4x.
     log("voxel size used: {:g} x {:g} x {:g} nm (Z, Y, X), from --voxel-size-zyx; the labels' metadata says "
         "{:g} x {:g} x {:g}".format(*voxel, *label_vol.resolution))
@@ -620,7 +630,7 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
     for index, lid in enumerate(selected, 1):
         t1 = time.monotonic()
         m = measure_label(store, lid, stats[lid], label_vol.box, voxel, max_crop_voxels,
-                          has_region=region_vol is not None)
+                          has_region=region_vol is not None, teasar_const_nm=teasar_const_nm)
         measurements.append(m)
         if m.skipped_reason:
             log(f"label {lid}: crop {box_voxels(padded_window(m.box, label_vol.box)):,} voxels > "
@@ -669,6 +679,7 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
         "exclude_label_ids": str(Path(exclude_label_ids).resolve()) if exclude_label_ids else None,
         "excluded_label_ids": sorted(excluded), "unproofread_tiles": [], "delivery": str(out),
         "tensorstore_version": ts_version, "code_revision": revision, "method_version": METHOD_VERSION,
+        "teasar_const_nm": teasar_const_nm,
         "started_at": started_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "finished_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "counts": counts,
     }
@@ -676,6 +687,7 @@ def run_measure_volume(labels, work, voxel_size_zyx, *, region=None, region_only
         "voxel": voxel, "name": name, "labels": label_vol, "region": region_vol, "region_only": region_only,
         "summary_all": s_all, "summary_core": s_core, "excluded_count": len(excluded_rows),
         "voxel_matches_metadata": matches, "chunk_files": len(chunks), "max_crop_voxels": max_crop_voxels,
+        "teasar_const_nm": teasar_const_nm,
         "revision": revision, "command": command, "work": str(work), "tensorstore_version": ts_version,
         "generated_at": generated_at or started_at.strftime("%Y-%m-%d %H:%M UTC"),
     }
