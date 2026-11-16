@@ -5,6 +5,12 @@ follows semantic versioning for tagged releases.
 
 ## Unreleased
 
+- Add `stitch_export`: writes the stitched segmentation as a Neuroglancer
+  precomputed layer (uint64 object IDs = the delivery's `mito_id`, dataset
+  voxel coordinates, unsharded `compressed_segmentation`) for viewing and
+  spot-checking seams. Uses tensorstore, already required; no new
+  dependencies. The delivery README names the layer when one was exported.
+  See `docs/engineering/stitching.md`.
 - Stitching and `measure_volume`: `length_smoothed_um`,
   `longest_path_smoothed_um`, `end_to_end_um` and `tortuosity` are now
   measured tip to tip. Each skeleton end is replaced by the object's own
